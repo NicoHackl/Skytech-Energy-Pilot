@@ -15,8 +15,6 @@ from aiohttp import web
 
 from energy_pilot.collector import StateCollector, run_poller
 from energy_pilot.config import AddonConfig
-from energy_pilot.conversion import safe_float
-from energy_pilot.entity_map import EntityMapping, load_mapping, save_mapping
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import RingBufferHandler
 from energy_pilot.roles import MEASUREMENT_ROLES
@@ -55,7 +53,6 @@ def create_app(
             web.get("/api/ha/test", ha_test),
             web.get("/api/state", state),
             web.get("/api/entities", entities_get),
-            web.post("/api/entities", entities_post),
         ]
     )
     if enable_poller and collector is not None:
@@ -144,8 +141,12 @@ async def state(request: web.Request) -> web.Response:
 
 
 async def entities_get(request: web.Request) -> web.Response:
-    """Liefert alle Rollen mit aktueller Zuordnung (für die Einstellungen-UI)."""
-    mapping = load_mapping(request.app["db"])
+    """Liefert alle Rollen mit der in der Addon-Konfiguration gepflegten Zuordnung.
+
+    Reine Anzeige: Die Pflege erfolgt in der Addon-Konfiguration (Decision-Änderung).
+    """
+    collector: StateCollector | None = request.app["collector"]
+    mapping = collector.mapping if collector is not None else {}
     payload = []
     for role in MEASUREMENT_ROLES:
         current = mapping.get(role.key)
@@ -160,21 +161,3 @@ async def entities_get(request: web.Request) -> web.Response:
             }
         )
     return web.json_response(payload)
-
-
-async def entities_post(request: web.Request) -> web.Response:
-    """Speichert eine Rollen-Zuordnung und lädt sie in den Collector nach."""
-    data = await request.json()
-    role = data.get("role")
-    if role not in {r.key for r in MEASUREMENT_ROLES}:
-        return web.json_response({"error": "unbekannte Rolle"}, status=400)
-
-    db: sqlite3.Connection = request.app["db"]
-    entity_id = data.get("entity_id") or None
-    fallback_value = safe_float(data.get("fallback_value"))
-    save_mapping(db, EntityMapping(role, entity_id, fallback_value))
-
-    collector: StateCollector | None = request.app["collector"]
-    if collector is not None:
-        collector.set_mapping(load_mapping(db))
-    return web.json_response({"ok": True, "role": role})

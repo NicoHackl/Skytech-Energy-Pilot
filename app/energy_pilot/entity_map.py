@@ -9,6 +9,9 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
+from energy_pilot.conversion import safe_float
+from energy_pilot.roles import MEASUREMENT_ROLES
+
 
 @dataclass
 class EntityMapping:
@@ -17,6 +20,22 @@ class EntityMapping:
     role: str
     entity_id: str | None = None
     fallback_value: float | None = None
+
+
+def mapping_from_options(values: dict) -> dict[str, EntityMapping]:
+    """Baut die Zuordnung aus den Addon-Optionen (entity_<rolle>/fallback_<rolle>).
+
+    Decision-Änderung: Die Sensor-Zuordnung wird in der Addon-Konfiguration
+    gepflegt (gleiche Seite wie das KI-Modell), nicht in der Addon-Oberfläche.
+    """
+    mapping: dict[str, EntityMapping] = {}
+    for role in MEASUREMENT_ROLES:
+        entity_id = (values.get(f"entity_{role.key}") or "").strip() or None
+        raw_fallback = values.get(f"fallback_{role.key}")
+        fallback = safe_float(raw_fallback)
+        if entity_id is not None or fallback is not None:
+            mapping[role.key] = EntityMapping(role.key, entity_id, fallback)
+    return mapping
 
 
 def load_mapping(conn: sqlite3.Connection) -> dict[str, EntityMapping]:

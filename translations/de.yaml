@@ -23,3 +23,51 @@ configuration:
   collect_interval_s:
     name: Erfassungsintervall (Sekunden)
     description: Abstand, in dem Live-Werte aus Home Assistant gelesen werden.
+  entity_pv_power:
+    name: Entität PV-Leistung
+    description: HA-Entität für die aktuelle PV-Leistung (z.B. sensor.e3dc_leistung_pv).
+  entity_house_load:
+    name: Entität Hausverbrauch
+    description: HA-Entität für den aktuellen Hausverbrauch (z.B. sensor.e3dc_leistung_haus).
+  entity_grid_power:
+    name: Entität Netzleistung
+    description: HA-Entität für die Leistung am Netzübergabepunkt.
+  entity_grid_import:
+    name: Entität Netzbezug
+    description: HA-Entität für den Netzbezug.
+  entity_grid_export:
+    name: Entität Einspeisung
+    description: HA-Entität für die Netzeinspeisung.
+  entity_battery_power:
+    name: Entität Batterieleistung
+    description: HA-Entität für die aktuelle Batterieleistung.
+  entity_battery_soc:
+    name: Entität Batterie-SOC
+    description: HA-Entität für den Batterieladestand in Prozent.
+  entity_water_temperature:
+    name: Entität Warmwassertemperatur
+    description: HA-Entität für die Warmwassertemperatur.
+  fallback_pv_power:
+    name: Fallback PV-Leistung
+    description: Ersatzwert, falls keine gültige Entität gefunden wird.
+  fallback_house_load:
+    name: Fallback Hausverbrauch
+    description: Ersatzwert, falls keine gültige Entität gefunden wird.
+  fallback_grid_power:
+    name: Fallback Netzleistung
+    description: Ersatzwert, falls keine gültige Entität gefunden wird.
+  fallback_grid_import:
+    name: Fallback Netzbezug
+    description: Ersatzwert, falls keine gültige Entität gefunden wird.
+  fallback_grid_export:
+    name: Fallback Einspeisung
+    description: Ersatzwert, falls keine gültige Entität gefunden wird.
+  fallback_battery_power:
+    name: Fallback Batterieleistung
+    description: Ersatzwert, falls keine gültige Entität gefunden wird.
+  fallback_battery_soc:
+    name: Fallback Batterie-SOC
+    description: Ersatzwert, falls keine gültige Entität gefunden wird.
+  fallback_water_temperature:
+    name: Fallback Warmwassertemperatur
+    description: Ersatzwert, falls keine gültige Entität gefunden wird.

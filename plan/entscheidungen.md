@@ -133,6 +133,11 @@ Format: **ID · Thema · Entscheidung · Begründung/Detail · betroffene plan-D
 
 ---
 
+## D-027 · Sensor-Zuordnung in der Addon-Konfiguration (nicht in der UI)
+**Entscheidung:** Die Zuordnung der Mess-/Zustandsgrößen zu HA-Entitäten wird in der **Addon-Konfiguration** gepflegt (gleiche Seite wie das KI-Modell), über Optionen `entity_<rolle>` und `fallback_<rolle>`. Die Addon-Oberfläche zeigt die Zuordnung nur noch **lesend** an.
+**Detail:** Vorteil — Änderung der Optionen startet das Addon neu, die Zuordnung wird beim Start sofort geladen, der Poller erfasst sofort. Behebt zugleich das Problem, dass über die UI gepflegte Werte nicht erschienen. `entity_map`-Tabelle bleibt für spätere Zwecke erhalten. Datenansicht aktualisiert sich automatisch (alle 10 s).
+**Quelle:** User-Feedback M1 (16.06.2026). → [01](01-homeassistant-integration.md), [02](02-backend-architektur.md)
+
 ## Noch offen (geparkt, siehe claude-fragen-v4)
 - **B1** Hybrid-Modus: fixierbare Felder pro Gerät — vom User als „zu früh" geparkt (relevant ab M3).
 - **B2** Plan-JSON-Schema gemeinsam mit HEMS — Vormerkung für Ebene 2 (M3).

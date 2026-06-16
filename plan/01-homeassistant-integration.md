@@ -23,7 +23,8 @@ EP läuft als eigenständiges HA-Addon mit Ingress-UI. Es liest freigegebene HA-
 
 ## Datenfluss HA-Host → EP
 1. **Grenzwerte & allgemeine Geräteinformationen** werden über HA-(Helfer-)Entitäten nach Namensschema bereitgestellt.
-2. **Fallback:** In der Addon-Oberfläche konfigurierbar — falls nach Namensschema keine Entität gefunden wird, kann ein fester Wert oder eine alternative Entität hinterlegt werden.
+2. **Fallback:** In der **Addon-Konfiguration** pflegbar (Optionen `fallback_<rolle>`) — falls keine gültige Entität gefunden wird, greift der feste Wert (D-027).
+3. **Mess-/Zustandsgrößen-Zuordnung** (PV-Leistung, Hausverbrauch, SOC, …): erfolgt über Addon-Optionen `entity_<rolle>` (D-027), **nicht** in der Addon-Oberfläche. Die UI zeigt die Zuordnung nur lesend.
 3. **Fremddaten** (kein eigenes Namensschema, da Drittanbieter-Integrationen): Entitätsnamen frei und in der Addon-Config-Seite pflegbar:
    - Strompreis (z.B. EPEX/Tibber/Awattar)
    - PV-Daten / PV-Prognose

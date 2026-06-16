@@ -11,7 +11,7 @@ from energy_pilot.aggregation import RollingAggregator
 from energy_pilot.collector import StateCollector
 from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
-from energy_pilot.entity_map import load_mapping
+from energy_pilot.entity_map import mapping_from_options
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import log, setup_logging
 from energy_pilot.roles import MEASUREMENT_ROLES
@@ -34,9 +34,11 @@ def build() -> web.Application:
     if ha_client is None:
         log(logger, "warning", "SUPERVISOR_TOKEN fehlt – HA-Verbindung deaktiviert")
 
-    # State Collector mit gespeicherter Entitätszuordnung aufbauen
+    # State Collector mit der in der Addon-Konfiguration gepflegten Zuordnung aufbauen
     collector = StateCollector(ha_client, RollingAggregator(), MEASUREMENT_ROLES, logger)
-    collector.set_mapping(load_mapping(db))
+    mapping = mapping_from_options(config.values)
+    collector.set_mapping(mapping)
+    log(logger, "info", "Entitätszuordnung geladen", context={"rollen": sorted(mapping)})
 
     poll_interval = float(config.collect_interval_s)
     return create_app(

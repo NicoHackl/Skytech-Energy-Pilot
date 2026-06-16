@@ -46,9 +46,11 @@
   </section>
 
   <section id="einstellungen" class="tab">
-    <p>Ordne jeder Größe eine HA-Entität zu. Fallback greift, wenn keine gültige Entität gefunden wird.</p>
+    <p>Die Zuordnung der Größen zu HA-Entitäten wird in der <strong>Addon-Konfiguration</strong> gepflegt
+       (gleiche Seite wie das KI-Modell, Felder <code>entity_…</code> / <code>fallback_…</code>).
+       Hier wird nur der aktuell geladene Stand angezeigt.</p>
     <table>
-      <thead><tr><th>Größe</th><th>HA-Entität</th><th>Fallback</th><th></th></tr></thead>
+      <thead><tr><th>Größe</th><th>HA-Entität</th><th>Fallback</th></tr></thead>
       <tbody id="entity-rows"></tbody>
     </table>
   </section>
@@ -98,29 +100,12 @@
     async function loadEntities() {
       const rows = await (await fetch("api/entities")).json();
       document.getElementById("entity-rows").innerHTML = rows
-        .map((r) => `<tr data-role="${r.role}">
+        .map((r) => `<tr>
             <td>${r.label}${r.averaged ? "" : " *"}</td>
-            <td><input class="entity" value="${r.entity_id ?? ""}" placeholder="sensor.&lt;name&gt;" size="28" /></td>
-            <td><input class="fallback num" value="${r.fallback_value ?? ""}" size="6" /></td>
-            <td><button class="save">Speichern</button></td>
+            <td><code>${r.entity_id ?? "–"}</code></td>
+            <td class="num">${r.fallback_value ?? "–"}</td>
           </tr>`)
         .join("");
-      document.querySelectorAll("#entity-rows .save").forEach((btn) =>
-        btn.addEventListener("click", async (e) => {
-          const tr = e.target.closest("tr");
-          await fetch("api/entities", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              role: tr.dataset.role,
-              entity_id: tr.querySelector(".entity").value,
-              fallback_value: tr.querySelector(".fallback").value,
-            }),
-          });
-          btn.textContent = "Gespeichert";
-          setTimeout(() => (btn.textContent = "Speichern"), 1200);
-        })
-      );
     }
 
     async function loadLogs() {
@@ -137,6 +122,11 @@
     loadState();
     loadEntities();
     loadLogs();
+
+    // Datenansicht regelmäßig aktualisieren, damit neue Messwerte automatisch erscheinen
+    setInterval(() => {
+      if (document.getElementById("daten").classList.contains("active")) loadState();
+    }, 10000);
   </script>
 </body>
 </html>

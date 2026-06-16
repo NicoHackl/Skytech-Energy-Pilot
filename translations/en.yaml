@@ -23,3 +23,51 @@ configuration:
   collect_interval_s:
     name: Collection interval (seconds)
     description: Interval at which live values are read from Home Assistant.
+  entity_pv_power:
+    name: Entity PV power
+    description: HA entity for current PV power (e.g. sensor.e3dc_leistung_pv).
+  entity_house_load:
+    name: Entity house load
+    description: HA entity for current house consumption (e.g. sensor.e3dc_leistung_haus).
+  entity_grid_power:
+    name: Entity grid power
+    description: HA entity for power at the grid connection point.
+  entity_grid_import:
+    name: Entity grid import
+    description: HA entity for grid import.
+  entity_grid_export:
+    name: Entity grid export
+    description: HA entity for grid export.
+  entity_battery_power:
+    name: Entity battery power
+    description: HA entity for current battery power.
+  entity_battery_soc:
+    name: Entity battery SOC
+    description: HA entity for the battery state of charge in percent.
+  entity_water_temperature:
+    name: Entity water temperature
+    description: HA entity for the domestic hot water temperature.
+  fallback_pv_power:
+    name: Fallback PV power
+    description: Fallback value if no valid entity is found.
+  fallback_house_load:
+    name: Fallback house load
+    description: Fallback value if no valid entity is found.
+  fallback_grid_power:
+    name: Fallback grid power
+    description: Fallback value if no valid entity is found.
+  fallback_grid_import:
+    name: Fallback grid import
+    description: Fallback value if no valid entity is found.
+  fallback_grid_export:
+    name: Fallback grid export
+    description: Fallback value if no valid entity is found.
+  fallback_battery_power:
+    name: Fallback battery power
+    description: Fallback value if no valid entity is found.
+  fallback_battery_soc:
+    name: Fallback battery SOC
+    description: Fallback value if no valid entity is found.
+  fallback_water_temperature:
+    name: Fallback water temperature
+    description: Fallback value if no valid entity is found.
