@@ -138,6 +138,11 @@ Format: **ID · Thema · Entscheidung · Begründung/Detail · betroffene plan-D
 **Detail:** Vorteil — Änderung der Optionen startet das Addon neu, die Zuordnung wird beim Start sofort geladen, der Poller erfasst sofort. Behebt zugleich das Problem, dass über die UI gepflegte Werte nicht erschienen. `entity_map`-Tabelle bleibt für spätere Zwecke erhalten. Datenansicht aktualisiert sich automatisch (alle 10 s).
 **Quelle:** User-Feedback M1 (16.06.2026). → [01](01-homeassistant-integration.md), [02](02-backend-architektur.md)
 
+## D-028 · Build auf direktem Python-Basis-Image (kein HA-Basis-Image/s6)
+**Entscheidung:** Dockerfile baut auf `python:3.11-slim` mit direktem `CMD ["python3","main.py"]` (wie Skytech HEMS), **ohne** `build.yaml`/HA-Basis-Image und **ohne** `run.sh`.
+**Begründung:** Das HA-Basis-Image nutzt s6-overlay; dabei wurde `SUPERVISOR_TOKEN` nicht an den App-Prozess durchgereicht → `ha_configured=false`, keine Datenerfassung. Direkter Python-Start erbt die Container-Umgebung samt Token (verifiziert). Manifest auf das HEMS-Minimum reduziert (`homeassistant_api: true`; `hassio_api`/`auth_api`/`map` entfernt).
+**Quelle:** M1-Debugging 16.06.2026 (Statusseite zeigte ha_configured=false). → Dockerfile, config.yaml
+
 ## Noch offen (geparkt, siehe claude-fragen-v4)
 - **B1** Hybrid-Modus: fixierbare Felder pro Gerät — vom User als „zu früh" geparkt (relevant ab M3).
 - **B2** Plan-JSON-Schema gemeinsam mit HEMS — Vormerkung für Ebene 2 (M3).

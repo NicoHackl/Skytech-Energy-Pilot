@@ -1,23 +1,16 @@
-# Default-Basis erlaubt einen lokalen/CI-Smoke-Build ohne HA-Basis-Image
-ARG BUILD_FROM=python:3.11-alpine
-FROM ${BUILD_FROM}
+# Direkter Python-Basis-Build wie Skytech HEMS (kein HA-Basis-Image/s6),
+# damit die Container-Umgebung inkl. SUPERVISOR_TOKEN an den Prozess durchgereicht wird.
+FROM python:3.11-slim
 
 ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
-# Python-Laufzeit sicherstellen (HA-Basis-Images bringen sie nicht mit)
-RUN command -v python3 >/dev/null 2>&1 || apk add --no-cache python3 py3-pip
-
 WORKDIR /app
 COPY app/requirements.txt /app/requirements.txt
-# Build-Tools nur temporär – Fallback, falls für eine Architektur kein vorgebautes Wheel existiert
-RUN apk add --no-cache --virtual .build-deps gcc musl-dev python3-dev \
-    && pip3 install --no-cache-dir --break-system-packages -r /app/requirements.txt \
-    && apk del .build-deps
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app /app
-COPY run.sh /run.sh
-RUN chmod a+x /run.sh
+EXPOSE 8098
 
-CMD ["/run.sh"]
+CMD ["python3", "main.py"]

@@ -61,5 +61,9 @@ class AddonConfig:
 
     @property
     def supervisor_token(self) -> str | None:
-        """Token für die HA-Core-API (SUPERVISOR_TOKEN, lokal HA_TOKEN als Fallback)."""
-        return os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HA_TOKEN")
+        """Token für die HA-Core-API (SUPERVISOR_TOKEN, sonst HASSIO_TOKEN/HA_TOKEN)."""
+        return (
+            os.environ.get("SUPERVISOR_TOKEN")
+            or os.environ.get("HASSIO_TOKEN")
+            or os.environ.get("HA_TOKEN")
+        )

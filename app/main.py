@@ -27,6 +27,13 @@ def build() -> web.Application:
     logger, ring = setup_logging(str(config.log_level).upper())
     log(logger, "info", "Energy Pilot startet", context={"version": __version__})
 
+    # Diagnose: welche Token-Variablen sind vorhanden (nur Boolean, nie der Wert)
+    token_presence = {
+        name: bool(os.environ.get(name))
+        for name in ("SUPERVISOR_TOKEN", "HASSIO_TOKEN", "HA_TOKEN")
+    }
+    log(logger, "info", "Token-Diagnose", context={"vorhanden": token_presence})
+
     db = init_db(DB_PATH)
 
     token = config.supervisor_token

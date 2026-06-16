@@ -29,4 +29,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Addon-Image bauen (Smoke-Test)
-        run: docker build --build-arg BUILD_FROM=python:3.11-alpine -t energy-pilot:ci .
+        run: docker build -t energy-pilot:ci .
