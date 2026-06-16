@@ -1,0 +1,11 @@
+# Skytech Energy Pilot – input_datetime Helfer
+# Zeitpunkte (Daten HA -> EP). Inhalt unter "input_datetime:" einfügen.
+# Hinweis: Wird initial noch nicht benötigt (E-Auto erst spätere Ausbaustufe, info.md §20).
+# Dieser Helfer ist auch der vorgesehene Schreibpunkt für den externen iOS/Java-Backend-Zugriff (D-013):
+# das externe Backend setzt z.B. die Abfahrtszeit direkt in diesem HA-Helfer, EP liest sie.
+
+ep_eauto_abfahrtszeit:
+  name: EP E-Auto Abfahrtszeit
+  has_date: true
+  has_time: true
+  icon: mdi:car-clock

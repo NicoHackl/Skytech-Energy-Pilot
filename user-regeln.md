@@ -29,6 +29,9 @@ Alle Name in Homeassistant (Enitäten/Helfer) sind auf deutsch zu benennen
 **Nameschema**
 <DOMAIN>.ep_<GERÄTENAME>_<PREFIX>_<SUFFIX>
 
+**Behandlung von Umlauten**
+Umlaute ä,ö,ü werden nicht zu ae,oe,ue sonder zu a,o,u (siehe HEMS Repo)
+
 ---
 **Suffix:**
 Geräte Vorschlagswerte von EP: vorschlag
@@ -54,4 +57,11 @@ Vorschlagswerte werden über sensor Entitäten an HA übermittelt und sollen auc
 **Allgemeine Informationen**
 Dieser Sensor enthält dann allgmeien Informationen (wird initial nicht benötigt) die für erweiterbarkeit verwendet werden kann
 Informationen in diesem Sensor werden als Attribut an den Sensor übermittelt
+
+
+# 04 Steuerung prinzip
+Es soll drei Modi geben später wie ich (User) und die KI die geräte/Werte steuern
+- Manueller Modus: Ich steuere alles, die KI gar nichts
+- Hybrid Modus: Ich gebe gewisse Werte/Gerätestatus fest vor (die KI darf diese werte nicht ändern und MUSS mit den Werten die weitere planung machen)
+- Automatischer Modus: Die KI steuert alle Werte/Geräte, egal was ich in meinen (User) Eingabefeldern eingeben es zählen die werte/Einstellungen von der KI/EP
 

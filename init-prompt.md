@@ -1,0 +1,8 @@
+- In info.md stehen alle Infos sehr im Detail ausgeprägt.
+- in init.md stehen einigen allgmeine Sachen/Regeln zum Projekt/GIt
+- in user-fragen.md stehen offene Punkte/Fragen vom User, die Antwort darauf bitte in dieser Datei immer ergänzen und deine antwort darauf auch in die Umsetzung des Projektes mit einbeziehen
+- user-regeln stehen allgemeine und fachliche/technische Regeln, diese haben IMMER vorrang vor der info.md
+- baue dir selber eine .claude.md Datei wo du dir die aller wichtigsten Punkte für dich zusammenfasst die für dich für die umsetzung für das Prjekt wichtig sind festhätst, auchte darauf das diese Date kompakt bleibt
+- erstelle einen Ordner namens "plan" und darin Dateien wie die dieses Projekt in einzelne Punkte unterteilen würdest z.b Homeassistant, API, Backend etc. und darin die Informationen für die einzelnen Punkte
+- Erstelle einen Roadmap plan mit einzelnen Zwischenziele/Meilensteinen
+- Erstelle einen claude-fragen ordner und darin immer versionierte claude-fragen.md Dateien und da kommen ALLe Fragen die du am mich hast der wichtigkeit geordnet, auch aufgeteilt ob diese aktuell Projektrelevant sind oder nicht

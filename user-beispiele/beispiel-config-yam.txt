@@ -1,0 +1,6 @@
+ep_speicher_soc_mindestwert_1:
+  name: EMS Speicher SOC Mindeswert 1
+  min: 10
+  max: 100
+  step: 5
+  unit_of_measurement: "%"

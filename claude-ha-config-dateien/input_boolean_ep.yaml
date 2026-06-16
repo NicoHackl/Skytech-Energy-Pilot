@@ -1,0 +1,34 @@
+# Skytech Energy Pilot – input_boolean Helfer
+# EP-Schalter und Geräte-Freigaben (Daten HA -> EP). Inhalt unter "input_boolean:" einfügen.
+
+# --- Globale EP-Schalter ---
+ep_aktiv:
+  name: EP Aktiv
+  icon: mdi:robot
+
+ep_automatische_planung:
+  name: EP Automatische Planung
+  icon: mdi:calendar-sync
+
+ep_ereignis_neuplanung:
+  name: EP Ereignisbasierte Neuplanung
+  icon: mdi:flash-alert
+
+ep_automatische_ubernahme:
+  name: EP Automatische Übernahme
+  icon: mdi:check-decagram
+
+# --- Geräte-Freigaben ---
+#Speicher ist immer freigegeben da wir die Batterie (aktuell) immer mit Prio 1 behandeln.
+
+ep_heizstab_freigabe:
+  name: EP Heizstab Freigabe
+  icon: mdi:water-boiler
+
+ep_heizluefter_1_freigabe:
+  name: EP Heizlüfter 1 Freigabe
+  icon: mdi:fan
+
+ep_heizluefter_2_freigabe:
+  name: EP Heizlüfter 2 Freigabe
+  icon: mdi:fan

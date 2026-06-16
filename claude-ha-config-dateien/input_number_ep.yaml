@@ -1,0 +1,55 @@
+# Skytech Energy Pilot – input_number Helfer
+# Zahlen-Grenzwerte (Daten HA -> EP). Inhalt unter "input_number:" in der HA-Config einfügen.
+# Werte sind Vorschläge – an die eigene Anlage anpassen.
+
+# --- Batteriespeicher 1 (harte Grenzen) ---
+#Min und Max SOC Werte nehmen wir (aktuell) nicht mit auf da wir die Batterie (aktuell) immer mit Prio 1 behandeln
+
+ep_batterie_ladeleistung_maximal:
+  name: EP E3DC Batterie Ladeleistung Maximal
+  min: 0
+  max: 20000
+  step: 100
+  unit_of_measurement: "W"
+
+#Entladeleistung der Batterie macht keinen Sinn da wir nur überschuss regeln damit (aktuell) und nicht die Batterie in die Berechnung mit einbeziehen.
+
+# --- Heizstab (harte Grenzen) ---
+ep_heizstab_leistung_maximal:
+  name: EP Heizstab Leistung Maximal
+  min: 0
+  max: 9000
+  step: 100
+  unit_of_measurement: "W"
+
+ep_heizstab_wasser_temperatur_maximal:
+  name: EP Heizstab Wasser Temperatur Maximal
+  min: 0
+  max: 95
+  step: 1
+  unit_of_measurement: "°C"
+
+# --- Heizlüfter 1 / 2 (harte Grenzen) ---
+#Entfernt weil beide eine Feste Leistung von 1500W haben 
+
+# --- EP-Planungsparameter (optional auch in Addon-Config; siehe info.md §15) ---
+ep_planungsintervall:
+  name: EP Planungsintervall
+  min: 15
+  max: 60
+  step: 5
+  unit_of_measurement: "min"
+
+ep_prognosehorizont:
+  name: EP Prognosehorizont
+  min: 12
+  max: 48
+  step: 1
+  unit_of_measurement: "h"
+
+ep_mindestkonfidenz:
+  name: EP Mindestkonfidenz
+  min: 0
+  max: 100
+  step: 5
+  unit_of_measurement: "%"

@@ -1,0 +1,35 @@
+# Skytech Energy Pilot – input_select Helfer
+# Modus-/Strategieauswahl (Daten HA -> EP). Inhalt unter "input_select:" einfügen.
+
+# --- Steuermodus: WER steuert (user-regeln.md §04, siehe plan/12-steuermodi.md) ---
+ep_steuermodus:
+  name: EP Steuermodus
+  options:
+    - manuell
+    - hybrid
+    - automatisch
+  initial: manuell
+  icon: mdi:account-cog
+
+# --- Betriebsmodus: WIE autonom an HEMS (info.md §14) ---
+ep_betriebsmodus:
+  name: EP Betriebsmodus
+  options:
+    - beobachten
+    - vorschlagen
+    - shadow
+    - autopilot
+  initial: beobachten
+  icon: mdi:steering
+
+# --- Gewünschte Energiestrategie (weiche Ziele, vgl. info.md §8/§9) ---
+ep_strategie:
+  name: EP Strategie
+  options:
+    - eigenverbrauch_maximieren
+    - kosten_minimieren
+    - netzbezug_minimieren
+    - batterie_schonen
+    - komfort
+  initial: eigenverbrauch_maximieren
+  icon: mdi:target
