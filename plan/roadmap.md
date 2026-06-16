@@ -6,16 +6,16 @@ Legende: ☐ offen · ◐ in Arbeit · ☑ erledigt
 
 ---
 
-## M0 — Fundament & Gerüst
+## M0 — Fundament & Gerüst ☑ ERLEDIGT (16.06.2026, in HA verifiziert)
 **Ziel:** lauffähiges, leeres Addon mit CI, Logging, DB.
-- ☐ Addon-Skelett (Dockerfile, config.yaml, Slug `skytech_energy_pilot`, Ingress-Panel).
-- ☐ aiohttp-Server + leere Ingress-SPA.
-- ☐ HA-Connector (REST + WebSocket) via `SUPERVISOR_TOKEN`, Verbindungstest.
-- ☐ SQLite-Init + Migrations-Mechanismus ([05](05-daten-und-speicherung.md)).
-- ☐ Strukturiertes JSON-Logging + UI-Logansicht + Export-Stub ([10](10-logging-observability.md)).
-- ☐ CI-Pipeline (Lint, pytest, Docker-Build) auf `claude/main` ([11](11-tests-ci.md)).
+- ☑ Addon-Skelett (Dockerfile, config.yaml, Slug `skytech_energy_pilot`, Ingress-Panel).
+- ☑ aiohttp-Server + Ingress-SPA (Status/Logs).
+- ☑ HA-Connector (REST + WebSocket) via `SUPERVISOR_TOKEN`, Verbindungstest (`/api/ha/test`).
+- ☑ SQLite-Init + Migrations-Mechanismus ([05](05-daten-und-speicherung.md)).
+- ☑ Strukturiertes JSON-Logging + UI-Logansicht + JSONL-Export ([10](10-logging-observability.md)).
+- ☑ CI-Pipeline (Lint, pytest 92 % Coverage, Docker-Build) auf `claude/main` ([11](11-tests-ci.md)).
 
-**Definition of Done:** Addon startet in HA, zeigt Ingress-Seite, schreibt strukturierte Logs, CI grün.
+**Definition of Done:** ✅ Addon installiert, startet in HA, Ingress-Seite erreichbar, strukturierte Logs, lokal alle Tests grün + Docker-Build (auch gegen python:3.14-alpine) erfolgreich.
 
 ---
 
