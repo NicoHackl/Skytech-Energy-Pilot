@@ -1,0 +1,39 @@
+# Home-Assistant-Addon-Manifest für Skytech Energy Pilot
+name: Skytech Energy Pilot
+version: "0.0.1"
+slug: skytech_energy_pilot
+description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
+url: https://github.com/NicoHackl/Skytech-Energy-Pilot
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+# Ingress-Weboberfläche in der HA-Seitenleiste
+ingress: true
+ingress_port: 8098
+panel_icon: mdi:robot
+panel_title: Energy Pilot
+# Zugriff auf Supervisor- und Core-API (Verbindung zu Home Assistant)
+hassio_api: true
+homeassistant_api: true
+auth_api: true
+# Persistente Datenhaltung (SQLite) im Addon-Datenverzeichnis
+map:
+  - addon_config:rw
+options:
+  log_level: info
+  provider: gemini
+  model: gemini-3.5-flash
+  planning_interval_min: 60
+  plan_update_interval_min: 15
+  forecast_horizon_h: 24
+  min_confidence_percent: 70
+schema:
+  log_level: list(debug|info|warning|error)
+  provider: list(gemini|openai)
+  model: str
+  planning_interval_min: int(15,60)
+  plan_update_interval_min: int(5,60)
+  forecast_horizon_h: int(12,48)
+  min_confidence_percent: int(0,100)

@@ -1,0 +1,13 @@
+.git
+.github
+plan
+claude-fragen
+claude-ha-config-dateien
+user-beispiele
+*.md
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.venv
+venv
+*.db

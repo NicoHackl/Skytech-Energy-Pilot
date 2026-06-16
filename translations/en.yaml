@@ -1,0 +1,22 @@
+configuration:
+  log_level:
+    name: Log level
+    description: Verbosity of logging (debug, info, warning, error).
+  provider:
+    name: AI provider
+    description: Provider of the language model used for planning.
+  model:
+    name: Model
+    description: Concrete model of the selected provider (default gemini-3.5-flash).
+  planning_interval_min:
+    name: Planning interval (minutes)
+    description: Interval of full re-planning (15-60 minutes).
+  plan_update_interval_min:
+    name: Update interval (minutes)
+    description: Interval for checking the current plan against deviations.
+  forecast_horizon_h:
+    name: Forecast horizon (hours)
+    description: Look-ahead window of the planning (12-48 hours).
+  min_confidence_percent:
+    name: Minimum confidence (%)
+    description: Threshold below which a plan is not auto-submitted.

@@ -1,0 +1,93 @@
+"""SQLite-Initialisierung mit einfachem, versioniertem Migrations-Mechanismus.
+
+Vollständiges Zielschema siehe plan/05-daten-und-speicherung.md. M0 legt nur die
+Kerntabellen plus die Migrationsverwaltung an; weitere Tabellen folgen versioniert.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+# Migrationen in aufsteigender Reihenfolge. Jede Version wird genau einmal angewendet.
+MIGRATIONS: list[tuple[int, str]] = [
+    (
+        1,
+        """
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT DEFAULT (datetime('now')),
+            actor TEXT,
+            action TEXT,
+            subject TEXT,
+            detail_json TEXT
+        );
+        CREATE TABLE IF NOT EXISTS errors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT DEFAULT (datetime('now')),
+            level TEXT,
+            component TEXT,
+            message TEXT,
+            detail_json TEXT
+        );
+        CREATE TABLE IF NOT EXISTS ai_calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT DEFAULT (datetime('now')),
+            provider TEXT,
+            model TEXT,
+            tokens_in INTEGER,
+            tokens_out INTEGER,
+            est_cost REAL,
+            ok INTEGER,
+            error TEXT
+        );
+        """,
+    ),
+]
+
+
+def connect(db_path: str) -> sqlite3.Connection:
+    """Öffnet (und legt bei Bedarf an) die SQLite-Datenbank."""
+    if db_path != ":memory:":
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    return conn
+
+
+def current_version(conn: sqlite3.Connection) -> int:
+    """Liefert die zuletzt angewendete Migrationsversion (0, falls keine)."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        "version INTEGER PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))"
+    )
+    row = conn.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()
+    return row["v"] or 0
+
+
+def migrate(conn: sqlite3.Connection) -> list[int]:
+    """Wendet alle ausstehenden Migrationen an und gibt deren Versionen zurück."""
+    version = current_version(conn)
+    applied: list[int] = []
+    for migration_version, sql in MIGRATIONS:
+        if migration_version > version:
+            conn.executescript(sql)
+            conn.execute(
+                "INSERT INTO schema_migrations (version) VALUES (?)", (migration_version,)
+            )
+            applied.append(migration_version)
+    conn.commit()
+    return applied
+
+
+def init_db(db_path: str) -> sqlite3.Connection:
+    """Öffnet die Datenbank und bringt das Schema auf den aktuellen Stand."""
+    conn = connect(db_path)
+    migrate(conn)
+    return conn

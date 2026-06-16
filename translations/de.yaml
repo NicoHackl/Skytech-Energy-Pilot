@@ -1,0 +1,22 @@
+configuration:
+  log_level:
+    name: Log-Level
+    description: Detailgrad der Protokollierung (debug, info, warning, error).
+  provider:
+    name: KI-Anbieter
+    description: Anbieter des Sprachmodells für die Planung.
+  model:
+    name: Modell
+    description: Konkretes Modell des gewählten Anbieters (Standard gemini-3.5-flash).
+  planning_interval_min:
+    name: Planungsintervall (Minuten)
+    description: Abstand der vollständigen Neuplanung (15–60 Minuten).
+  plan_update_interval_min:
+    name: Aktualisierungsintervall (Minuten)
+    description: Abstand der Planprüfung auf Abweichungen.
+  forecast_horizon_h:
+    name: Prognosehorizont (Stunden)
+    description: Vorausschauzeitraum der Planung (12–48 Stunden).
+  min_confidence_percent:
+    name: Mindestkonfidenz (%)
+    description: Schwelle, unterhalb derer ein Plan nicht automatisch übernommen wird.
