@@ -20,3 +20,6 @@ configuration:
   min_confidence_percent:
     name: Minimum confidence (%)
     description: Threshold below which a plan is not auto-submitted.
+  collect_interval_s:
+    name: Collection interval (seconds)
+    description: Interval at which live values are read from Home Assistant.

@@ -48,6 +48,17 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        2,
+        """
+        CREATE TABLE IF NOT EXISTS entity_map (
+            role TEXT PRIMARY KEY,
+            ha_entity_id TEXT,
+            fallback_value REAL,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        """,
+    ),
 ]
 
 

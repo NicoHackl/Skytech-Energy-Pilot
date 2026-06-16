@@ -20,3 +20,6 @@ configuration:
   min_confidence_percent:
     name: Mindestkonfidenz (%)
     description: Schwelle, unterhalb derer ein Plan nicht automatisch übernommen wird.
+  collect_interval_s:
+    name: Erfassungsintervall (Sekunden)
+    description: Abstand, in dem Live-Werte aus Home Assistant gelesen werden.

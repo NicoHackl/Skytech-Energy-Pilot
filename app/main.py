@@ -7,10 +7,14 @@ import os
 from aiohttp import web
 
 from energy_pilot import __version__
+from energy_pilot.aggregation import RollingAggregator
+from energy_pilot.collector import StateCollector
 from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
+from energy_pilot.entity_map import load_mapping
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import log, setup_logging
+from energy_pilot.roles import MEASUREMENT_ROLES
 from energy_pilot.web.server import create_app
 
 DB_PATH = os.environ.get("EP_DB_PATH", "/data/energy_pilot.db")
@@ -30,7 +34,22 @@ def build() -> web.Application:
     if ha_client is None:
         log(logger, "warning", "SUPERVISOR_TOKEN fehlt – HA-Verbindung deaktiviert")
 
-    return create_app(config, db, ring, ha_client, version=__version__)
+    # State Collector mit gespeicherter Entitätszuordnung aufbauen
+    collector = StateCollector(ha_client, RollingAggregator(), MEASUREMENT_ROLES, logger)
+    collector.set_mapping(load_mapping(db))
+
+    poll_interval = float(config.collect_interval_s)
+    return create_app(
+        config,
+        db,
+        ring,
+        ha_client,
+        collector,
+        version=__version__,
+        logger=logger,
+        enable_poller=ha_client is not None,
+        poll_interval_s=poll_interval,
+    )
 
 
 def main() -> None:

@@ -15,6 +15,7 @@ DEFAULTS: dict[str, object] = {
     "plan_update_interval_min": 15,
     "forecast_horizon_h": 24,
     "min_confidence_percent": 70,
+    "collect_interval_s": 30,
 }
 
 DEFAULT_OPTIONS_PATH = "/data/options.json"

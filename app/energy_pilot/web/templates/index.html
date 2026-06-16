@@ -17,17 +17,40 @@
     th, td { text-align: left; padding: .25rem .5rem; border-bottom: 1px solid #8884; vertical-align: top; }
     code { font-family: ui-monospace, monospace; }
     .toolbar { margin-bottom: .5rem; }
+    input { padding: .2rem .3rem; }
+    .src-live { color: #2a8; }
+    .src-fallback { color: #c93; }
+    .src-none { color: #999; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body>
   <h1>Skytech Energy Pilot</h1>
   <nav>
     <button data-tab="status" class="active">Status</button>
+    <button data-tab="daten">Daten</button>
+    <button data-tab="einstellungen">Einstellungen</button>
     <button data-tab="logs">Logs</button>
   </nav>
 
   <section id="status" class="tab active">
     <div class="kv" id="health"></div>
+  </section>
+
+  <section id="daten" class="tab">
+    <div class="toolbar"><button id="refresh-state">Aktualisieren</button></div>
+    <table>
+      <thead><tr><th>Größe</th><th class="num">Aktuell</th><th class="num">Ø 1 min</th><th class="num">Ø 15 min</th><th class="num">Ø 60 min</th><th>Quelle</th></tr></thead>
+      <tbody id="state-rows"></tbody>
+    </table>
+  </section>
+
+  <section id="einstellungen" class="tab">
+    <p>Ordne jeder Größe eine HA-Entität zu. Fallback greift, wenn keine gültige Entität gefunden wird.</p>
+    <table>
+      <thead><tr><th>Größe</th><th>HA-Entität</th><th>Fallback</th><th></th></tr></thead>
+      <tbody id="entity-rows"></tbody>
+    </table>
   </section>
 
   <section id="logs" class="tab">
@@ -49,26 +72,70 @@
     }
     document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
+    const fmt = (v) => (v === null || v === undefined ? "–" : Number(v).toLocaleString("de-DE", { maximumFractionDigits: 1 }));
+
     async function loadHealth() {
-      const res = await fetch("api/health");
-      const data = await res.json();
-      const el = document.getElementById("health");
-      el.innerHTML = Object.entries(data)
+      const data = await (await fetch("api/health")).json();
+      document.getElementById("health").innerHTML = Object.entries(data)
         .map(([k, v]) => `<div>${k}</div><div><code>${v}</code></div>`)
         .join("");
     }
 
+    async function loadState() {
+      const data = await (await fetch("api/state")).json();
+      document.getElementById("state-rows").innerHTML = Object.values(data)
+        .map((r) => {
+          const unit = r.unit ? " " + r.unit : "";
+          const cur = r.averaged ? r.latest : r.value;
+          const m1 = r.averaged ? fmt(r.mean_1m) + unit : "";
+          const m15 = r.averaged ? fmt(r.mean_15m) + unit : "";
+          const m60 = r.averaged ? fmt(r.mean_60m) + unit : "";
+          return `<tr><td>${r.label}</td><td class="num">${fmt(cur)}${unit}</td><td class="num">${m1}</td><td class="num">${m15}</td><td class="num">${m60}</td><td class="src-${r.source}">${r.source}</td></tr>`;
+        })
+        .join("");
+    }
+
+    async function loadEntities() {
+      const rows = await (await fetch("api/entities")).json();
+      document.getElementById("entity-rows").innerHTML = rows
+        .map((r) => `<tr data-role="${r.role}">
+            <td>${r.label}${r.averaged ? "" : " *"}</td>
+            <td><input class="entity" value="${r.entity_id ?? ""}" placeholder="sensor.&lt;name&gt;" size="28" /></td>
+            <td><input class="fallback num" value="${r.fallback_value ?? ""}" size="6" /></td>
+            <td><button class="save">Speichern</button></td>
+          </tr>`)
+        .join("");
+      document.querySelectorAll("#entity-rows .save").forEach((btn) =>
+        btn.addEventListener("click", async (e) => {
+          const tr = e.target.closest("tr");
+          await fetch("api/entities", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              role: tr.dataset.role,
+              entity_id: tr.querySelector(".entity").value,
+              fallback_value: tr.querySelector(".fallback").value,
+            }),
+          });
+          btn.textContent = "Gespeichert";
+          setTimeout(() => (btn.textContent = "Speichern"), 1200);
+        })
+      );
+    }
+
     async function loadLogs() {
-      const res = await fetch("api/logs?limit=200");
-      const rows = await res.json();
+      const rows = await (await fetch("api/logs?limit=200")).json();
       document.getElementById("log-rows").innerHTML = rows
         .map((r) => `<tr><td>${r.ts}</td><td>${r.level}</td><td>${r.component}</td><td>${r.message}</td></tr>`)
         .reverse()
         .join("");
     }
 
+    document.getElementById("refresh-state").addEventListener("click", loadState);
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();
+    loadState();
+    loadEntities();
     loadLogs();
   </script>
 </body>

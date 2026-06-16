@@ -29,6 +29,7 @@ options:
   plan_update_interval_min: 15
   forecast_horizon_h: 24
   min_confidence_percent: 70
+  collect_interval_s: 30
 schema:
   log_level: list(debug|info|warning|error)
   provider: list(gemini|openai)
@@ -37,3 +38,4 @@ schema:
   plan_update_interval_min: int(5,60)
   forecast_horizon_h: int(12,48)
   min_confidence_percent: int(0,100)
+  collect_interval_s: int(5,300)
