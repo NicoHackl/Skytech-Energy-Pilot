@@ -35,6 +35,12 @@
 
   <section id="status" class="tab active">
     <div class="kv" id="health"></div>
+    <h2 style="font-size:1rem;margin-top:1rem;">Diagnose</h2>
+    <div class="kv" id="diag"></div>
+    <div class="toolbar" style="margin-top:.5rem;">
+      <button id="ha-test">HA-Verbindung testen</button>
+      <span id="ha-test-result"></span>
+    </div>
   </section>
 
   <section id="daten" class="tab">
@@ -83,6 +89,35 @@
         .join("");
     }
 
+    async function loadDiag() {
+      const d = await (await fetch("api/diagnostics")).json();
+      const ts = d.last_collect_ts ? new Date(d.last_collect_ts * 1000).toLocaleString("de-DE") : "–";
+      const rows = {
+        "HA verbunden": d.ha_configured,
+        "Poller aktiv": d.poller_active,
+        "Intervall (s)": d.poll_interval_s,
+        "Zugeordnete Größen": (d.mapped_roles || []).join(", ") || "–",
+        "Letzter Lauf": ts,
+        "Letzter Fehler": d.last_error || "–",
+      };
+      document.getElementById("diag").innerHTML = Object.entries(rows)
+        .map(([k, v]) => `<div>${k}</div><div><code>${v}</code></div>`)
+        .join("");
+    }
+
+    document.getElementById("ha-test").addEventListener("click", async () => {
+      const el = document.getElementById("ha-test-result");
+      el.textContent = " … teste …";
+      try {
+        const res = await fetch("api/ha/test");
+        const data = await res.json();
+        el.textContent = data.connected ? " ✅ verbunden" : ` ❌ ${data.reason || res.status}`;
+      } catch (e) {
+        el.textContent = " ❌ " + e;
+      }
+      loadDiag();
+    });
+
     async function loadState() {
       const data = await (await fetch("api/state")).json();
       document.getElementById("state-rows").innerHTML = Object.values(data)
@@ -119,13 +154,15 @@
     document.getElementById("refresh-state").addEventListener("click", loadState);
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();
+    loadDiag();
     loadState();
     loadEntities();
     loadLogs();
 
-    // Datenansicht regelmäßig aktualisieren, damit neue Messwerte automatisch erscheinen
+    // Daten- und Diagnoseansicht regelmäßig aktualisieren
     setInterval(() => {
       if (document.getElementById("daten").classList.contains("active")) loadState();
+      if (document.getElementById("status").classList.contains("active")) loadDiag();
     }, 10000);
   </script>
 </body>

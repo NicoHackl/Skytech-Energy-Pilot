@@ -74,6 +74,16 @@ async def test_state_lists_all_roles(aiohttp_client, app):
     assert "battery_soc" in data
 
 
+async def test_diagnostics_reports_status(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    resp = await client.get("/api/diagnostics")
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["ha_configured"] is False
+    assert data["poller_active"] is False
+    assert "last_sources" in data
+
+
 async def test_entities_get_reflects_configured_mapping(aiohttp_client, app):
     # Zuordnung kommt aus der Konfiguration und wird in den Collector geladen
     app["collector"].set_mapping(mapping_from_options({"entity_pv_power": "sensor.pv"}))

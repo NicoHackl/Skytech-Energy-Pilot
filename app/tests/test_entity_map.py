@@ -48,3 +48,10 @@ def test_mapping_from_options_reads_entities_and_fallbacks():
     # leere/whitespace-Einträge erzeugen keine Zuordnung
     assert "house_load" not in mapping
     assert "grid_power" not in mapping
+
+
+def test_mapping_from_options_reads_nested_group():
+    # Sensoren liegen in der aufklappbaren Gruppe "sensoren"
+    values = {"sensoren": {"entity_house_load": "sensor.e3dc_leistung_haus"}}
+    mapping = mapping_from_options(values)
+    assert mapping["house_load"].entity_id == "sensor.e3dc_leistung_haus"

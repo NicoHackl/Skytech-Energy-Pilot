@@ -16,7 +16,7 @@ from aiohttp import web
 from energy_pilot.collector import StateCollector, run_poller
 from energy_pilot.config import AddonConfig
 from energy_pilot.ha_client import HAClient
-from energy_pilot.logging_setup import RingBufferHandler
+from energy_pilot.logging_setup import RingBufferHandler, log
 from energy_pilot.roles import MEASUREMENT_ROLES
 
 TEMPLATES = Path(__file__).parent / "templates"
@@ -53,12 +53,28 @@ def create_app(
             web.get("/api/ha/test", ha_test),
             web.get("/api/state", state),
             web.get("/api/entities", entities_get),
+            web.get("/api/diagnostics", diagnostics),
         ]
     )
+    if ha_client is not None:
+        app.on_startup.append(_ha_selftest)
     if enable_poller and collector is not None:
         app.on_startup.append(_start_poller)
         app.on_cleanup.append(_stop_poller)
     return app
+
+
+async def _ha_selftest(app: web.Application) -> None:
+    """Einmaliger Verbindungstest beim Start – Ergebnis landet sichtbar im Log."""
+    client: HAClient | None = app["ha_client"]
+    logger = app["logger"]
+    if client is None or logger is None:
+        return
+    try:
+        await client.test_connection()
+        log(logger, "info", "HA-Verbindung erfolgreich getestet")
+    except Exception as exc:
+        log(logger, "error", "HA-Verbindungstest fehlgeschlagen", context={"error": str(exc)})
 
 
 async def _start_poller(app: web.Application) -> None:
@@ -138,6 +154,23 @@ async def state(request: web.Request) -> web.Response:
     if collector is None:
         return web.json_response({})
     return web.json_response(collector.snapshot())
+
+
+async def diagnostics(request: web.Request) -> web.Response:
+    """Diagnose für die Statusseite: HA-Verbindung, Poller, letzter Lauf/Fehler."""
+    app = request.app
+    collector: StateCollector | None = app["collector"]
+    poll_task = app.get("_poll_task")
+    payload: dict[str, Any] = {
+        "ha_configured": app["ha_client"] is not None,
+        "poller_active": bool(poll_task is not None and not poll_task.done()),
+        "poll_interval_s": app["poll_interval_s"],
+        "mapped_roles": sorted(collector.mapping) if collector else [],
+        "last_collect_ts": getattr(collector, "last_collect_ts", None) if collector else None,
+        "last_sources": collector.last_source if collector else {},
+        "last_error": getattr(collector, "last_error", None) if collector else None,
+    }
+    return web.json_response(payload)
 
 
 async def entities_get(request: web.Request) -> web.Response:

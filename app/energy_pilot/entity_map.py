@@ -28,11 +28,14 @@ def mapping_from_options(values: dict) -> dict[str, EntityMapping]:
     Decision-Änderung: Die Sensor-Zuordnung wird in der Addon-Konfiguration
     gepflegt (gleiche Seite wie das KI-Modell), nicht in der Addon-Oberfläche.
     """
+    # Sensoren liegen in der Gruppe "sensoren"; flach als Fallback (Abwärtskompatibilität).
+    nested = values.get("sensoren")
+    source = nested if isinstance(nested, dict) else values
+
     mapping: dict[str, EntityMapping] = {}
     for role in MEASUREMENT_ROLES:
-        entity_id = (values.get(f"entity_{role.key}") or "").strip() or None
-        raw_fallback = values.get(f"fallback_{role.key}")
-        fallback = safe_float(raw_fallback)
+        entity_id = (source.get(f"entity_{role.key}") or "").strip() or None
+        fallback = safe_float(source.get(f"fallback_{role.key}"))
         if entity_id is not None or fallback is not None:
             mapping[role.key] = EntityMapping(role.key, entity_id, fallback)
     return mapping

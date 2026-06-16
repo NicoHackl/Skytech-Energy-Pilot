@@ -36,6 +36,9 @@ class StateCollector:
         self.mapping: dict[str, EntityMapping] = {}
         # Quelle des zuletzt erfassten Werts je Rolle: live | fallback | none
         self.last_source: dict[str, str] = {}
+        # Diagnose: Zeitpunkt des letzten Laufs und letzter Lesefehler
+        self.last_collect_ts: float | None = None
+        self.last_error: str | None = None
 
     def set_mapping(self, mapping: dict[str, EntityMapping]) -> None:
         self.mapping = mapping
@@ -48,6 +51,7 @@ class StateCollector:
             if value is not None:
                 self.aggregator.add(role.key, value, now)
             self.last_source[role.key] = source
+        self.last_collect_ts = now
         return dict(self.last_source)
 
     async def _read_role(self, role: Role) -> tuple[float | None, str]:
@@ -62,6 +66,7 @@ class StateCollector:
                 if value is not None:
                     return value, "live"
             except Exception as exc:
+                self.last_error = f"{role.key} ({mapping.entity_id}): {exc}"
                 if self.logger:
                     log(
                         self.logger,

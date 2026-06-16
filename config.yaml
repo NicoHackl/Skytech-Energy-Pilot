@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.3"
+version: "0.0.4"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -30,24 +30,24 @@ options:
   forecast_horizon_h: 24
   min_confidence_percent: 70
   collect_interval_s: 30
-  # Zuordnung der Mess-/Zustandsgrößen zu HA-Entitäten (leer = nicht verwenden).
-  entity_pv_power: ""
-  entity_house_load: ""
-  entity_grid_power: ""
-  entity_grid_import: ""
-  entity_grid_export: ""
-  entity_battery_power: ""
-  entity_battery_soc: ""
-  entity_water_temperature: ""
-  # Optionaler Fallback-Wert je Größe, falls keine gültige Entität gefunden wird.
-  fallback_pv_power: ""
-  fallback_house_load: ""
-  fallback_grid_power: ""
-  fallback_grid_import: ""
-  fallback_grid_export: ""
-  fallback_battery_power: ""
-  fallback_battery_soc: ""
-  fallback_water_temperature: ""
+  # Sensor-Zuordnung als eigene aufklappbare Gruppe (entity_ = HA-Entität, fallback_ = Ersatzwert).
+  sensoren:
+    entity_pv_power: ""
+    fallback_pv_power: ""
+    entity_house_load: ""
+    fallback_house_load: ""
+    entity_grid_power: ""
+    fallback_grid_power: ""
+    entity_grid_import: ""
+    fallback_grid_import: ""
+    entity_grid_export: ""
+    fallback_grid_export: ""
+    entity_battery_power: ""
+    fallback_battery_power: ""
+    entity_battery_soc: ""
+    fallback_battery_soc: ""
+    entity_water_temperature: ""
+    fallback_water_temperature: ""
 schema:
   log_level: list(debug|info|warning|error)
   provider: list(gemini|openai)
@@ -57,19 +57,20 @@ schema:
   forecast_horizon_h: int(12,48)
   min_confidence_percent: int(0,100)
   collect_interval_s: int(5,300)
-  entity_pv_power: str?
-  entity_house_load: str?
-  entity_grid_power: str?
-  entity_grid_import: str?
-  entity_grid_export: str?
-  entity_battery_power: str?
-  entity_battery_soc: str?
-  entity_water_temperature: str?
-  fallback_pv_power: str?
-  fallback_house_load: str?
-  fallback_grid_power: str?
-  fallback_grid_import: str?
-  fallback_grid_export: str?
-  fallback_battery_power: str?
-  fallback_battery_soc: str?
-  fallback_water_temperature: str?
+  sensoren:
+    entity_pv_power: str?
+    fallback_pv_power: str?
+    entity_house_load: str?
+    fallback_house_load: str?
+    entity_grid_power: str?
+    fallback_grid_power: str?
+    entity_grid_import: str?
+    fallback_grid_import: str?
+    entity_grid_export: str?
+    fallback_grid_export: str?
+    entity_battery_power: str?
+    fallback_battery_power: str?
+    entity_battery_soc: str?
+    fallback_battery_soc: str?
+    entity_water_temperature: str?
+    fallback_water_temperature: str?
