@@ -1,4 +1,6 @@
-# Claude-Fragen — v4 (Stand 16.06.2026)
+# Claude-Fragen — v4 (Stand 16.06.2026) · ↪ FORTGEFÜHRT IN [v5](claude-fragen-v5.md)
+
+> **Status:** Neue Fragen aus [../user-beispiele/variablen-zugriff.txt](../user-beispiele/variablen-zugriff.txt) sowie die hier geparkten B-Fragen laufen in [claude-fragen-v5.md](claude-fragen-v5.md) weiter. Diese Datei bleibt als Historie.
 
 Offene Fragen von mir (Claude) an den User, nach **Wichtigkeit** geordnet.
 

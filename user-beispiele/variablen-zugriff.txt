@@ -1,0 +1,47 @@
+In dieser Datei wird der Variablenzugriff bzw. der Datenfluss erklärt.
+Bedeutet genau, welche Instanz (Addon/App, User etc.) welche Daten im HEMS und Energy Pilot umfeld lesen bzw. ändern kann
+Dabei geht es speziell nur um:
+- die Werte die via Namenskonvetion direkt von HA gelsen werden und in keiner Config expliziet hinterlegt werden müssen
+- die Werte die zwischen dem HEMS und dem Energy Pilot via API ausgetauscht in in der jeweiligen Instanz als intern Variable gespeichert sind/werden
+
+Allgemeine Infos:
+XXX beudetet die Namenskonvetion von Entitättyp mit Gerätename
+
+
+User:
+- Der User setzt über die HA Oberfläche die (technischen) Grenzwert, reservierte Mindestwerte, Priorität
+- Grundsätzlich alle HEMS Werte die vom User gepflegt werden müssen
+
+
+
+HEMS:
+- Das HEMS steuert über die vom User festgelegten Werte die XXX_anforderung Werte, also schaltet input_boolean für binärverbraucher ein und legt die Sollleistung für regelbare Verbraucher fest
+
+
+
+Energy Pilot:
+lesen:
+- Der Energy Pilot liest grundsätzlich alle technischen Werte eine Gerätes aus die vom User in HA Helfer Entitäten geschrieben werden
+    HA-Entitäten für binär Verbraucher: 
+        - XXX_leistung_w
+        - XXX_technische_freigabe
+    HA-Entitäten für regelbaren Verbraucher:
+        - XXX_technische_freigabe
+        - XXX_min_technisch_w
+        - XXX_max_technisch_w
+Dabei dienen diese Werte als Grenzwerte für seine Vorschlagswerte bzw. die XXX_technische_freigabe dient dazu ob dieses gerät aktuell überhaupt in der lage ist zu arbeiten selbst wenn es freigegeben wird
+
+schreiben:
+- Der Energy Pilot schreibt grundsätzlich in HA-Variablen und über einen http-API Endpunkt in interne Variablen des HEMS
+    Die Namen der Variablen bzw. Endpunkte haben grunsätzlich die gleiche Namenskonvention wenn es um die Endung, also Gerätename mit Prefix und Suffix geht z.b. heizlufter_1_prio_vorschlag
+- Der Energy Pilot schreibt grundsätzlich ausschließlich vorschlagswerte
+    HA-Entitäten bzw. Endpunkte für binär Verbraucher: 
+        - XXX_prio_vorschlag
+    HA-Entitäten bzw. Endpunkte für regelbaren Verbraucher:
+        - XXX_prio_vorschlag
+        - XXX_geschutzte_mindestleistung_w_vorschlag -> für Geräte mit Watt als Einheit für Sollwert
+        - XXX_geschutzte_mindestleistung_a_vorschlag -> für Geräte mit Ampere als Einheit für Sollwert
+
+
+Homeassistant:
+- Homeassistant setzte über Automationen bzw. Skripte die Zustände/Leistungswerte die in die XXX_anforderung für die einzelnen Geräte geschreiben wurden
