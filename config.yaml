@@ -27,6 +27,8 @@ options:
   collect_interval_s: 30
   # Sensor-Zuordnung als eigene aufklappbare Gruppe (entity_ = HA-Entität, fallback_ = Ersatzwert).
   sensoren:
+    test:
+      das_ist_ein_test: "Hallo Welt"
     entity_pv_power: ""
     fallback_pv_power: ""
     entity_house_load: ""
@@ -53,6 +55,8 @@ schema:
   min_confidence_percent: int(0,100)
   collect_interval_s: int(5,300)
   sensoren:
+    test:
+      das_ist_ein_test: str?
     entity_pv_power: str?
     fallback_pv_power: str?
     entity_house_load: str?
