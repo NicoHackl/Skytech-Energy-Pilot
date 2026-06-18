@@ -41,7 +41,7 @@ Die `.txt` sagt: EP schreibt die Vorschläge „in HA-Variablen **und** über ei
 D-002 hat aber V1 = **nur** HA-Helfer / `/api/set` festgelegt (direkter interner Variablen-/Plan-Endpunkt erst **Ebene 2** im HEMS-Repo).
 **Frage:** Beschreibt die `.txt` das **Zielbild (Ebene 2)** oder schon V1? Welche Werte gehen als HA-Helfer, welche über den HEMS-Endpunkt — und ab welcher Stufe?
 
-Antwort:
+Antwort: Es beschreibt den Sollzustand später, nicht jetzt am Anfang gleich, am Anfang werden nur Vorschlagswerte in HA-Helfer/Entiäten geschrieben und später dann zustäzlich direkt in HEMS Endpunkte/inter Variablen, und dann werden die werte exakt gleich geschrieben, bedeutet das es gleich viele Endpunkte wie HA-Helfer gibt
 
 ### A6 — Wann *wirken* die EP-Vorschläge in der HEMS-Regelung?
 Die `.txt` sagt: HEMS bildet die `XXX_anforderung` aus den **vom User festgelegten Werten**; EP schreibt seine Vorschläge separat in HEMS-Variablen.
