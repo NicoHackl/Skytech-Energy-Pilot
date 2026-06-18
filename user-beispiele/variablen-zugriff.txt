@@ -23,12 +23,14 @@ Energy Pilot:
 lesen:
 - Der Energy Pilot liest grundsätzlich alle technischen Werte eine Gerätes aus die vom User in HA Helfer Entitäten geschrieben werden
     HA-Entitäten für binär Verbraucher: 
-        - XXX_leistung_w
-        - XXX_technische_freigabe
+        - ems_XXX_leistung_w
+        - ems_XXX_technische_freigabe
     HA-Entitäten für regelbaren Verbraucher:
-        - XXX_technische_freigabe
-        - XXX_min_technisch_w
-        - XXX_max_technisch_w
+        - ems_XXX_technische_freigabe
+        - ems_XXX_min_technisch_w -> für Geräte mit Watt als Einheit für Sollwert
+        - ems_XXX_min_technisch_a -> für Geräte mit Ampere als Einheit für Sollwert
+        - ems_XXX_max_technisch_w -> für Geräte mit Watt als Einheit für Sollwert
+        - ems_XXX_max_technisch_a -> für Geräte mit Ampere als Einheit für Sollwert
 Dabei dienen diese Werte als Grenzwerte für seine Vorschlagswerte bzw. die XXX_technische_freigabe dient dazu ob dieses gerät aktuell überhaupt in der lage ist zu arbeiten selbst wenn es freigegeben wird
 
 schreiben:
