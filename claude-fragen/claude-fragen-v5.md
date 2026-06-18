@@ -47,7 +47,7 @@ Antwort: Es beschreibt den Sollzustand später, nicht jetzt am Anfang gleich, am
 Die `.txt` sagt: HEMS bildet die `XXX_anforderung` aus den **vom User festgelegten Werten**; EP schreibt seine Vorschläge separat in HEMS-Variablen.
 **Frage:** Ab wann greifen `…_prio_vorschlag` / `…_geschutzte_mindestleistung` tatsächlich in die HEMS-Regelung ein — erst im **Shadow/Autopilot** bzw. abhängig vom **Steuermodus** ([../plan/12-steuermodi.md](../plan/12-steuermodi.md))? Im Modus „Vorschlagen" bleiben sie reine Anzeige?
 
-Antwort:
+Antwort: Damit bracuhst du dich aktuell nicht beschäftigen, aktuell ist es nur wichtig das die vorschlagswerte in die entitäten ep_XXX_vorschlag geschrieben werden und dann werden die vorerst von mir selber in HA Automation verwendet und getestet, später soll es so sein das sie in HA lediglich der Übersichtlichkeit der Daten dienen (Dashboardnutzung etc.) und die eingetliche auswertung passiert dann im HEMS wenn die Vorschlagswerte über die API direkt in HEMS variablen geschrieben werden
 
 ---
 
