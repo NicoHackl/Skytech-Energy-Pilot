@@ -36,11 +36,11 @@ schreiben:
     Die Namen der Variablen bzw. Endpunkte haben grunsätzlich die gleiche Namenskonvention wenn es um die Endung, also Gerätename mit Prefix und Suffix geht z.b. heizlufter_1_prio_vorschlag
 - Der Energy Pilot schreibt grundsätzlich ausschließlich vorschlagswerte
     HA-Entitäten bzw. Endpunkte für binär Verbraucher: 
-        - XXX_prio_vorschlag
+        - ep_XXX_prio_vorschlag
     HA-Entitäten bzw. Endpunkte für regelbaren Verbraucher:
-        - XXX_prio_vorschlag
-        - XXX_geschutzte_mindestleistung_w_vorschlag -> für Geräte mit Watt als Einheit für Sollwert
-        - XXX_geschutzte_mindestleistung_a_vorschlag -> für Geräte mit Ampere als Einheit für Sollwert
+        - ep_XXX_prio_vorschlag
+        - ep_XXX_geschutzte_mindestleistung_w_vorschlag -> für Geräte mit Watt als Einheit für Sollwert
+        - ep_XXX_geschutzte_mindestleistung_a_vorschlag -> für Geräte mit Ampere als Einheit für Sollwert
 
 
 Homeassistant:
