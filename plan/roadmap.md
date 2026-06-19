@@ -26,8 +26,9 @@ Legende: ☐ offen · ◐ in Arbeit · ☑ erledigt
 - ☐ Entity Allowlist.
 - ☑ State Collector + History Aggregator inkl. **1/15/60-min-Mittelwerte** (D-001/D-003, [05](05-daten-und-speicherung.md)).
 - ☑ **Geräte-Datenebene:** Discovery via HEMS `/api/device_controls_schema` + Config-Fallback (D-036); EP liest `ems_*`-Gerätewerte (technische Freigabe, Ist-Leistung, min/max technisch) + Heizstab-Temperaturgrenze (D-035). Module `hems_client.py`, `devices.py`, `device_collector.py`; Endpoint `/api/devices`; Geräte-Ansicht in der SPA.
-- ☐ Fremddaten-Anbindung (Strompreis/PV-Prognose) über in Addon-Config gepflegte HA-Sensoren (D-006/D-018/D-026) — **nächster M1-Baustein**.
-- ☑ Dashboard + Geräteanzeige (read-only); ☐ Prognoseanzeige (mit PV-Prognose).
+- ☑ **PV-Prognose-Anbindung** (D-006/D-018/D-026): mehrere Ausrichtungen je in Addon-Config (`pv_forecast`), EP summiert je Wert (akt./nächste Stunde, Rest heute, morgen). Module `forecast.py`, `forecast_collector.py`; Endpoint `/api/forecast`; Prognose-Tab. Strompreis/Wetter in V1 raus.
+- ☑ Dashboard + Geräte- + Prognoseanzeige (read-only).
+- ☐ Entity Allowlist — letzter kleiner M1-Baustein.
 - ☐ Status-Entitäten (`sensor.ep_*`) — kommt mit M2 (Vorschlagswerte).
 
 **DoD:** Aktuelle + verdichtete Werte und Prognosen sind in der UI und als Entitäten sichtbar; Mittelwertbildung getestet.

@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.6"
+version: "0.0.7"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -30,6 +30,10 @@ options:
   hems_base_url: ""
   # Fallback-Geräteliste, falls HEMS nicht erreichbar ist (sonst via HEMS-Schema erkannt).
   devices: []
+  # PV-Prognose: je Ausrichtung 4 Sensoren (Energie akt. Stunde / nächste Stunde / Rest heute / morgen).
+  # EP summiert je Wert über alle Ausrichtungen. Jeder Wert liegt im State eines eigenen Sensors.
+  pv_forecast: []
+  pv_forecast_unit: kWh
   # Sensor-Zuordnung als eigene aufklappbare Gruppe (entity_ = HA-Entität, fallback_ = Ersatzwert).
   sensoren:
     entity_pv_power: ""
@@ -63,6 +67,13 @@ schema:
       entity_prefix: str?
       class: list(controllable|binary)
       output_unit: list(watt|ampere)?
+  pv_forecast:
+    - label: str?
+      current_hour: str?
+      next_hour: str?
+      remaining_today: str?
+      tomorrow: str?
+  pv_forecast_unit: str?
   sensoren:
     entity_pv_power: str?
     fallback_pv_power: str?

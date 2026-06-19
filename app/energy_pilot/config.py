@@ -20,6 +20,10 @@ DEFAULTS: dict[str, object] = {
     "hems_base_url": "",
     # Geräteliste als Fallback, falls HEMS nicht erreichbar ist (entity_prefix/class/output_unit).
     "devices": [],
+    # PV-Prognose (D-006/D-018/D-026): je Ausrichtung 4 Sensoren, EP summiert je Wert.
+    "pv_forecast": [],
+    # Anzeigeeinheit der PV-Prognosewerte (EP konvertiert nicht, summiert nur).
+    "pv_forecast_unit": "kWh",
 }
 
 DEFAULT_OPTIONS_PATH = "/data/options.json"

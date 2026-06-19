@@ -13,6 +13,8 @@ from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
 from energy_pilot.device_collector import DeviceCollector
 from energy_pilot.entity_map import mapping_from_options
+from energy_pilot.forecast import orientations_from_config
+from energy_pilot.forecast_collector import ForecastCollector
 from energy_pilot.ha_client import HAClient
 from energy_pilot.hems_client import HEMSClient
 from energy_pilot.logging_setup import log, setup_logging
@@ -55,6 +57,15 @@ def build() -> web.Application:
     # Gerätewerte werden über denselben HA-Client gelesen (es sind HA-Helfer).
     device_collector = DeviceCollector(ha_client, logger)
 
+    # PV-Prognose aus der Addon-Config (mehrere Ausrichtungen, EP summiert je Wert).
+    forecast_collector = ForecastCollector(ha_client, logger, unit=str(config.pv_forecast_unit))
+    orientations = orientations_from_config(config.values)
+    forecast_collector.set_orientations(orientations)
+    log(
+        logger, "info", "PV-Prognose geladen",
+        context={"ausrichtungen": [o.label for o in orientations]},
+    )
+
     poll_interval = float(config.collect_interval_s)
     return create_app(
         config,
@@ -63,6 +74,7 @@ def build() -> web.Application:
         ha_client,
         collector,
         device_collector,
+        forecast_collector,
         hems_client=hems_client,
         version=__version__,
         logger=logger,

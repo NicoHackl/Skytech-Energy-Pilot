@@ -30,6 +30,7 @@
     <button data-tab="status" class="active">Status</button>
     <button data-tab="daten">Daten</button>
     <button data-tab="geraete">Geräte</button>
+    <button data-tab="prognose">Prognose</button>
     <button data-tab="einstellungen">Einstellungen</button>
     <button data-tab="logs">Logs</button>
   </nav>
@@ -58,6 +59,13 @@
       <span id="device-source"></span>
     </div>
     <div id="device-list"></div>
+  </section>
+
+  <section id="prognose" class="tab">
+    <div class="toolbar"><button id="refresh-forecast">Aktualisieren</button></div>
+    <h2 style="font-size:1rem;">PV-Prognose (Summe über alle Ausrichtungen)</h2>
+    <div id="forecast-totals"></div>
+    <div id="forecast-orient"></div>
   </section>
 
   <section id="einstellungen" class="tab">
@@ -176,6 +184,31 @@
         html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config setzen oder Geräteliste pflegen.</p>";
     }
 
+    async function loadForecast() {
+      const data = await (await fetch("api/forecast")).json();
+      const unit = data.unit ? " " + data.unit : "";
+      const values = data.values || [];
+      const labels = Object.fromEntries(values.map((v) => [v.key, v.label]));
+      const totalsRows = values
+        .map((v) => `<tr><td>${v.label}</td><td class="num">${v.total == null ? "–" : fmt(v.total) + unit}</td></tr>`)
+        .join("");
+      document.getElementById("forecast-totals").innerHTML = values.length
+        ? `<table><thead><tr><th>Wert</th><th class="num">Summe</th></tr></thead><tbody>${totalsRows}</tbody></table>`
+        : "<p>Keine PV-Prognose konfiguriert. Ausrichtungen in der Addon-Config (<code>pv_forecast</code>) pflegen.</p>";
+      document.getElementById("forecast-orient").innerHTML = (data.orientations || [])
+        .map((o) => {
+          const rows = Object.entries(o.values)
+            .map(([k, f]) => {
+              const val = f.value == null ? "–" : fmt(f.value) + unit;
+              return `<tr><td>${labels[k] || k}</td><td class="num">${val}</td><td><code>${f.entity_id}</code></td><td class="src-${f.source}">${f.source}</td></tr>`;
+            })
+            .join("");
+          return `<h2 style="font-size:1rem;margin-top:1rem;">${o.label}</h2>
+            <table><thead><tr><th>Wert</th><th class="num">Wert</th><th>Entität</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table>`;
+        })
+        .join("");
+    }
+
     async function loadLogs() {
       const rows = await (await fetch("api/logs?limit=200")).json();
       document.getElementById("log-rows").innerHTML = rows
@@ -186,18 +219,21 @@
 
     document.getElementById("refresh-state").addEventListener("click", loadState);
     document.getElementById("refresh-devices").addEventListener("click", loadDevices);
+    document.getElementById("refresh-forecast").addEventListener("click", loadForecast);
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();
     loadDiag();
     loadState();
     loadDevices();
+    loadForecast();
     loadEntities();
     loadLogs();
 
-    // Daten-, Geräte- und Diagnoseansicht regelmäßig aktualisieren
+    // Daten-, Geräte-, Prognose- und Diagnoseansicht regelmäßig aktualisieren
     setInterval(() => {
       if (document.getElementById("daten").classList.contains("active")) loadState();
       if (document.getElementById("geraete").classList.contains("active")) loadDevices();
+      if (document.getElementById("prognose").classList.contains("active")) loadForecast();
       if (document.getElementById("status").classList.contains("active")) loadDiag();
     }, 10000);
   </script>

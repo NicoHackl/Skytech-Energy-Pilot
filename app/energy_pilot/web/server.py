@@ -29,6 +29,7 @@ def create_app(
     ha_client: HAClient | None = None,
     collector: StateCollector | None = None,
     device_collector: object | None = None,
+    forecast_collector: object | None = None,
     *,
     hems_client: object | None = None,
     version: str = "0.0.1",
@@ -44,6 +45,7 @@ def create_app(
     app["ha_client"] = ha_client
     app["collector"] = collector
     app["device_collector"] = device_collector
+    app["forecast_collector"] = forecast_collector
     app["hems_client"] = hems_client
     app["version"] = version
     app["logger"] = logger
@@ -58,6 +60,7 @@ def create_app(
             web.get("/api/state", state),
             web.get("/api/entities", entities_get),
             web.get("/api/devices", devices_get),
+            web.get("/api/forecast", forecast_get),
             web.get("/api/diagnostics", diagnostics),
         ]
     )
@@ -114,6 +117,7 @@ async def _start_poller(app: web.Application) -> None:
             app["poll_interval_s"],
             app["logger"],
             device_collector=app.get("device_collector"),
+            forecast_collector=app.get("forecast_collector"),
         )
     )
 
@@ -209,6 +213,7 @@ async def diagnostics(request: web.Request) -> web.Response:
         if device_collector
         else "none",
         "device_count": len(getattr(device_collector, "devices", [])) if device_collector else 0,
+        "forecast_orientations": len(getattr(app.get("forecast_collector"), "orientations", [])),
     }
     return web.json_response(payload)
 
@@ -251,3 +256,11 @@ async def devices_get(request: web.Request) -> web.Response:
             "devices": device_collector.snapshot(),
         }
     )
+
+
+async def forecast_get(request: web.Request) -> web.Response:
+    """Liefert die summierte PV-Prognose je Wert + Aufschlüsselung pro Ausrichtung."""
+    forecast_collector = request.app.get("forecast_collector")
+    if forecast_collector is None:
+        return web.json_response({})
+    return web.json_response(forecast_collector.snapshot())

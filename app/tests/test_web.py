@@ -11,6 +11,8 @@ from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
 from energy_pilot.device_collector import DeviceCollector
 from energy_pilot.entity_map import mapping_from_options
+from energy_pilot.forecast import PVOrientation
+from energy_pilot.forecast_collector import ForecastCollector
 from energy_pilot.logging_setup import log, setup_logging
 from energy_pilot.roles import MEASUREMENT_ROLES
 from energy_pilot.web.server import create_app
@@ -118,3 +120,25 @@ async def test_devices_endpoint_reflects_config_discovery(aiohttp_client, tmp_pa
     assert data["devices"][0]["name"] == "heizstab"
     keys = {f["key"] for f in data["devices"][0]["fields"]}
     assert {"technische_freigabe", "min_technisch", "max_technisch", "ep_max_temperatur"} <= keys
+
+
+async def test_forecast_endpoint_without_collector_is_empty(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/forecast")).json()
+    assert data == {}
+
+
+async def test_forecast_endpoint_returns_totals(aiohttp_client, tmp_path):
+    config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    forecast_collector = ForecastCollector(None, logger, unit="kWh")
+    forecast_collector.set_orientations([PVOrientation("Ost", {"current_hour": "sensor.ost"})])
+    app = create_app(config, db, ring, forecast_collector=forecast_collector, version="test")
+
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/forecast")).json()
+
+    assert data["unit"] == "kWh"
+    assert any(v["key"] == "current_hour" for v in data["values"])
+    assert data["orientations"][0]["label"] == "Ost"
