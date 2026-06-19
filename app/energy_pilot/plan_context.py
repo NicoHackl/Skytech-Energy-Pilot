@@ -107,6 +107,8 @@ def build_prompt(context: dict) -> str:
         "- Gib pro Gerät NUR die Felder aus, die in dessen `allowed_fields` stehen.\n"
         "- Eine technisch gesperrte Last (technische_freigabe=false) darfst du nicht "
         "freigeben.\n"
+        "- Prioritäten von Geräten darfst du nur in 10er Schritten von 10 - 100 setzten."
+        "10 ist dabei die höchste, und 100 die niedrigste Priorität.\n"
         "- Die Batterie hat immer Priorität 1 und ist immer freigegeben; schlage für sie "
         "nur die geschützte Mindest-Ladeleistung vor.\n"
         "- Erfinde keine Geräte; verwende exakt die `name`-Werte aus `devices`.\n"
