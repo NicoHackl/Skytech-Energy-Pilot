@@ -54,7 +54,7 @@ def test_happy_path_ok_without_clamps():
         [
             {
                 "name": "heizstab",
-                "prio_vorschlag": 2,
+                "prio_vorschlag": 10,  # einziges Prio-Gerät -> Rang 1, bleibt unverändert
                 "freigabe_vorschlag": True,
                 "geschutzte_mindestleistung_w_vorschlag": 800.0,
                 "max_temperatur_vorschlag": 55.0,
@@ -155,3 +155,57 @@ def test_naive_timestamps_treated_as_utc():
     )
     result = validate(plan, _constraints(), now=NOW)
     assert result.ok
+
+
+def _ranked_constraints():
+    # Drei freigegebene Prio-Geräte (keine Batterie), um die Rangfolge zu prüfen.
+    devices = [
+        Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE, "watt"),
+        Device("heizluefter_1", "Heizlüfter 1", "heizluefter_1", BINARY, "watt"),
+        Device("heizluefter_2", "Heizlüfter 2", "heizluefter_2", BINARY, "watt"),
+    ]
+    readings = {
+        "heizstab": {
+            "technische_freigabe": {"value": True},
+            "min_technisch": {"value": 500.0},
+            "max_technisch": {"value": 3000.0},
+            "ep_max_temperatur": {"value": 60.0},
+        },
+        "heizluefter_1": {"technische_freigabe": {"value": True}, "leistung_w": {"value": 1500.0}},
+        "heizluefter_2": {"technische_freigabe": {"value": True}, "leistung_w": {"value": 1500.0}},
+    }
+    return build_constraints(devices, readings)
+
+
+def test_priorities_normalized_to_strict_ranking():
+    # KI liefert unsaubere Prios (Duplikate, Lücken, >100); EP kanonisiert auf 10/20/30
+    # in relativer Reihenfolge und klemmt – statt den Plan abzulehnen.
+    plan = _plan(
+        [
+            {"name": "heizstab", "prio_vorschlag": 90},
+            {"name": "heizluefter_1", "prio_vorschlag": 5},
+            {"name": "heizluefter_2", "prio_vorschlag": 5},
+        ]
+    )
+    result = validate(plan, _ranked_constraints(), now=NOW)
+    assert result.ok
+    prios = {d["name"]: d["prio_vorschlag"] for d in result.normalized_plan["devices"]}
+    # Sortierung (Prio, Index): lüfter1(5,1)->10, lüfter2(5,2)->20, heizstab(90,0)->30
+    assert prios == {"heizluefter_1": 10, "heizluefter_2": 20, "heizstab": 30}
+    assert len(result.clamped) == 3
+
+
+def test_battery_excluded_from_priority_ranking():
+    # Batterie trägt keine Priorität (D-037) und darf die Rangfolge nicht stören;
+    # das einzige echte Prio-Gerät erhält Rang 1 (= 10).
+    plan = _plan(
+        [
+            {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+            {"name": "heizstab", "prio_vorschlag": 7},
+        ]
+    )
+    result = validate(plan, _constraints(), now=NOW)
+    assert result.ok
+    devs = {d["name"]: d for d in result.normalized_plan["devices"]}
+    assert "prio_vorschlag" not in devs["batterie"]
+    assert devs["heizstab"]["prio_vorschlag"] == 10

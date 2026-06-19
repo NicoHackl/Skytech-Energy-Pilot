@@ -107,11 +107,12 @@ def build_prompt(context: dict) -> str:
         "- Gib pro Gerät NUR die Felder aus, die in dessen `allowed_fields` stehen.\n"
         "- Eine technisch gesperrte Last (technische_freigabe=false) darfst du nicht "
         "freigeben.\n"
-        "- Prioritäten von Geräten darfst du nur in 10er Schritten von 10 - 100 setzten."
-        "10 ist dabei die höchste, und 100 die niedrigste Priorität."
-        "Dabei muss es mit Prio 10 beginnen und immer um 10 aufsteigen z.b. 10, 20 ,30\n"
-        "- Die Batterie hat immer Priorität 1 und ist immer freigegeben; schlage für sie "
-        "nur die geschützte Mindest-Ladeleistung vor.\n"
+        "- Vergib den Geräten (NICHT der Batterie) eine eindeutige Rangfolge als "
+        "`prio_vorschlag`: beginne bei 10 (höchste Priorität) und steigere in "
+        "10er-Schritten – 10, 20, 30 … Keine Werte doppelt, keine Lücken, höchstens 100.\n"
+        "- Die Batterie ist konzeptionell stets vorrangig und immer freigegeben; sie "
+        "bekommt KEINE Priorität – schlage für sie nur die geschützte "
+        "Mindest-Ladeleistung vor.\n"
         "- Erfinde keine Geräte; verwende exakt die `name`-Werte aus `devices`.\n"
         "- Gewichte die weichen Ziele gemäß `objectives` (0–100 %).\n\n"
         "Gib zusätzlich `confidence` (0–100), eine kurze deutsche `reasoning`-Begründung "
@@ -130,7 +131,10 @@ def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
     """
     device_properties = {
         "name": {"type": "STRING"},
-        "prio_vorschlag": {"type": "INTEGER"},
+        "prio_vorschlag": {
+            "type": "INTEGER",
+            "description": "10er-Rangfolge ab 10 (höchste Prio); nicht für die Batterie.",
+        },
         "freigabe_vorschlag": {"type": "BOOLEAN"},
         "geschutzte_mindestleistung_w_vorschlag": {"type": "NUMBER"},
         "geschutzte_mindestleistung_a_vorschlag": {"type": "NUMBER"},

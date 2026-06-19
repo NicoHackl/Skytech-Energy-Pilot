@@ -29,6 +29,11 @@ _PROTECTED_MIN_KEYS = (
     "geschutzte_mindestleistung_a_vorschlag",
 )
 
+# Prioritäten bilden eine eindeutige, lückenlose Rangfolge in 10er-Schritten ab 10
+# (10 = höchste). Gilt für alle Prio-Geräte; die Batterie hat keine Priorität (D-037).
+_PRIO_KEY = "prio_vorschlag"
+_PRIO_STEP = 10
+
 
 @dataclass
 class ValidationResult:
@@ -115,6 +120,43 @@ def _check_device(
         )
 
 
+def _normalize_priorities(
+    devices: list[dict], by_name: dict[str, DeviceConstraint], clamped: list[str]
+) -> None:
+    """Erzwingt die strikte 10er-Rangfolge (10, 20, 30 …) über alle Prio-Geräte (in-place).
+
+    Die KI-Werte gelten nur als **relative Reihenfolge** (kleinster Wert = höchste
+    Priorität). EP kanonisiert sie auf Rang*10 — eindeutig und lückenlos; geänderte
+    Werte werden wie andere Klemmungen protokolliert. Prio-Verstöße verwerfen einen
+    Plan also nie (konsistent mit der Klemm-Logik). Die Batterie trägt keine Priorität
+    (Schreibvertrag D-037) und bleibt außen vor.
+    """
+    # Nur Geräte, deren Schreibvertrag eine Priorität erlaubt und die einen
+    # ganzzahligen Prio-Wert tragen (float wie 2.0 wird mitgenommen, bool nicht).
+    ranked: list[tuple[int, int, dict]] = []  # (KI-Prio, ursprünglicher Index, Eintrag)
+    for index, entry in enumerate(devices):
+        constraint = by_name.get(entry.get("name"))
+        if constraint is None or _PRIO_KEY not in suggestion_keys(constraint):
+            continue
+        value = entry.get(_PRIO_KEY)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if not isinstance(value, int):
+            continue
+        ranked.append((value, index, entry))
+
+    # Stabil nach (KI-Priorität, ursprüngliche Reihenfolge) sortieren = gemeinte Rangfolge.
+    # Hinweis: >10 Prio-Geräte sprengen das 10–100-Band; für V1 (≤10 Geräte) irrelevant.
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    for rank, (old_value, _index, entry) in enumerate(ranked, start=1):
+        new_value = rank * _PRIO_STEP
+        if new_value != old_value:
+            clamped.append(f"{entry['name']}.{_PRIO_KEY}: {old_value} -> {new_value}")
+        entry[_PRIO_KEY] = new_value  # immer den kanonischen int schreiben
+
+
 def validate(
     plan_dict: dict,
     constraints: list[DeviceConstraint],
@@ -148,6 +190,9 @@ def validate(
             errors.append(f"{entry['name']}: unbekanntes Gerät (nicht in den erkannten Geräten)")
             continue
         _check_device(entry, constraint, errors, clamped)
+
+    # Stufe 2b: Prioritäten geräteübergreifend auf die strikte 10er-Rangfolge bringen.
+    _normalize_priorities(normalized["devices"], by_name, clamped)
 
     return ValidationResult(
         ok=not errors, errors=errors, clamped=clamped, normalized_plan=normalized

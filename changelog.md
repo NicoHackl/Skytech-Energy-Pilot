@@ -6,6 +6,34 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.15] - 2026-06-19
+
+### Geändert
+- **Prioritäten als erzwungene Rangfolge (statt weicher Prompt-Bitte):** Der Validator
+  normalisiert `prio_vorschlag` jetzt geräteübergreifend auf eine eindeutige, lückenlose
+  10er-Rangfolge (10 = höchste, dann 20, 30 …). Die KI-Werte gelten nur als **relative
+  Reihenfolge**; nicht-konforme Werte (Duplikate, Lücken, >100, Nicht-Vielfache) werden
+  auf gültige Ränge geklemmt und als `clamped` protokolliert — der Plan wird dadurch nie
+  abgelehnt (Iron Rule 6/8). Die Batterie bleibt außen vor (kein `prio_vorschlag`, D-037).
+  Betroffen: [validator.py](app/energy_pilot/validator.py) (neue Normalisierung),
+  [plan_schema.py](app/energy_pilot/plan_schema.py) (Prio bewusst nur strukturell),
+  [plan_context.py](app/energy_pilot/plan_context.py) (Prompt entwidersprochen — Rangfolge
+  gilt für alle Geräte außer der Batterie; Tippfehler bereinigt; `prio_vorschlag`-
+  Beschreibung im Antwortschema). Regressionstests ergänzt.
+
+## [0.0.14] - 2026-06-19
+
+### Geändert
+- **KI-Prompt – Prioritäten-Regel präzisiert:** Die Rangfolge muss bei 10 beginnen und
+  in 10er-Schritten aufsteigen (10, 20, 30 …). Versionsnummer nachgezogen.
+
+## [0.0.13] - 2026-06-19
+
+### Hinzugefügt
+- **KI-Prompt – Prioritäten-Regel:** Geräte-Prioritäten nur in 10er-Schritten von 10–100
+  (10 = höchste, 100 = niedrigste). Zunächst nur als Prompt-Vorgabe — ab 0.0.15
+  deterministisch im Validator erzwungen.
+
 ## [0.0.12] - 2026-06-19
 
 ### Behoben

@@ -128,7 +128,11 @@ PLAN_JSON_SCHEMA: dict = {
                 "additionalProperties": False,
                 "properties": {
                     "name": {"type": "string", "minLength": 1},
-                    "prio_vorschlag": {"type": "integer", "minimum": 1},
+                    # Prio hier bewusst nur strukturell (integer): die eindeutige
+                    # 10er-Rangfolge erzwingt der Validator per Normalisierung. Eine
+                    # strenge Schemagrenze würde nicht-konforme Werte schon in Stufe 1
+                    # ablehnen, statt sie (gewünscht) zu normalisieren.
+                    "prio_vorschlag": {"type": "integer"},
                     "freigabe_vorschlag": {"type": "boolean"},
                     "geschutzte_mindestleistung_w_vorschlag": {"type": "number", "minimum": 0},
                     "geschutzte_mindestleistung_a_vorschlag": {"type": "number", "minimum": 0},

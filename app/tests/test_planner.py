@@ -64,7 +64,7 @@ async def test_run_produces_valid_plan(tmp_path):
         "devices": [
             {
                 "name": "heizstab",
-                "prio_vorschlag": 2,
+                "prio_vorschlag": 10,
                 "freigabe_vorschlag": True,
                 "geschutzte_mindestleistung_w_vorschlag": 800.0,
                 "max_temperatur_vorschlag": 55.0,
