@@ -95,6 +95,7 @@ def build() -> web.Application:
         provider,
         config,
         db,
+        ha_client=ha_client,
         collector=collector,
         forecast_collector=forecast_collector,
         device_collector=device_collector,

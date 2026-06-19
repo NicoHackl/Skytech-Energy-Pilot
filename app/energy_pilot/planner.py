@@ -32,6 +32,7 @@ from energy_pilot.plan_schema import (
     DeviceSuggestion,
     plan_to_dict,
 )
+from energy_pilot.suggestion_publisher import publish_suggestions
 from energy_pilot.validator import validate
 
 
@@ -45,6 +46,7 @@ class PlanRunResult:
     ai_call: dict  # {provider, model, tokens_in, tokens_out, ok, error?}
     context: dict | None
     error: str | None = None
+    published: dict | None = None  # {ok, written, failed, reason} – HA-Schreibergebnis
 
 
 def _as_int(value: object) -> int | None:
@@ -76,6 +78,7 @@ class Planner:
         config: AddonConfig,
         db: sqlite3.Connection | None,
         *,
+        ha_client: object | None = None,
         collector: object | None = None,
         forecast_collector: object | None = None,
         device_collector: object | None = None,
@@ -84,6 +87,7 @@ class Planner:
         self.provider = provider
         self.config = config
         self.db = db
+        self.ha_client = ha_client
         self.collector = collector
         self.forecast_collector = forecast_collector
         self.device_collector = device_collector
@@ -175,6 +179,16 @@ class Planner:
             run_id=run_id, plan_id=run_id,
             provider=self.provider.name, model=str(self.config.model),
         )
+
+        # Vorschlagswerte nach HA schreiben – nur bei gültigem Plan und aktivem Schalter
+        # (geklemmte Pläne sind gültig; abgelehnte werden nie geschrieben). D-008-Schreibweg.
+        published = None
+        if result.ok and self._publish_enabled():
+            pub = await publish_suggestions(
+                self.ha_client, stored, devices, logger=self.logger, db=self.db
+            )
+            published = pub.as_dict()
+
         return PlanRunResult(
             ok=result.ok,
             plan=stored,
@@ -187,6 +201,7 @@ class Planner:
                 "ok": True,
             },
             context=context,
+            published=published,
         )
 
     def latest_plan(self) -> dict | None:
@@ -210,12 +225,35 @@ class Planner:
             },
         }
 
+    async def publish_latest(self) -> dict:
+        """Schreibt den zuletzt **gültigen** Plan erneut als HA-Sensoren (manueller Button).
+
+        Liefert das Schreibergebnis (`ok`/`written`/`failed`/`reason`); ohne gültigen Plan
+        bzw. ohne HA-Client kommt eine klare Begründung statt eines Fehlers (Iron Rule 8).
+        """
+        latest = self.latest_plan()
+        if latest is None or not latest.get("ok"):
+            return {
+                "ok": False, "written": [], "failed": [],
+                "reason": "kein gültiger Plan vorhanden",
+            }
+        dc = self.device_collector
+        devices = getattr(dc, "devices", []) if dc is not None else []
+        result = await publish_suggestions(
+            self.ha_client, latest["plan"], devices, logger=self.logger, db=self.db
+        )
+        return result.as_dict()
+
     async def aclose(self) -> None:
         """Schließt die Provider-Ressourcen (aiohttp-Session)."""
         if self.provider is not None:
             await self.provider.close()
 
     # -- intern -------------------------------------------------------------
+
+    def _publish_enabled(self) -> bool:
+        """Ob Vorschlagswerte nach HA geschrieben werden (Addon-Option, Default an)."""
+        return bool(self.config.values.get("publish_suggestions", True))
 
     def _assemble_plan(
         self, model_data: dict, *, plan_id: str, valid_from: str, valid_until: str

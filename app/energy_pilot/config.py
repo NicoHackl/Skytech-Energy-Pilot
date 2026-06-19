@@ -21,6 +21,9 @@ DEFAULTS: dict[str, object] = {
     "forecast_horizon_h": 24,
     "min_confidence_percent": 70,
     "collect_interval_s": 30,
+    # Vorschlagswerte als sensor.ep_*_vorschlag nach HA schreiben (M2-Schreibweg, D-008).
+    # False => reiner Beobachten-Modus: Plan bleibt in UI/DB, EP schreibt nichts nach HA.
+    "publish_suggestions": True,
     # Basis-URL des HEMS-Addons für die Geräte-Discovery (D-036). Leer => nur Config-Fallback.
     "hems_base_url": "",
     # Geräteliste als Fallback, falls HEMS nicht erreichbar ist (entity_prefix/class/output_unit).

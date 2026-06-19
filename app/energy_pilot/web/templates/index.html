@@ -93,13 +93,16 @@
   <section id="plan" class="tab">
     <div class="toolbar">
       <button id="run-plan">Plan erzeugen</button>
+      <button id="publish-plan">Erneut nach HA schreiben</button>
       <button id="refresh-plan">Aktualisieren</button>
       <button id="test-ai">KI-Verbindung testen</button>
       <span id="plan-status"></span>
     </div>
     <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Die KI erzeugt einen
        <strong>Vorschlagsplan</strong> (V1). Werte werden lokal gegen die harten Grenzen
-       validiert, aber <strong>nicht</strong> an HEMS übergeben.</p>
+       validiert und bei Gültigkeit als <code>sensor.ep_*_vorschlag</code> nach Home
+       Assistant geschrieben (reine Anzeige zum manuellen Verdrahten) — aber
+       <strong>nicht</strong> an HEMS übergeben.</p>
     <div id="plan-result"></div>
   </section>
 
@@ -339,6 +342,18 @@
             <table><tbody>${rows || "<tr><td>– keine Vorschläge –</td><td></td></tr>"}</tbody></table>`;
         })
         .join("");
+      const pub = data && data.published;
+      let publishedHtml = "";
+      if (pub) {
+        if (pub.written && pub.written.length)
+          publishedHtml += `<p style="font-size:.85rem;color:#2a8;">✅ Geschrieben: ${pub.written.map((e) => `<code>${e}</code>`).join(", ")}</p>`;
+        if (pub.failed && pub.failed.length)
+          publishedHtml += `<p style="font-size:.85rem;color:#c33;">❌ Fehlgeschlagen: ${pub.failed.map((f) => `<code>${f.entity_id}</code> (${f.error})`).join(", ")}</p>`;
+        if (!publishedHtml && pub.reason)
+          publishedHtml += `<p style="font-size:.85rem;color:#888;">${pub.reason}</p>`;
+        if (publishedHtml)
+          publishedHtml = `<h2 style="font-size:1rem;margin-top:1rem;">Nach HA geschrieben</h2>${publishedHtml}`;
+      }
       const reasoning = p.reasoning
         ? `<h3 style="font-size:.95rem;margin-top:1rem;">Begründung</h3><p style="font-size:.85rem;">${p.reasoning}</p>` : "";
       const warnings = (p.warnings || []).length
@@ -346,7 +361,7 @@
       const context = data.context
         ? `<details style="margin-top:1rem;"><summary style="cursor:pointer;font-size:.85rem;">An die KI gesendete Daten</summary><pre style="font-size:.75rem;overflow:auto;">${JSON.stringify(data.context, null, 2)}</pre></details>` : "";
       box.innerHTML = `<div class="kv">${metaHtml}</div>${errHtml}${clampHtml}
-        <h2 style="font-size:1rem;margin-top:1rem;">Geräte-Vorschläge</h2>${devHtml}${reasoning}${warnings}${context}`;
+        <h2 style="font-size:1rem;margin-top:1rem;">Geräte-Vorschläge</h2>${devHtml}${publishedHtml}${reasoning}${warnings}${context}`;
     }
 
     async function loadPlan() {
@@ -367,6 +382,26 @@
         const errs = (data.validation && data.validation.errors) || (data.error ? [data.error] : []);
         status.textContent = data.ok ? " ✅ Plan erzeugt" : ` ❌ ${errs.join("; ")}`;
         renderPlan(data);
+      } catch (e) {
+        status.textContent = " ❌ " + e;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function publishPlan() {
+      const status = document.getElementById("plan-status");
+      const btn = document.getElementById("publish-plan");
+      status.textContent = " … schreibe nach HA …";
+      btn.disabled = true;
+      try {
+        const data = await (await fetch("api/plan/publish", { method: "POST" })).json();
+        if (data.ok) {
+          status.textContent = ` ✅ ${(data.written || []).length} Sensor(en) geschrieben`;
+        } else {
+          const why = data.reason || (data.failed || []).map((f) => f.entity_id).join(", ");
+          status.textContent = ` ❌ ${why}`;
+        }
       } catch (e) {
         status.textContent = " ❌ " + e;
       } finally {
@@ -399,6 +434,7 @@
     document.getElementById("refresh-grenzen").addEventListener("click", () => { loadConstraints(); loadObjectives(); });
     document.getElementById("refresh-plan").addEventListener("click", loadPlan);
     document.getElementById("run-plan").addEventListener("click", runPlan);
+    document.getElementById("publish-plan").addEventListener("click", publishPlan);
     document.getElementById("test-ai").addEventListener("click", testAI);
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();

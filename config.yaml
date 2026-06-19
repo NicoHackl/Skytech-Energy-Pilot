@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.15"
+version: "0.0.16"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -30,6 +30,9 @@ options:
   forecast_horizon_h: 24
   min_confidence_percent: 70
   collect_interval_s: 30
+  # Vorschlagswerte als sensor.ep_*_vorschlag nach HA schreiben (M2-Schreibweg, D-008).
+  # false => reiner Beobachten-Modus: Plan bleibt in UI/DB, EP schreibt nichts nach HA.
+  publish_suggestions: true
   # HEMS-Geräte-Discovery (D-036): Basis-URL des HEMS-Addons. Leer => nur Config-Fallback unten.
   # Beispiel (Addon-Hostname, Port 8099): http://local_skytech_hems:8099
   hems_base_url: ""
@@ -80,6 +83,7 @@ schema:
   forecast_horizon_h: int(12,48)
   min_confidence_percent: int(0,100)
   collect_interval_s: int(5,300)
+  publish_suggestions: bool?
   hems_base_url: str?
   devices:
     - name: str

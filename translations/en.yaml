@@ -23,6 +23,9 @@ configuration:
   collect_interval_s:
     name: Collection interval (seconds)
     description: Interval at which live values are read from Home Assistant.
+  publish_suggestions:
+    name: Publish suggestions to HA
+    description: Write validated suggestion values as sensor.ep_*_vorschlag into Home Assistant. Off => observe-only mode (no HA sensors).
   entity_pv_power:
     name: Entity PV power
     description: HA entity for current PV power (e.g. sensor.e3dc_leistung_pv).

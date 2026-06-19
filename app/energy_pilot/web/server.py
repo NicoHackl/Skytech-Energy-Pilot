@@ -74,6 +74,7 @@ def create_app(
             web.get("/api/objectives", objectives_get),
             web.get("/api/plan/schema", plan_schema_get),
             web.post("/api/plan/run", plan_run),
+            web.post("/api/plan/publish", plan_publish),
             web.get("/api/plan", plan_get),
             web.get("/api/ai/test", ai_test),
             web.get("/api/diagnostics", diagnostics),
@@ -366,10 +367,26 @@ async def plan_run(request: web.Request) -> web.Response:
         "validation": result.validation,
         "ai_call": result.ai_call,
         "context": result.context,
+        "published": result.published,
     }
     if result.error:
         payload["error"] = result.error
     return web.json_response(payload)
+
+
+async def plan_publish(request: web.Request) -> web.Response:
+    """Schreibt den zuletzt gültigen Plan (erneut) als HA-`sensor.ep_*`-Vorschläge.
+
+    Manueller Re-Publish-Button im Plan-Tab. Liefert das Schreibergebnis kontrolliert
+    zurück (ohne gültigen Plan/HA-Client: `ok=false` mit Begründung, kein Crash).
+    """
+    planner = request.app.get("planner")
+    if planner is None:
+        return web.json_response(
+            {"ok": False, "reason": "KI nicht konfiguriert (api_key fehlt)"}, status=503
+        )
+    result = await planner.publish_latest()
+    return web.json_response(result)
 
 
 async def plan_get(request: web.Request) -> web.Response:

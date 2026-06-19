@@ -23,6 +23,9 @@ configuration:
   collect_interval_s:
     name: Erfassungsintervall (Sekunden)
     description: Abstand, in dem Live-Werte aus Home Assistant gelesen werden.
+  publish_suggestions:
+    name: Vorschläge nach HA schreiben
+    description: Validierte Vorschlagswerte als sensor.ep_*_vorschlag in Home Assistant schreiben. Aus => reiner Beobachten-Modus (keine HA-Sensoren).
   entity_pv_power:
     name: Entität PV-Leistung
     description: HA-Entität für die aktuelle PV-Leistung (z.B. sensor.e3dc_leistung_pv).

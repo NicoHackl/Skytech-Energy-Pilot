@@ -52,11 +52,46 @@ class _Devices:
         }
 
 
-def _planner(tmp_path, provider):
+class _FakeHA:
+    """HA-Client-Doppel: zeichnet die set_state-Aufrufe des Publishers auf."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def set_state(self, entity_id, state, attributes=None):
+        self.calls.append((entity_id, state, attributes))
+        return {"entity_id": entity_id, "state": state}
+
+
+# Gültiger Modell-Output (heizstab + batterie), wird in mehreren Tests genutzt.
+_VALID_DATA = {
+    "devices": [
+        {
+            "name": "heizstab",
+            "prio_vorschlag": 10,
+            "freigabe_vorschlag": True,
+            "geschutzte_mindestleistung_w_vorschlag": 800.0,
+            "max_temperatur_vorschlag": 55.0,
+        },
+        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+    ],
+    "confidence": 80,
+    "reasoning": "Test",
+    "warnings": [],
+}
+
+
+def _planner(tmp_path, provider, *, ha_client=None, options=None):
     config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
+    if options:
+        config.values.update(options)
     logger, _ = setup_logging("DEBUG", stream=io.StringIO())
     db = init_db(str(tmp_path / "ep.db"))
-    return Planner(provider, config, db, device_collector=_Devices(), logger=logger), db
+    planner = Planner(
+        provider, config, db,
+        ha_client=ha_client, device_collector=_Devices(), logger=logger,
+    )
+    return planner, db
 
 
 async def test_run_produces_valid_plan(tmp_path):
@@ -152,3 +187,73 @@ async def test_run_without_provider_reports_not_configured(tmp_path):
     assert result.error == "provider_not_configured"
     assert db.execute("SELECT COUNT(*) AS n FROM ai_calls").fetchone()["n"] == 0
     assert db.execute("SELECT COUNT(*) AS n FROM plans").fetchone()["n"] == 0
+
+
+async def test_run_publishes_valid_plan_to_ha(tmp_path):
+    ha = _FakeHA()
+    planner, _ = _planner(tmp_path, _FakeProvider(_VALID_DATA), ha_client=ha)
+
+    result = await planner.run(now=NOW)
+
+    assert result.ok
+    assert result.published is not None and result.published["ok"]
+    written = set(result.published["written"])
+    assert "sensor.ep_heizstab_prio_vorschlag" in written
+    assert "sensor.ep_batterie_geschutzte_mindestleistung_w_vorschlag" in written
+    # Es wurde tatsächlich nach HA geschrieben (nicht nur im Ergebnis gemeldet).
+    assert any(call[0] == "sensor.ep_heizstab_freigabe_vorschlag" for call in ha.calls)
+
+
+async def test_run_does_not_publish_rejected_plan(tmp_path):
+    # Batterie mit Priorität verletzt den Schreibvertrag (D-037) -> Plan abgelehnt.
+    data = {
+        "devices": [
+            {"name": "batterie", "prio_vorschlag": 1,
+             "geschutzte_mindestleistung_w_vorschlag": 1000.0}
+        ],
+        "confidence": 50,
+        "reasoning": "x",
+    }
+    ha = _FakeHA()
+    planner, _ = _planner(tmp_path, _FakeProvider(data), ha_client=ha)
+
+    result = await planner.run(now=NOW)
+
+    assert not result.ok
+    assert result.published is None
+    assert ha.calls == []
+
+
+async def test_run_respects_publish_disabled(tmp_path):
+    ha = _FakeHA()
+    planner, _ = _planner(
+        tmp_path, _FakeProvider(_VALID_DATA), ha_client=ha,
+        options={"publish_suggestions": False},
+    )
+
+    result = await planner.run(now=NOW)
+
+    assert result.ok
+    assert result.published is None
+    assert ha.calls == []
+
+
+async def test_publish_latest_rewrites_last_valid_plan(tmp_path):
+    ha = _FakeHA()
+    planner, _ = _planner(tmp_path, _FakeProvider(_VALID_DATA), ha_client=ha)
+    await planner.run(now=NOW)
+    ha.calls.clear()
+
+    result = await planner.publish_latest()
+
+    assert result["ok"]
+    assert any(call[0].startswith("sensor.ep_") for call in ha.calls)
+
+
+async def test_publish_latest_without_valid_plan_reports_reason(tmp_path):
+    planner, _ = _planner(tmp_path, None, ha_client=_FakeHA())
+
+    result = await planner.publish_latest()
+
+    assert not result["ok"]
+    assert "kein gültiger Plan" in result["reason"]

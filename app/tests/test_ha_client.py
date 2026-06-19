@@ -30,9 +30,15 @@ class _FakeSession:
     def __init__(self, payload):
         self._payload = payload
         self.urls = []
+        self.posts = []
 
     def get(self, url, headers=None):
         self.urls.append(url)
+        return _FakeResponse(self._payload)
+
+    def post(self, url, headers=None, json=None):
+        self.urls.append(url)
+        self.posts.append({"url": url, "json": json})
         return _FakeResponse(self._payload)
 
 
@@ -62,6 +68,30 @@ async def test_get_state_builds_entity_url():
 
     assert result["state"] == "1234"
     assert session.urls[0].endswith("/states/sensor.pv_leistung")
+
+
+@pytest.mark.asyncio
+async def test_set_state_posts_state_and_attributes():
+    session = _FakeSession({"entity_id": "sensor.ep_heizstab_prio_vorschlag", "state": "10"})
+    client = HAClient(token="t", session=session)
+
+    result = await client.set_state(
+        "sensor.ep_heizstab_prio_vorschlag", "10", {"unit_of_measurement": "W"}
+    )
+
+    assert result["state"] == "10"
+    assert session.posts[0]["url"].endswith("/states/sensor.ep_heizstab_prio_vorschlag")
+    assert session.posts[0]["json"] == {"state": "10", "attributes": {"unit_of_measurement": "W"}}
+
+
+@pytest.mark.asyncio
+async def test_set_state_omits_attributes_when_none():
+    session = _FakeSession({"state": "on"})
+    client = HAClient(token="t", session=session)
+
+    await client.set_state("sensor.ep_heizstab_freigabe_vorschlag", "on")
+
+    assert session.posts[0]["json"] == {"state": "on"}
 
 
 @pytest.mark.asyncio

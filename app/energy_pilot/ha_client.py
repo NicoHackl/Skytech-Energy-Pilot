@@ -80,6 +80,25 @@ class HAClient:
             resp.raise_for_status()
             return await resp.json()
 
+    async def set_state(
+        self, entity_id: str, state: str, attributes: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Schreibt einen Zustand nach HA (POST /api/states/<entity_id>).
+
+        Wird für die EP-eigenen `sensor.ep_*`-Vorschlagsentitäten genutzt (V1-Schreibweg,
+        siehe user-beispiele/variablen-zugriff.md). **Kein** Allowlist-Guard: die Allowlist
+        ist die Lese-Domäne (D-038); Schreibziele sind ausschließlich EP-eigene Ausgaben.
+        """
+        session = await self._ensure_session()
+        body: dict[str, Any] = {"state": state}
+        if attributes:
+            body["attributes"] = attributes
+        async with session.post(
+            f"{self.base_url}/states/{entity_id}", headers=self.headers, json=body
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     async def open_websocket(self) -> aiohttp.ClientWebSocketResponse:
         """Öffnet die WebSocket-Verbindung (Auth-Handshake folgt in M1)."""
         session = await self._ensure_session()

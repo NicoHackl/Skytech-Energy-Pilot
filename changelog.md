@@ -6,6 +6,30 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.16] - 2026-06-19
+
+### Hinzugefügt
+- **Vorschlagssensoren — KI-Vorschläge nach Home Assistant schreiben (Abschluss M2):**
+  EP veröffentlicht die validierten Vorschlagswerte eines Plans jetzt als
+  `sensor.ep_<gerät>_<feld>_vorschlag`-Entitäten in HA (V1-Schreibweg aus
+  [variablen-zugriff.md](user-beispiele/variablen-zugriff.md)). Damit ist die M2-DoD
+  „sichtbar in UI/**Sensoren**/Logs" vollständig erfüllt. Es sind **reine Anzeige-/
+  Vorschlagssensoren** — sie steuern nichts und werden (noch) **nicht** an HEMS übergeben
+  (das ist M3); der User verdrahtet sie testweise selbst in HA-Automationen. Geschrieben
+  werden ausschließlich die je Gerät vertraglich erlaubten Felder (D-030/D-034/D-037/D-035).
+  Booleans als `on`/`off`, Leistung/Temperatur mit `unit_of_measurement`. Neues Modul
+  `suggestion_publisher.py` (reine Entity-Erzeugung + fehlertolerantes Schreiben, Iron Rule 8);
+  HA-Schreibzugriff `HAClient.set_state` (POST `/api/states`, **ohne** Allowlist-Guard, da
+  diese die Lese-Domäne ist, D-038). Jeder Schreibvorgang wird als `suggestions_published`
+  auditiert.
+- **Auslöser (Auto + manuell):** Nach jedem **gültigen** Plan schreibt EP automatisch
+  (abgelehnte Pläne nie). Zusätzlich ein Button **„Erneut nach HA schreiben"** im Plan-Tab
+  und der Endpunkt `POST /api/plan/publish`, der den zuletzt gültigen Plan erneut
+  veröffentlicht. Die `POST /api/plan/run`-Antwort enthält jetzt das Schreibergebnis
+  (`published`); der Plan-Tab zeigt die geschriebenen Entitäten.
+- **Neue Addon-Option `publish_suggestions`** (Default `true`): auf `false` bleibt EP im
+  reinen Beobachten-Modus (Plan in UI/DB, **kein** HA-Schreiben).
+
 ## [0.0.15] - 2026-06-19
 
 ### Geändert
