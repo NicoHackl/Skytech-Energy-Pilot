@@ -1,4 +1,6 @@
-# Claude-Fragen — v5 (Stand 17.06.2026)
+# Claude-Fragen — v5 (Stand 17.06.2026) · ✅ A-FRAGEN BEANTWORTET / ARCHIVIERT
+
+> **Status:** A2–A6 beantwortet und eingearbeitet → Decision Log [../plan/entscheidungen.md](../plan/entscheidungen.md) (**D-029…D-033**). A1 hat der User durch die `.txt`-Aktualisierung selbst aufgelöst. Neue Folgefragen + geparkte B-Fragen laufen in [claude-fragen-v6.md](claude-fragen-v6.md) weiter. Diese Datei bleibt als Historie.
 
 > Neue Fragen aus dem Wissen von [../user-beispiele/variablen-zugriff.txt](../user-beispiele/variablen-zugriff.txt) bzw. der strukturierten [../user-beispiele/variablen-zugriff.md](../user-beispiele/variablen-zugriff.md).
 > Format wie gehabt: Antwort direkt unter die Frage schreiben; ich übernehme sie danach nach [../plan/entscheidungen.md](../plan/entscheidungen.md) und entferne sie in v6.
@@ -8,33 +10,25 @@
 
 ## A — Aktuell projektrelevant (betrifft Namensschema & gelieferte HA-Config jetzt)
 
-### A1 — Suffix-Schema der technischen Grenzwert-Helfer weicht ab
-Die `.txt` nennt für die vom User gepflegten technischen Werte:
-`XXX_technische_freigabe`, `XXX_min_technisch_w`, `XXX_max_technisch_w`, `XXX_leistung_w`.
-Meine gelieferten Helfer ([../claude-ha-config-dateien/](../claude-ha-config-dateien/)) heißen aktuell `ep_heizstab_freigabe`, `ep_heizstab_leistung_maximal` usw. — also **anderes Suffix-Schema**.
-**Frage:** Soll ich auf das `.txt`-Schema umstellen (`…_technische_freigabe`, `…_min_technisch_w`, `…_max_technisch_w`)?
-
-Antwort:
-
 ### A2 — Prefix-Domäne der technischen Werte: `ep_` oder `ems_`?
 Diese technischen Grenzwerte/Freigaben sind laut `.txt` „**HEMS-Werte, die vom User gepflegt werden**", die EP nur **liest**.
 **Frage:** Liegen sie als **HEMS-Entitäten** (`ems_*`, evtl. schon im HEMS vorhanden) vor, die EP einfach mitliest — oder soll ich sie weiter als eigene `ep_*`-Helfer ausliefern? (Falls `ems_*`: keine Duplikate in [../claude-ha-config-dateien/](../claude-ha-config-dateien/) nötig.)
 
-Antwort:
+Antwort: für User-Eingaben von geräten gibt es dann (aktuell) nur HEMS (also ems_) Helfer/Entitäten, wenn dann vorschlagswerte geschrieben werden dann sind es ep_ Werte also vom Energy Pilot
 
 ### A3 — EP-Schreibvertrag = nur Priorität + geschützte Mindestleistung?
-Laut `.txt` schreibt EP **ausschließlich**: `XXX_prio_vorschlag` und `XXX_geschutzte_mindestleistung_w` / `_a`.
+Laut `.txt` schreibt EP **ausschließlich**: `XXX_prio_vorschlag` und `XXX_geschutzte_mindestleistung_w_vorschlag` / `_a_vorschlag`.
 Frühere Beispiele (CLAUDE.md) nannten EP-Vorschläge wie `ep_batterie_1_ziel_soc` oder max. Ladeleistung als Vorschlag.
 **Frage:** Ist der EP-Schreibvertrag damit reduziert auf **(a) Prioritäts-Vorschlag** und **(b) geschützte Mindestleistung**, und HEMS macht die eigentliche Sollwert-/SOC-Regelung? Sind die alten Vorschlags-Beispiele damit überholt?
 
-Antwort:
+Antwort: aktuell nehmen wir nur mal prio, mindestleistung und freigabe (also _freigabe_vorschlag, das habe ich noch zu txt hinzugefügt). Sollten es noch mehr werden werde ich ich es in der txt oder in einer anderen datei in user_beispiele bereit stellen
 
 ### A4 — Binärverbraucher `XXX_leistung_w` vs. „feste 1500 W, kein Helfer"
 Die `.txt` sagt: EP liest für **Binärverbraucher** `XXX_leistung_w`.
 In D-017/D-018 (und meiner [input_number_ep.yaml](../claude-ha-config-dateien/input_number_ep.yaml)) habe ich für die Heizlüfter **keinen** Leistungs-Helfer angelegt, weil sie fest 1500 W haben.
 **Frage:** Braucht **jeder** Binärverbraucher doch einen (festen, user-gepflegten) `…_leistung_w`-Wert, damit EP die **Lastgröße** für die Energieplanung kennt? Dann lege ich pro Binärgerät einen `…_leistung_w`-Helfer an.
 
-Antwort:
+Antwort: ja der leistungwert (istleistung) von jedem binärgerät wird unter input_number.ems_<NAME>_leistung_w angegeben
 
 ### A5 — Schreibweg in V1: HEMS-Endpunkt vs. HA-Helfer (D-002)
 Die `.txt` sagt: EP schreibt die Vorschläge „in HA-Variablen **und** über einen **HTTP-API-Endpunkt** in **interne Variablen des HEMS**".

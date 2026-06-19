@@ -24,6 +24,7 @@ Format: **ID · Thema · Entscheidung · Begründung/Detail · betroffene plan-D
 ## D-004 · Entitäten-Namensschema wie HEMS
 **Entscheidung:** Naming analog HEMS; `<PREFIX>`/`<SUFFIX>` dürfen ineinander übergehen.
 **Beispiele:** `sensor.ep_batterie_1_ziel_soc`, `sensor.ep_heizstab_freigabe`, `input_number.ep_speicher_soc_mindestwert_1`.
+**⚠️ Präzisiert durch D-029/D-030:** Domäne nach Datenrichtung (`ems_*` lesen / `ep_*` schreiben); obige Beispiele sind als EP-Output **überholt** (gültige Beispiele dort).
 **Quelle:** A4. → [01](01-homeassistant-integration.md)
 
 ## D-005 · HA-Helfer per vorgefertigten YAML-Dateien
@@ -143,6 +144,69 @@ Format: **ID · Thema · Entscheidung · Begründung/Detail · betroffene plan-D
 **Begründung:** Das HA-Basis-Image nutzt s6-overlay; dabei wurde `SUPERVISOR_TOKEN` nicht an den App-Prozess durchgereicht → `ha_configured=false`, keine Datenerfassung. Direkter Python-Start erbt die Container-Umgebung samt Token (verifiziert). Manifest auf das HEMS-Minimum reduziert (`homeassistant_api: true`; `hassio_api`/`auth_api`/`map` entfernt).
 **Quelle:** M1-Debugging 16.06.2026 (Statusseite zeigte ha_configured=false). → Dockerfile, config.yaml
 
-## Noch offen (geparkt, siehe claude-fragen-v4)
-- **B1** Hybrid-Modus: fixierbare Felder pro Gerät — vom User als „zu früh" geparkt (relevant ab M3).
-- **B2** Plan-JSON-Schema gemeinsam mit HEMS — Vormerkung für Ebene 2 (M3).
+---
+
+# Runde 4 (claude-fragen-v5) — Datenfluss/Variablenzugriff HEMS↔EP
+
+> Quelle: [../user-beispiele/variablen-zugriff.txt](../user-beispiele/variablen-zugriff.txt) + strukturierte [../user-beispiele/variablen-zugriff.md](../user-beispiele/variablen-zugriff.md).
+
+## D-029 · Namens-Domäne nach Datenrichtung: `ems_*` vs. `ep_*`
+**Entscheidung:** Vom **User gepflegte technische Gerätewerte** (Grenzwerte, Freigaben, Ist-Leistung) liegen ausschließlich in der **HEMS-Domäne `ems_*`**; EP **liest** sie nur. **EP-Vorschlagswerte** liegen in der **EP-Domäne `ep_*`**; EP **schreibt** sie. Suffix der Vorschläge bleibt `…_vorschlag`.
+**Detail:** Read-Schema (EP liest): Binär `ems_<name>_leistung_w`, `ems_<name>_technische_freigabe`; Regelbar `ems_<name>_technische_freigabe`, `ems_<name>_min_technisch_w`/`_a`, `ems_<name>_max_technisch_w`/`_a`. `technische_freigabe` = ob das Gerät aktuell überhaupt arbeiten kann.
+**Folge:** Die bisher als `ep_*` ausgelieferten **Geräte-Grenzwerte/Freigaben** ([../claude-ha-config-dateien/](../claude-ha-config-dateien/)) gehören in `ems_*` (HEMS). EP-eigene Schalter/Planungsparameter bleiben `ep_*`. Ersetzt das frühere „HEMS-Pendant `ems_*` nur zum Vergleich".
+**Quelle:** v5-A2. → [01](01-homeassistant-integration.md), [03](03-api-schnittstelle-hems.md), CLAUDE.md
+
+## D-030 · EP-Schreibvertrag (Phase 1) = Priorität + geschützte Mindestleistung + Freigabe
+**Entscheidung:** EP schreibt in Phase 1 **ausschließlich** diese Vorschläge: `ep_<name>_prio_vorschlag`, `ep_<name>_geschutzte_mindestleistung_w_vorschlag` / `_a_vorschlag` (regelbar) und `ep_<name>_freigabe_vorschlag` (binär).
+**Detail:** Frühere Beispiele (`ep_batterie_1_ziel_soc`, max. Ladeleistung als Vorschlag o. ä.) sind als EP-Output **überholt**. Erweiterungen des Schreibvertrags kündigt der User über [../user-beispiele/](../user-beispiele/) an.
+**Quelle:** v5-A3. → [01](01-homeassistant-integration.md), [07](07-planning-engine.md)
+
+## D-031 · Jeder Binärverbraucher hat `ems_<name>_leistung_w` (Ist-Leistung)
+**Entscheidung:** Die (Ist-)Leistung **jedes** Binärgeräts wird unter `input_number.ems_<name>_leistung_w` gepflegt; EP liest daraus die **Lastgröße** für die Energieplanung.
+**Detail:** **Präzisiert D-017/D-018**: „feste 1500 W → kein Leistungs-Helfer" galt nur für EP-eigene `ep_*`-Helfer. Die Lastgröße existiert sehr wohl — als `ems_*`-Wert (HEMS-Domäne), nicht als EP-Helfer.
+**Quelle:** v5-A4. → [01](01-homeassistant-integration.md), [07](07-planning-engine.md)
+
+## D-032 · Schreibweg gestaffelt: erst HA-Helfer, später zusätzlich 1:1 HEMS-Endpunkte
+**Entscheidung:** V1 schreibt EP die `ep_*`-Vorschläge **nur** in HA-Helfer/-Entitäten. **Später** zusätzlich **1:1** über HTTP-API direkt in interne HEMS-Variablen — **gleiche Werte, gleich viele Endpunkte wie HA-Helfer**.
+**Detail:** Bestätigt/präzisiert D-002 (die `.txt` beschreibt den späteren Sollzustand, nicht V1).
+**Quelle:** v5-A5. → [03](03-api-schnittstelle-hems.md), [roadmap](roadmap.md) (M3)
+
+## D-033 · V1-Nutzung der Vorschläge: HA-Entitäten, User verdrahtet selbst; HEMS-Auswertung später
+**Entscheidung:** Aktuell zählt nur, dass die Vorschläge in `ep_<name>_…_vorschlag`-Entitäten geschrieben werden. Der User verdrahtet sie **vorerst selbst** testweise in HA-Automationen. **Später** dienen die HA-Entitäten nur der **Übersicht/Dashboards**; die eigentliche **Auswertung passiert im HEMS**, sobald die Vorschläge per API direkt in HEMS-Variablen geschrieben werden.
+**Detail:** Die Frage „wann wirken die Vorschläge / Abhängigkeit vom Steuermodus" ist damit für jetzt **zurückgestellt** (kommt mit der HEMS-Auswertung/M3).
+**Quelle:** v5-A6. → [03](03-api-schnittstelle-hems.md), [12](12-steuermodi.md)
+
+---
+
+# Runde 5 (claude-fragen-v6) — Schreibvertrag/Gerätehelfer, mit HEMS-Quellenabgleich
+
+> Erstmals gegen den **lokal vorliegenden HEMS-Quellcode** ([../../SkytechHEMS/](../../SkytechHEMS/)) verifiziert.
+
+## D-034 · Regelbarer Verbraucher: Schreibvertrag = Priorität + Freigabe + geschützte Mindestleistung
+**Entscheidung:** Regelbare Verbraucher erhalten — **wie binäre** — zusätzlich ein `ep_<name>_freigabe_vorschlag`. EP schreibt für regelbar somit: `ep_<name>_prio_vorschlag`, `ep_<name>_freigabe_vorschlag`, `ep_<name>_geschutzte_mindestleistung_w_vorschlag`/`_a_vorschlag`.
+**Detail:** Die doppelte `prio_vorschlag`-Zeile in der `.txt` (Z.44/45) war ein Tippfehler; der User hat sie auf `freigabe_vorschlag` korrigiert. **Präzisiert D-030**: `freigabe_vorschlag` gilt jetzt für **binär und regelbar**.
+**HEMS-Abgleich:** `_ctrl_items_controllable` (app/main.py) führt `ems_{p}_freigabe`, `ems_{p}_prioritat`, `ems_{p}_geschutzte_mindestleistung_{w|a}` — alle drei EP-Vorschläge haben ein HEMS-Pendant.
+**Quelle:** v6-A1. → [01](01-homeassistant-integration.md), [03](03-api-schnittstelle-hems.md), [../user-beispiele/variablen-zugriff.md](../user-beispiele/variablen-zugriff.md)
+
+## D-035 · Heizstab max. Wassertemperatur: zwei EP-eigene Entitäten (`ep_*`), nicht HEMS
+**Entscheidung:** Die max. Wassertemperatur ist **nicht HEMS-relevant** und wird vom HEMS nicht gestellt. Stattdessen (aktuell) zwei **EP-Entitäten**:
+- `input_number.ep_heizstab_max_temperatur` → harter **Grenzwert für EP**, den **EP nur liest**. **Helfer**, weil ihn der **User/externes Backend pflegt** (vom mir als `input_number` geliefert).
+- `sensor.ep_heizstab_max_temperatur_vorschlag` → **EP schreibt** (Vorschlag für die max. Heizstabtemperatur). **EP-eigene `sensor.`-Entität** (kein Helfer), konsistent mit D-030 (alle `ep_*_vorschlag` = Sensoren).
+**Detail:** Ein `ep_*`-Wert, den **EP liest** → **präzisiert D-029**: „`ep_*` = EP schreibt" gilt nicht ausnahmslos; die EP-Domäne kann auch user-/extern-gepflegte Grenzwerte enthalten, die EP liest (gleiches Muster wie die spätere `input_datetime.ep_eauto_abfahrtszeit`, D-013). Zugleich **gerätespezifische Erweiterung von D-030** (nur Heizstab). **HEMS-Abgleich:** kein Temperatur-Entity im HEMS — bestätigt.
+**Quelle:** v6-A2. → [01](01-homeassistant-integration.md), [07](07-planning-engine.md), [../claude-ha-config-dateien/](../claude-ha-config-dateien/)
+
+## D-036 · `ems_*`-Gerätehelfer sind HEMS-definiert; kein EP-Template, Discovery via `/api/device_controls_schema`
+**Entscheidung:** Alle `<domain>.ems_*`-Helfer sind **im HEMS definiert**; EP legt dafür **kein eigenes Schema/Template** an.
+**Detail:** HEMS erzeugt die `ems_*`-Entitäten **dynamisch pro konfiguriertem Gerät** aus `entity_prefix` + `class` (controllable/binary) + `output_unit` (watt/ampere) — sie sind **nicht statisch** (app/main.py `_ctrl_items_controllable`/`_ctrl_items_binary`). EP ermittelt die konkreten Entity-IDs daher zur Laufzeit über **`GET /api/device_controls_schema`**, statt sie zu raten. Bestätigt das Entfernen der `ep_*`-Gerätehelfer (D-029); in den `<domain>_ep.yaml` bleiben die `ems_*`-Werte nur als **Lese-Dokumentation**.
+**Quelle:** v6-A3 (+ HEMS-Quellenabgleich [../../SkytechHEMS/app/main.py](../../SkytechHEMS/app/main.py)). → [01](01-homeassistant-integration.md), [03](03-api-schnittstelle-hems.md)
+
+## D-037 · Batterie: einziger EP-Vorschlag = `geschutzte_mindestleistung_w_vorschlag`
+**Entscheidung:** Für die Batterie schreibt EP **nur** `ep_batterie_geschutzte_mindestleistung_w_vorschlag` (reservierte Mindest-Ladeleistung). **Kein** `prio_vorschlag`/`freigabe_vorschlag` (immer Prio 1, immer freigegeben, D-016).
+**Detail:** Mappt 1:1 auf HEMS `ems_batterie_geschutzte_mindestleistung_w` (Batterie = `controllable`; HEMS kennt nur die Klassen controllable/binary, keine eigene Batterieklasse).
+**Quelle:** v6-A4. → [01](01-homeassistant-integration.md), [07](07-planning-engine.md)
+
+## Noch offen (geparkt, siehe claude-fragen-v7)
+- **v6-B1** Ampere-Varianten (`_a`) vorausschauend festziehen — nur Bestätigung. HEMS unterstützt Ampere bereits nativ pro Gerät via `output_unit: ampere` (Suffix `_a` + `min_umschaltzeit_s`).
+- **v6-B2** Schreibweise/Umlaute der Suffixe (ASCII-Entity-IDs vs. Umlaut-Anzeige). HEMS-Evidenz: Entity-IDs durchgängig **ASCII ohne Umlaute** (`prioritat`, `geschutzte`, `anderung`).
+- **v6-B3** (=v5-B1) Hybrid-Modus: fixierbare Felder pro Gerät — relevant ab M3.
+- **v6-B4** (=v5-B2) Plan-JSON-Schema gemeinsam mit HEMS — Ebene 2 (M3). **Neu zu klären:** Suffix-Mapping beim späteren 1:1-Schreibweg (EP `prio_vorschlag` ↔ HEMS `prioritat`; `_vorschlag` entfällt HEMS-seitig).

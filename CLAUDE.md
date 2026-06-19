@@ -11,13 +11,14 @@ Skytech **Energy Pilot (EP)** = eigenständiges Home-Assistant-Addon. KI-gestüt
 - Beide müssen zusammenarbeiten. EP ohne HEMS sinnlos; HEMS ohne EP voll funktionsfähig.
 
 ## Eiserne Regeln (nicht verhandelbar)
-1. **Git:** committen/pushen **nur** in Branch `claude/main` — **auch im HEMS-Repo** (D-022). CI-Tests laufen nur auf `claude/main` (D-024).
+1. **Git:** committen/pushen **nur** in Branch `claude/main` — **auch im HEMS-Repo** (D-022). CI-Tests laufen nur auf `claude/main` (D-024) nach jeder abgeschlossenen Aufgabe wird ein Commit and Push durchgeführt.
 2. **Sprache Code:** Variablen/Funktionen/Klassen **Englisch**, Kommentare **Deutsch**.
 3. **Sprache HA-Entitäten/Helfer:** **Deutsch**.
-4. **EP-Entitäten-Namensschema:** `<DOMAIN>.ep_<GERÄTENAME>_<PREFIX>_<SUFFIX>`
-   - Vorschlagswerte von EP → Suffix `vorschlag`, als `sensor.` bereitgestellt.
+4. **Namens-Domäne nach Datenrichtung (D-029):** vom **User gepflegte technische Gerätewerte → `ems_*`** (HEMS-Domäne, EP **liest** nur); **EP-Vorschlagswerte → `ep_*`** (EP **schreibt**). **Ausnahme (D-035):** ein `ep_*`-Wert kann auch ein user-/extern-gepflegter Grenzwert sein, den EP **liest** (z.B. `input_number.ep_heizstab_max_temperatur`). Vollständiger Datenfluss: [user-beispiele/variablen-zugriff.md](user-beispiele/variablen-zugriff.md).
+   - **EP-Schema:** `<DOMAIN>.ep_<GERÄTENAME>_<…>_vorschlag`, als `sensor.` bereitgestellt.
+   - **EP-Schreibvertrag Phase 1 (D-030/D-034):** `prio_vorschlag` + `freigabe_vorschlag` (**binär und regelbar**), `geschutzte_mindestleistung_w_vorschlag`/`_a_vorschlag` (regelbar), `geschutzte_mindestleistung_w_vorschlag` (Batterie, D-037). Gerätespezifisch zusätzlich `ep_heizstab_max_temperatur_vorschlag` (D-035).
+   - **`ems_*`-Helfer sind HEMS-definiert (D-036):** kein EP-Template; EP ermittelt die konkreten Entity-IDs zur Laufzeit über HEMS `GET /api/device_controls_schema`.
    - Allgemeine Infos → Suffix `allgemeine_informationen` (als Sensor-**Attribute**, initial nicht nötig).
-   - (HEMS-Pendant zum Vergleich: `<domain>.ems_<prefix>_<suffix>`.)
 5. **KI = Orchestrator, kein Regler.** Freitext nie als Steuerbefehl. Nur Tool/Function-Calling mit strukturierten Ein-/Ausgaben.
 6. **Sicherheit:** Jeder Plan wird **lokal** gegen JSON-Schema + harte Grenzen validiert, hat Ablaufzeit, vollständiges Audit-Log. Harte Grenzen nie durch KI änderbar. Kein API-Key in Logs/Entitäten. Kein von KI erzeugter Code wird ausgeführt.
 7. **Datenminimum:** Nur nötige, verdichtete Daten an externe KI. Niemals die ganze HA-DB.
@@ -37,7 +38,7 @@ Eigene Achse, getrennt von den Betriebsmodi (Beobachten→Vorschlagen→Shadow�
 - **KI-Provider:** Start **Google Gemini**, Default-Modell **`gemini-3.5-flash`** (Free, ~10 req/min → drosseln). Provider/Modell **in Addon-Config** umschaltbar. Keys nie in Logs/Entitäten.
 - **V1-Verhalten:** KI liefert nur **Vorschlagswerte** (UI/Sensoren/Logs), keine Übernahme.
 - **HA-Helfer:** werden **nicht** automatisch angelegt. Ich liefere fertige `<domain>_ep.yaml` in [claude-ha-config-dateien/](claude-ha-config-dateien/) (Vorlage: [user-beispiele/](user-beispiele/)).
-- **Naming wie HEMS**, prefix/suffix dürfen verschwimmen. Beispiele: `sensor.ep_batterie_1_ziel_soc`, `sensor.ep_heizstab_freigabe`, `input_number.ep_speicher_soc_mindestwert_1`.
+- **Naming nach Domäne (D-029):** `ems_*` = User-/Geräte-Eingaben (EP liest), `ep_*` = EP-Vorschläge (EP schreibt). Beispiele: liest `ems_heizstab_technische_freigabe`, `ems_heizlüfter_1_leistung_w`; schreibt `sensor.ep_heizstab_prio_vorschlag`, `sensor.ep_heizlüfter_1_freigabe_vorschlag`. (Frühere `ziel_soc`-Beispiele überholt, D-030.)
 - **Prognose/Preis:** bestehende HA-Sensoren, Entitätsnamen in Addon-Config gepflegt.
 - **Zielgewichtung:** in Addon-Config pflegbar, initial aus info.md §7.
 - **Logging:** Auto-Export eines KI-lesbaren Bundles bei ERROR/CRITICAL.
@@ -62,9 +63,10 @@ User will aus dem internen Netz über ein **iOS-Backend (Java auf Linux-Server)*
 - Fremddaten (Strompreis EPEX, PV, Wetter): freie Entitätsnamen, in Addon-Config pflegbar (kein Namensschema, da Drittanbieter).
 
 ## Anfangs-Geräte (Phase 1) — präzisiert (D-016/D-017/D-018)
-- **Batterie (E3DC):** immer Prio 1, immer freigegeben; **kein** SOC-Limit, **keine** Entladung (nur PV-Überschuss); nur **max. Ladeleistung** relevant.
-- **Heizstab:** max. Leistung + max. Wassertemperatur, Freigabe.
-- **Heizlüfter 1 & 2:** feste **1500 W** (binär) → nur Freigabe.
+- **Batterie (E3DC):** immer Prio 1, immer freigegeben; **kein** SOC-Limit, **keine** Entladung (nur PV-Überschuss); nur **max. Ladeleistung** relevant. EP schreibt nur `ep_batterie_geschutzte_mindestleistung_w_vorschlag` (D-037).
+- **Heizstab (regelbar):** max./min. Leistung + Freigabe als `ems_*` (EP liest). **Max. Wassertemperatur ist NICHT HEMS-relevant (D-035):** EP liest den Grenzwert `input_number.ep_heizstab_max_temperatur` (**Helfer**, da user-gepflegt) und schreibt `sensor.ep_heizstab_max_temperatur_vorschlag` (**EP-Sensor**, da EP-Vorschlag — vgl. D-030).
+- **Heizlüfter 1 & 2:** feste **1500 W** (binär). Ist-Leistung als `ems_<name>_leistung_w` (D-031), Freigabe als `ems_<name>_technische_freigabe` — EP liest beides.
+- **Geräte-Grenzwerte/Freigaben sind `ems_*` (HEMS-Domäne), nicht von EP geliefert** (D-029). EP schreibt nur `ep_*`-Vorschläge.
 - **Strompreis/Wetter:** in V1 **raus** (kein dyn. Tarif). **PV-Prognose:** mehrere Sensoren pro Typ (Ausrichtungen, EP summiert), Werte: Energie akt. Stunde / nächste Stunde / verbleibend heute / morgen — **je im Sensor-State, kein Attribut**.
 - **Später:** Wallbox/E-Auto, Wärmepumpe, dynamische Tarife.
 

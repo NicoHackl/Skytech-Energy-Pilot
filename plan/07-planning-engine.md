@@ -23,8 +23,10 @@ Geräte initial: **Batteriespeicher (E3DC), Heizstab, Heizlüfter 1, Heizlüfter
 
 - **Batterie (D-016):** aktuell **immer Priorität 1 und immer freigegeben**. **Kein** min/max-SOC, **keine** Entladung in der Berechnung (EP regelt nur PV-**Überschuss**). Einziger relevanter Grenzwert: **maximale Ladeleistung**. (Ziel-SOC/Netzladung/Entladung = spätere Ausbaustufe.)
 - **Heizstab:** Freigabe, Priorität, max. Leistung, max. Wassertemperatur als Grenze.
-- **Heizlüfter 1 & 2 (D-017):** **binäre** Lasten mit **fester 1500 W** (analog HEMS `BinaryDevice`) → nur **Freigabe**/Priorität, keine variable Leistung.
+- **Heizlüfter 1 & 2 (D-017):** **binäre** Lasten mit **fester 1500 W** (analog HEMS `BinaryDevice`) → nur **Freigabe**/Priorität, keine variable Leistung. Ihre **Lastgröße** liest EP aus `ems_<name>_leistung_w` (D-031).
 - **Strompreis (D-018):** in V1 nicht berücksichtigt; weiche Ziele ohne Preiskomponente.
+
+> **EP-Output (Read/Write-Domäne, D-029/D-030):** EP **liest** technische Grenzen/Freigaben/Ist-Leistung aus `ems_*` und **schreibt** in Phase 1 nur `ep_<name>_prio_vorschlag`, `ep_<name>_geschutzte_mindestleistung_w_vorschlag`/`_a_vorschlag` und `ep_<name>_freigabe_vorschlag`. Der reichere Planinhalt oben (Ziel-SOC, Reserven, Zeitfenster …) bleibt internes Planungs-/Ebene-2-Zielbild, **nicht** der V1-Schreibvertrag.
 
 ## Erzeugung des Kandidatenplans
 - **V1 (D-008): KI erzeugt strukturierten Plan über Tools** (siehe [04](04-ki-provider.md)), gegen harte Grenzen geklemmt. Ergebnis sind **reine Vorschlagswerte** — sichtbar in UI, HA-Sensoren (`sensor.ep_*`) und Logging, aber **keine Übernahme** durch HEMS.

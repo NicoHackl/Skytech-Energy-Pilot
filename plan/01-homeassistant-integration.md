@@ -14,12 +14,12 @@ EP läuft als eigenständiges HA-Addon mit Ingress-UI. Es liest freigegebene HA-
 <DOMAIN>.ep_<GERÄTENAME>_<PREFIX>_<SUFFIX>
 ```
 - Alle HA-Namen (Entitäten/Helfer) auf **Deutsch**.
-- **Vorschlagswerte von EP:** Suffix `vorschlag`, bereitgestellt als `sensor.`-Entität (zusätzlich über versionierte API, siehe [03](03-api-schnittstelle-hems.md)).
+- **Domänen-Trennung nach Datenrichtung (D-029):** vom **User gepflegte technische Gerätewerte → `ems_*`** (HEMS-Domäne, EP **liest** nur); **EP-Vorschlagswerte → `ep_*`** (EP **schreibt**). Vollständiges Read-/Write-Schema + Zugriffsmatrix: [../user-beispiele/variablen-zugriff.md](../user-beispiele/variablen-zugriff.md).
+- **Vorschlagswerte von EP:** Suffix `…_vorschlag`, bereitgestellt als `sensor.`-Entität (später zusätzlich 1:1 über HEMS-API, D-032). **Schreibvertrag Phase 1 (D-030/D-034):** `prio_vorschlag` + `freigabe_vorschlag` (**binär und regelbar**), `geschutzte_mindestleistung_w_vorschlag`/`_a_vorschlag` (regelbar + Batterie, D-037). Gerätespezifisch: `ep_heizstab_max_temperatur_vorschlag` (D-035).
 - **Allgemeine Informationen:** Suffix `allgemeine_informationen`. Inhalte als **Attribute** am Sensor (Erweiterbarkeit; initial nicht zwingend nötig).
-- Vergleich HEMS: dort `<domain>.ems_<prefix>_<suffix>` — bewusst paralleles Schema.
 
-> **Entschieden (D-004):** Naming analog HEMS; `<PREFIX>`/`<SUFFIX>` dürfen ineinander übergehen. Reale Beispiele vom User:
-> `sensor.ep_batterie_1_ziel_soc`, `sensor.ep_heizstab_freigabe`, `input_number.ep_speicher_soc_mindestwert_1`.
+> **Entschieden (D-004/D-029):** Naming analog HEMS; `<PREFIX>`/`<SUFFIX>` dürfen ineinander übergehen. Reale Beispiele:
+> EP liest `ems_heizstab_technische_freigabe`, `ems_heizlüfter_1_leistung_w`, `ems_heizstab_max_technisch_w`; EP schreibt `sensor.ep_heizstab_prio_vorschlag`, `sensor.ep_heizlüfter_1_freigabe_vorschlag`. (Frühere `ep_…_ziel_soc`-Beispiele überholt, D-030.)
 
 ## Datenfluss HA-Host → EP
 1. **Grenzwerte & allgemeine Geräteinformationen** werden über HA-(Helfer-)Entitäten nach Namensschema bereitgestellt.
@@ -42,11 +42,12 @@ EP läuft als eigenständiges HA-Addon mit Ingress-UI. Es liest freigegebene HA-
 - Vorlage/Format: [../user-beispiele/beispiel-config-yam.txt](../user-beispiele/beispiel-config-yam.txt).
 - Für jede benötigte Helfer-Domäne (input_number, input_boolean, input_select, input_datetime) eine eigene Datei.
 
-### Phase-1-Gerätemodell (präzisiert, D-016/D-017/D-018)
-- **Batterie (E3DC):** immer Prio 1, immer freigegeben → nur `input_number.ep_batterie_ladeleistung_maximal`. Kein SOC-Helfer, keine Entladung, keine Freigabe.
-- **Heizstab:** max. Leistung + max. Wassertemperatur (`input_number`), Freigabe (`input_boolean`).
-- **Heizlüfter 1 & 2:** feste 1500 W → nur Freigabe (`input_boolean`), kein Leistungs-Helfer.
-- **Steuerung/Planung:** globaler Steuermodus + Betriebsmodus + Strategie (`input_select`), EP-Schalter (`input_boolean`), Planungsparameter (`input_number`). Per-Gerät-Steuermodus-Helfer kommen mit M3 (D-020).
+### Phase-1-Gerätemodell (präzisiert, D-016/D-017/D-018; Domäne D-029/D-031)
+> Geräte-Grenzwerte/Freigaben/Ist-Leistung sind **`ems_*`** (HEMS-Domäne), EP **liest** sie nur — **nicht** von EP als Helfer geliefert (D-029). **Die `ems_*`-Helfer sind im HEMS definiert (D-036)** und werden dort dynamisch pro Gerät aus `entity_prefix`/`class`/`output_unit` erzeugt; EP ermittelt die konkreten Entity-IDs zur Laufzeit über `GET /api/device_controls_schema` (siehe [03](03-api-schnittstelle-hems.md)).
+- **Batterie (E3DC):** immer Prio 1, immer freigegeben → relevanter Grenzwert nur max. Ladeleistung (`ems_batterie_max_technisch_w`). Kein SOC-Helfer, keine Entladung, keine Freigabe. EP schreibt nur `sensor.ep_batterie_geschutzte_mindestleistung_w_vorschlag` (D-037).
+- **Heizstab (regelbar):** `ems_heizstab_technische_freigabe`, `ems_heizstab_min_technisch_w`/`max_technisch_w` (alle `ems_*`, EP liest). **Max. Wassertemperatur (D-035):** nicht HEMS-relevant → EP liest den Grenzwert `input_number.ep_heizstab_max_temperatur` (**Helfer**, von mir geliefert, da user-gepflegt) und schreibt `sensor.ep_heizstab_max_temperatur_vorschlag` (**EP-Sensor**, kein Helfer — alle `ep_*_vorschlag` sind Sensoren, D-030).
+- **Heizlüfter 1 & 2 (binär, feste 1500 W):** `ems_<name>_leistung_w` (Ist-Leistung, D-031) + `ems_<name>_technische_freigabe`. EP liest beides.
+- **EP-eigene Helfer (`ep_*`, von mir geliefert):** globaler Steuermodus + Betriebsmodus + Strategie (`input_select`), EP-Schalter (`input_boolean`), Planungsparameter (`input_number`). Per-Gerät-Steuermodus-Helfer kommen mit M3 (D-020).
 - **input_datetime** (E-Auto-Abfahrtszeit): erst spätere Ausbaustufe, auch Schreibpunkt für externes Backend (D-013/D-023).
 
 ## Prognose-/Preisdaten (D-006)

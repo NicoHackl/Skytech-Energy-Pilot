@@ -39,8 +39,10 @@ schreiben:
 - Der Energy Pilot schreibt grundsätzlich ausschließlich vorschlagswerte
     HA-Entitäten bzw. Endpunkte für binär Verbraucher: 
         - ep_XXX_prio_vorschlag
+        - ep_XXX_freigabe_vorschlag
     HA-Entitäten bzw. Endpunkte für regelbaren Verbraucher:
         - ep_XXX_prio_vorschlag
+        - ep_XXX_freigabe_vorschlag
         - ep_XXX_geschutzte_mindestleistung_w_vorschlag -> für Geräte mit Watt als Einheit für Sollwert
         - ep_XXX_geschutzte_mindestleistung_a_vorschlag -> für Geräte mit Ampere als Einheit für Sollwert
 

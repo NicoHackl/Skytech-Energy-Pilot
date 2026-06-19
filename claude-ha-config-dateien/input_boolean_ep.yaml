@@ -1,7 +1,18 @@
 # Skytech Energy Pilot – input_boolean Helfer
-# EP-Schalter und Geräte-Freigaben (Daten HA -> EP). Inhalt unter "input_boolean:" einfügen.
+# NUR EP-eigene Schalter (ep_*). Inhalt unter "input_boolean:" einfügen.
+#
+# WICHTIG (D-029/D-036): Geräte-Freigaben sind HEMS-Domäne (ems_*), im HEMS DEFINIERT,
+# NICHT von EP. EP liest die technische Freigabe nur; die echten Entity-IDs liefert
+# der HEMS-Endpunkt GET /api/device_controls_schema. Zur Orientierung (Namen vom HEMS):
+#   ems_heizstab_technische_freigabe       -> Heizstab arbeitsfähig?   (input_boolean)
+#   ems_heizluefter_1_technische_freigabe  -> Heizlüfter 1 arbeitsfähig?
+#   ems_heizluefter_2_technische_freigabe  -> Heizlüfter 2 arbeitsfähig?
+# Speicher/Batterie: keine Freigabe (immer Prio 1, immer freigegeben, D-016).
+#
+# EP-Vorschlagswerte (z. B. ep_<name>_freigabe_vorschlag, D-030) sind KEINE Helfer,
+# sondern stellt EP selbst als sensor.ep_*-Entitäten bereit.
 
-# --- Globale EP-Schalter ---
+# --- Globale EP-Schalter (ep_*, EP-eigen) ---
 ep_aktiv:
   name: EP Aktiv
   icon: mdi:robot
@@ -17,18 +28,3 @@ ep_ereignis_neuplanung:
 ep_automatische_ubernahme:
   name: EP Automatische Übernahme
   icon: mdi:check-decagram
-
-# --- Geräte-Freigaben ---
-#Speicher ist immer freigegeben da wir die Batterie (aktuell) immer mit Prio 1 behandeln.
-
-ep_heizstab_freigabe:
-  name: EP Heizstab Freigabe
-  icon: mdi:water-boiler
-
-ep_heizluefter_1_freigabe:
-  name: EP Heizlüfter 1 Freigabe
-  icon: mdi:fan
-
-ep_heizluefter_2_freigabe:
-  name: EP Heizlüfter 2 Freigabe
-  icon: mdi:fan
