@@ -106,12 +106,21 @@ async def run_poller(
     collector: StateCollector,
     interval_s: float,
     logger: logging.Logger | None = None,
+    device_collector: object | None = None,
 ) -> None:
-    """Periodischer Sammellauf, bis die Aufgabe abgebrochen wird."""
+    """Periodischer Sammellauf, bis die Aufgabe abgebrochen wird.
+
+    Erfasst je Zyklus die Haus-Messgrößen und – falls vorhanden – die
+    Gerätewerte. Jeder Collector wird einzeln gekapselt, damit ein Fehler im
+    einen den anderen nicht ausfällt.
+    """
     while True:
-        try:
-            await collector.collect_once()
-        except Exception as exc:
-            if logger:
-                log(logger, "error", "Sammellauf fehlgeschlagen", context={"error": str(exc)})
+        for component in (collector, device_collector):
+            if component is None:
+                continue
+            try:
+                await component.collect_once()
+            except Exception as exc:
+                if logger:
+                    log(logger, "error", "Sammellauf fehlgeschlagen", context={"error": str(exc)})
         await asyncio.sleep(interval_s)

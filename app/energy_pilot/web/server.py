@@ -28,7 +28,9 @@ def create_app(
     ring: RingBufferHandler,
     ha_client: HAClient | None = None,
     collector: StateCollector | None = None,
+    device_collector: object | None = None,
     *,
+    hems_client: object | None = None,
     version: str = "0.0.1",
     logger: logging.Logger | None = None,
     enable_poller: bool = False,
@@ -41,6 +43,8 @@ def create_app(
     app["ring"] = ring
     app["ha_client"] = ha_client
     app["collector"] = collector
+    app["device_collector"] = device_collector
+    app["hems_client"] = hems_client
     app["version"] = version
     app["logger"] = logger
     app["poll_interval_s"] = poll_interval_s
@@ -53,15 +57,41 @@ def create_app(
             web.get("/api/ha/test", ha_test),
             web.get("/api/state", state),
             web.get("/api/entities", entities_get),
+            web.get("/api/devices", devices_get),
             web.get("/api/diagnostics", diagnostics),
         ]
     )
     if ha_client is not None:
         app.on_startup.append(_ha_selftest)
+    if device_collector is not None:
+        app.on_startup.append(_discover_devices)
+        app.on_cleanup.append(_close_hems_client)
     if enable_poller and collector is not None:
         app.on_startup.append(_start_poller)
         app.on_cleanup.append(_stop_poller)
     return app
+
+
+async def _discover_devices(app: web.Application) -> None:
+    """Erkennt die Geräte beim Start (HEMS-Schema primär, Config-Fallback, D-036)."""
+    from energy_pilot.devices import discover
+
+    device_collector = app["device_collector"]
+    logger = app["logger"]
+    devices, source = await discover(app.get("hems_client"), app["config"].values, logger)
+    device_collector.set_devices(devices, source)
+    if logger is not None:
+        log(
+            logger, "info", "Geräte erkannt",
+            context={"quelle": source, "anzahl": len(devices),
+                     "geraete": [d.name for d in devices]},
+        )
+
+
+async def _close_hems_client(app: web.Application) -> None:
+    client = app.get("hems_client")
+    if client is not None and hasattr(client, "close"):
+        await client.close()
 
 
 async def _ha_selftest(app: web.Application) -> None:
@@ -79,7 +109,12 @@ async def _ha_selftest(app: web.Application) -> None:
 
 async def _start_poller(app: web.Application) -> None:
     app["_poll_task"] = asyncio.create_task(
-        run_poller(app["collector"], app["poll_interval_s"], app["logger"])
+        run_poller(
+            app["collector"],
+            app["poll_interval_s"],
+            app["logger"],
+            device_collector=app.get("device_collector"),
+        )
     )
 
 
@@ -160,6 +195,7 @@ async def diagnostics(request: web.Request) -> web.Response:
     """Diagnose für die Statusseite: HA-Verbindung, Poller, letzter Lauf/Fehler."""
     app = request.app
     collector: StateCollector | None = app["collector"]
+    device_collector = app.get("device_collector")
     poll_task = app.get("_poll_task")
     payload: dict[str, Any] = {
         "ha_configured": app["ha_client"] is not None,
@@ -169,6 +205,10 @@ async def diagnostics(request: web.Request) -> web.Response:
         "last_collect_ts": getattr(collector, "last_collect_ts", None) if collector else None,
         "last_sources": collector.last_source if collector else {},
         "last_error": getattr(collector, "last_error", None) if collector else None,
+        "device_discovery_source": getattr(device_collector, "discovery_source", "none")
+        if device_collector
+        else "none",
+        "device_count": len(getattr(device_collector, "devices", [])) if device_collector else 0,
     }
     return web.json_response(payload)
 
@@ -194,3 +234,20 @@ async def entities_get(request: web.Request) -> web.Response:
             }
         )
     return web.json_response(payload)
+
+
+async def devices_get(request: web.Request) -> web.Response:
+    """Liefert die erkannten Geräte samt gelesener `ems_*`-Werte (read-only).
+
+    Discovery: HEMS-Schema primär, Addon-Config als Fallback (D-036). Die Quelle
+    steht zusätzlich in der Diagnose.
+    """
+    device_collector = request.app.get("device_collector")
+    if device_collector is None:
+        return web.json_response({"source": "none", "devices": []})
+    return web.json_response(
+        {
+            "source": getattr(device_collector, "discovery_source", "none"),
+            "devices": device_collector.snapshot(),
+        }
+    )

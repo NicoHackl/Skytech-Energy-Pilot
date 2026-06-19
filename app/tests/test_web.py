@@ -1,6 +1,7 @@
 """Tests für den aiohttp-Webserver und die JSON-API."""
 
 import io
+import json
 
 import pytest
 
@@ -8,6 +9,7 @@ from energy_pilot.aggregation import RollingAggregator
 from energy_pilot.collector import StateCollector
 from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
+from energy_pilot.device_collector import DeviceCollector
 from energy_pilot.entity_map import mapping_from_options
 from energy_pilot.logging_setup import log, setup_logging
 from energy_pilot.roles import MEASUREMENT_ROLES
@@ -91,3 +93,28 @@ async def test_entities_get_reflects_configured_mapping(aiohttp_client, app):
     payload = await (await client.get("/api/entities")).json()
     pv = next(row for row in payload if row["role"] == "pv_power")
     assert pv["entity_id"] == "sensor.pv"
+
+
+async def test_devices_endpoint_without_collector_is_empty(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/devices")).json()
+    assert data == {"source": "none", "devices": []}
+
+
+async def test_devices_endpoint_reflects_config_discovery(aiohttp_client, tmp_path):
+    # Geräte werden beim Start aus der Config erkannt (HEMS nicht gesetzt -> Fallback).
+    options = tmp_path / "options.json"
+    options.write_text(json.dumps({"devices": [{"name": "heizstab", "class": "controllable"}]}))
+    config = AddonConfig.load(options_path=str(options), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    device_collector = DeviceCollector(None, logger)
+    app = create_app(config, db, ring, device_collector=device_collector, version="test")
+
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/devices")).json()
+
+    assert data["source"] == "config"
+    assert data["devices"][0]["name"] == "heizstab"
+    keys = {f["key"] for f in data["devices"][0]["fields"]}
+    assert {"technische_freigabe", "min_technisch", "max_technisch", "ep_max_temperatur"} <= keys

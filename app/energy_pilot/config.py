@@ -16,6 +16,10 @@ DEFAULTS: dict[str, object] = {
     "forecast_horizon_h": 24,
     "min_confidence_percent": 70,
     "collect_interval_s": 30,
+    # Basis-URL des HEMS-Addons für die Geräte-Discovery (D-036). Leer => nur Config-Fallback.
+    "hems_base_url": "",
+    # Geräteliste als Fallback, falls HEMS nicht erreichbar ist (entity_prefix/class/output_unit).
+    "devices": [],
 }
 
 DEFAULT_OPTIONS_PATH = "/data/options.json"

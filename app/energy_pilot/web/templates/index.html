@@ -29,6 +29,7 @@
   <nav>
     <button data-tab="status" class="active">Status</button>
     <button data-tab="daten">Daten</button>
+    <button data-tab="geraete">Geräte</button>
     <button data-tab="einstellungen">Einstellungen</button>
     <button data-tab="logs">Logs</button>
   </nav>
@@ -49,6 +50,14 @@
       <thead><tr><th>Größe</th><th class="num">Aktuell</th><th class="num">Ø 1 min</th><th class="num">Ø 15 min</th><th class="num">Ø 60 min</th><th>Quelle</th></tr></thead>
       <tbody id="state-rows"></tbody>
     </table>
+  </section>
+
+  <section id="geraete" class="tab">
+    <div class="toolbar">
+      <button id="refresh-devices">Aktualisieren</button>
+      <span id="device-source"></span>
+    </div>
+    <div id="device-list"></div>
   </section>
 
   <section id="einstellungen" class="tab">
@@ -143,6 +152,30 @@
         .join("");
     }
 
+    async function loadDevices() {
+      const data = await (await fetch("api/devices")).json();
+      const srcLabel = { hems: "HEMS-Schema", config: "Addon-Config", none: "keine" }[data.source] || data.source;
+      document.getElementById("device-source").textContent = " Quelle: " + srcLabel;
+      const html = (data.devices || [])
+        .map((d) => {
+          const rows = d.fields
+            .map((f) => {
+              let val;
+              if (f.value === null || f.value === undefined) val = "–";
+              else if (f.kind === "bool") val = f.value ? "Ja" : "Nein";
+              else val = fmt(f.value) + (f.unit ? " " + f.unit : "");
+              return `<tr><td>${f.label}</td><td class="num">${val}</td><td><code>${f.entity_id}</code></td><td class="src-${f.source}">${f.source}</td></tr>`;
+            })
+            .join("");
+          const cls = d.class === "controllable" ? "regelbar" : "binär";
+          return `<h2 style="font-size:1rem;margin-top:1rem;">${d.label} <small style="font-weight:normal;color:#888;">(${cls})</small></h2>
+            <table><thead><tr><th>Größe</th><th class="num">Wert</th><th>Entität</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table>`;
+        })
+        .join("");
+      document.getElementById("device-list").innerHTML =
+        html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config setzen oder Geräteliste pflegen.</p>";
+    }
+
     async function loadLogs() {
       const rows = await (await fetch("api/logs?limit=200")).json();
       document.getElementById("log-rows").innerHTML = rows
@@ -152,16 +185,19 @@
     }
 
     document.getElementById("refresh-state").addEventListener("click", loadState);
+    document.getElementById("refresh-devices").addEventListener("click", loadDevices);
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();
     loadDiag();
     loadState();
+    loadDevices();
     loadEntities();
     loadLogs();
 
-    // Daten- und Diagnoseansicht regelmäßig aktualisieren
+    // Daten-, Geräte- und Diagnoseansicht regelmäßig aktualisieren
     setInterval(() => {
       if (document.getElementById("daten").classList.contains("active")) loadState();
+      if (document.getElementById("geraete").classList.contains("active")) loadDevices();
       if (document.getElementById("status").classList.contains("active")) loadDiag();
     }, 10000);
   </script>

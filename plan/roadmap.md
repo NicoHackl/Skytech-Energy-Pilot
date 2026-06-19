@@ -19,15 +19,16 @@ Legende: ☐ offen · ◐ in Arbeit · ☑ erledigt
 
 ---
 
-## M1 — Daten & Anzeige *(info.md Phase 1)*
+## M1 — Daten & Anzeige *(info.md Phase 1)* ◐ IN ARBEIT
 **Ziel:** EP liest und zeigt Daten, keine Planung, keine HEMS-Übergabe.
-- ☐ Konfigurierbare Entitätszuordnung + Fallback in der UI ([01](01-homeassistant-integration.md)).
-- ☐ HA-Helfer-YAML-Pakete (`<domain>_ep.yaml`) bereitstellen ([../claude-ha-config-dateien/](../claude-ha-config-dateien/), D-005).
+- ☑ Konfigurierbare Entitätszuordnung + Fallback (in Addon-Config, D-027; UI zeigt sie lesend).
+- ☑ HA-Helfer-YAML-Pakete (`<domain>_ep.yaml`) bereitstellen ([../claude-ha-config-dateien/](../claude-ha-config-dateien/), D-005).
 - ☐ Entity Allowlist.
-- ☐ State Collector + History Aggregator inkl. **1/15/60-min-Mittelwerte** (D-001/D-003, [05](05-daten-und-speicherung.md)).
-- ☐ Fremddaten-Anbindung (Strompreis/PV) über in Addon-Config gepflegte HA-Sensoren (D-006).
-- ☐ Dashboard + Geräte- + Prognoseanzeige (read-only).
-- ☐ Status-Entitäten (`sensor.ep_*`).
+- ☑ State Collector + History Aggregator inkl. **1/15/60-min-Mittelwerte** (D-001/D-003, [05](05-daten-und-speicherung.md)).
+- ☑ **Geräte-Datenebene:** Discovery via HEMS `/api/device_controls_schema` + Config-Fallback (D-036); EP liest `ems_*`-Gerätewerte (technische Freigabe, Ist-Leistung, min/max technisch) + Heizstab-Temperaturgrenze (D-035). Module `hems_client.py`, `devices.py`, `device_collector.py`; Endpoint `/api/devices`; Geräte-Ansicht in der SPA.
+- ☐ Fremddaten-Anbindung (Strompreis/PV-Prognose) über in Addon-Config gepflegte HA-Sensoren (D-006/D-018/D-026) — **nächster M1-Baustein**.
+- ☑ Dashboard + Geräteanzeige (read-only); ☐ Prognoseanzeige (mit PV-Prognose).
+- ☐ Status-Entitäten (`sensor.ep_*`) — kommt mit M2 (Vorschlagswerte).
 
 **DoD:** Aktuelle + verdichtete Werte und Prognosen sind in der UI und als Entitäten sichtbar; Mittelwertbildung getestet.
 
