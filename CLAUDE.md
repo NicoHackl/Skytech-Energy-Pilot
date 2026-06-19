@@ -10,6 +10,11 @@ Skytech **Energy Pilot (EP)** = eigenständiges Home-Assistant-Addon. KI-gestüt
 - **EP** (optionale KI-Erweiterung) = Planung alle 15–60 min, liefert Rahmenvorgaben.
 - Beide müssen zusammenarbeiten. EP ohne HEMS sinnlos; HEMS ohne EP voll funktionsfähig.
 
+## Eiserne Projekt Regeln (nicht verhandelbar)
+1. Die Datei **info.md** und **alle** Dateine in dem Ordner **plan** sind durch KI auf Projekterklärung vom User erstellt worden.
+   - Die **.txt** Dateien in **user-beispiele** sind vom User erstellt worde und haben **IMMER** höhere Priorität wie die KI generierten
+   - Wenn zwischen den **.txt** Dateien in **user-beispiele** und den KI generierten Dokumente eine inkonsitenz herscht dann sind die KI generierten Dokumente **info.md** und alle Dateien im Ordner **plan** auszubessern und auf den Stand von den **.txt** Dateien zu bringen
+
 ## Eiserne Regeln (nicht verhandelbar)
 1. **Git:** committen/pushen **nur** in Branch `claude/main` — **auch im HEMS-Repo** (D-022). CI-Tests laufen nur auf `claude/main` (D-024) nach jeder abgeschlossenen Aufgabe wird ein Commit and Push durchgeführt.
 2. **Sprache Code:** Variablen/Funktionen/Klassen **Englisch**, Kommentare **Deutsch**.
