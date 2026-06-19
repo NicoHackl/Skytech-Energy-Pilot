@@ -128,6 +128,21 @@ async def test_run_handles_provider_error_gracefully(tmp_path):
     assert db.execute("SELECT COUNT(*) AS n FROM plans").fetchone()["n"] == 0
 
 
+async def test_run_reports_nonempty_error_on_timeout(tmp_path):
+    # Regression: TimeoutError hat einen leeren str(); der Planner muss trotzdem eine
+    # lesbare Meldung loggen/liefern (nie "error": "" in Log, UI oder ai_calls).
+    planner, db = _planner(tmp_path, _FakeProvider(exc=TimeoutError()))
+
+    result = await planner.run(now=NOW)
+
+    assert not result.ok
+    assert result.error == "provider_error"
+    assert result.ai_call["error"].strip()
+    assert all(e.strip() for e in result.validation["errors"])
+    row = db.execute("SELECT error FROM ai_calls ORDER BY id DESC LIMIT 1").fetchone()
+    assert row["error"] and row["error"].strip()
+
+
 async def test_run_without_provider_reports_not_configured(tmp_path):
     planner, db = _planner(tmp_path, None)
 

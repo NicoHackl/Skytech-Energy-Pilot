@@ -82,6 +82,13 @@ class GeminiProvider(AIProvider):
                     text = await resp.text()
                     raise ProviderError(f"Gemini-Fehler HTTP {resp.status}: {text[:200]}")
                 payload = await resp.json()
+        except TimeoutError as exc:
+            # aiohttp meldet den total-Timeout als asyncio.TimeoutError (= TimeoutError) –
+            # das ist KEIN ClientError. Ungefangen propagiert es mit leerer Meldung bis in
+            # den Planner-Log (`str(TimeoutError())` == ""); deshalb hier klar benennen.
+            total = self._timeout.total
+            detail = f" nach {total:.0f}s" if total else ""
+            raise ProviderError(f"Gemini-Zeitüberschreitung{detail}") from exc
         except aiohttp.ClientError as exc:
             raise ProviderError(f"Gemini-Verbindungsfehler: {exc}") from exc
         return self._parse(payload)

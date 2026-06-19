@@ -60,6 +60,29 @@ async def test_generate_parses_json_and_tokens():
     assert "secret-key" not in call["url"]
 
 
+class _TimeoutResponse:
+    async def __aenter__(self):
+        raise TimeoutError  # aiohttp meldet den total-Timeout als asyncio.TimeoutError
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _TimeoutSession:
+    def post(self, url, json=None, headers=None, timeout=None):
+        return _TimeoutResponse()
+
+
+async def test_generate_wraps_timeout_as_provider_error():
+    # Regression: der total-Timeout (asyncio.TimeoutError) ist KEIN aiohttp.ClientError
+    # und darf nicht mit leerer Meldung durchschlagen (sonst "error": "" im Planner-Log).
+    provider = GeminiProvider("k", timeout_s=30, session=_TimeoutSession())
+    with pytest.raises(ProviderError) as excinfo:
+        await provider.generate("hi", {})
+    assert "Zeitüberschreitung" in str(excinfo.value)
+    assert str(excinfo.value).strip()  # nie leer
+
+
 async def test_generate_raises_rate_limit_on_429():
     provider = GeminiProvider("k", session=_FakeSession(_FakeResponse(status=429, text="quota")))
     with pytest.raises(RateLimitError):

@@ -6,6 +6,20 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.12] - 2026-06-19
+
+### Behoben
+- **„KI-Planung fehlgeschlagen" mit leerer Fehlermeldung (`"error": ""`):** Lief der
+  Gemini-Aufruf in den Timeout (Default 30 s), warf aiohttp `asyncio.TimeoutError` —
+  in Python 3.11 identisch mit `TimeoutError` und **kein** `aiohttp.ClientError`, also
+  vom Provider nicht gefangen. Die Exception propagierte bis in den Planner; weil
+  `str(TimeoutError())` leer ist, landete eine **leere** Meldung in Log, UI und
+  `ai_calls`. Der Provider fängt den Timeout jetzt ab und meldet ihn klar als
+  „Gemini-Zeitüberschreitung nach 30s" ([gemini_provider.py](app/energy_pilot/gemini_provider.py)).
+  Zusätzlich liefert der Planner als Sicherheitsnetz nie mehr einen leeren Fehlertext,
+  sondern fällt auf den Exception-Klassennamen zurück
+  ([planner.py](app/energy_pilot/planner.py), Iron Rule 8). Regressionstests ergänzt.
+
 ## [0.0.11] - 2026-06-19
 
 ### Hinzugefügt

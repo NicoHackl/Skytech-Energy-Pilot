@@ -58,6 +58,15 @@ def _as_int(value: object) -> int | None:
     return None
 
 
+def _describe_exc(exc: BaseException) -> str:
+    """Liefert nie einen leeren Fehlertext – fällt sonst auf den Klassennamen zurück.
+
+    Hintergrund: `str(TimeoutError())` ist leer. Ohne diesen Fallback landete ein
+    leerer String in Log, UI und `ai_calls` (Iron Rule 8: kontrollierte, lesbare Fehler).
+    """
+    return str(exc).strip() or exc.__class__.__name__
+
+
 class Planner:
     """Erzeugt validierte Kandidatenpläne über einen austauschbaren KI-Provider."""
 
@@ -123,10 +132,11 @@ class Planner:
         try:
             response = await self.provider.generate(prompt, schema)
         except Exception as exc:  # kontrolliert: nie Crash (Iron Rule 8)
-            self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=str(exc))
+            detail = _describe_exc(exc)
+            self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=detail)
             self._log(
                 "error", "KI-Planung fehlgeschlagen",
-                context={"error": str(exc)}, run_id=run_id,
+                context={"error": detail}, run_id=run_id,
                 provider=self.provider.name, model=str(self.config.model),
             )
             return PlanRunResult(
@@ -134,14 +144,14 @@ class Planner:
                 plan=None,
                 validation={
                     "ok": False,
-                    "errors": [f"KI-Aufruf fehlgeschlagen: {exc}"],
+                    "errors": [f"KI-Aufruf fehlgeschlagen: {detail}"],
                     "clamped": [],
                 },
                 ai_call={
                     "provider": self.provider.name,
                     "model": str(self.config.model),
                     "ok": False,
-                    "error": str(exc),
+                    "error": detail,
                 },
                 context=context,
                 error="provider_error",
