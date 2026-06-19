@@ -2,6 +2,8 @@
 
 import pytest
 
+from energy_pilot.allowlist import SOURCE_MEASUREMENT, EntityAllowlist
+from energy_pilot.database import init_db
 from energy_pilot.ha_client import HAClient
 
 
@@ -60,3 +62,33 @@ async def test_get_state_builds_entity_url():
 
     assert result["state"] == "1234"
     assert session.urls[0].endswith("/states/sensor.pv_leistung")
+
+
+@pytest.mark.asyncio
+async def test_get_state_allowed_entity_passes_guard():
+    allow = EntityAllowlist()
+    allow.register_all({"sensor.pv_leistung": SOURCE_MEASUREMENT})
+    session = _FakeSession({"state": "1"})
+    client = HAClient(token="t", session=session, allowlist=allow)
+
+    result = await client.get_state("sensor.pv_leistung")
+
+    assert result["state"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_get_state_soft_guard_does_not_block_unlisted_entity():
+    # Nicht freigegebene Entität: Read läuft trotzdem (soft), Verstoß wird auditiert.
+    conn = init_db(":memory:")
+    allow = EntityAllowlist(conn)
+    session = _FakeSession({"state": "1"})
+    client = HAClient(token="t", session=session, allowlist=allow)
+
+    result = await client.get_state("sensor.verboten")
+
+    assert result["state"] == "1"
+    violations = conn.execute(
+        "SELECT COUNT(*) AS n FROM audit WHERE action = 'allowlist_violation'"
+    ).fetchone()["n"]
+    assert violations == 1
+    conn.close()

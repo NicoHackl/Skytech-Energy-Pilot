@@ -59,6 +59,16 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        3,
+        """
+        CREATE TABLE IF NOT EXISTS allowlist (
+            entity_id TEXT PRIMARY KEY,
+            source TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        """,
+    ),
 ]
 
 

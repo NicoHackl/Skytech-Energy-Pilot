@@ -43,6 +43,10 @@
       <button id="ha-test">HA-Verbindung testen</button>
       <span id="ha-test-result"></span>
     </div>
+    <h2 style="font-size:1rem;margin-top:1rem;">Freigegebene Entitäten (Allowlist)</h2>
+    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">EP liest nur diese Entitäten.
+       Zugriffe außerhalb der Liste werden protokolliert, aber nicht blockiert.</p>
+    <div id="allowlist"></div>
   </section>
 
   <section id="daten" class="tab">
@@ -209,6 +213,20 @@
         .join("");
     }
 
+    async function loadAllowlist() {
+      const data = await (await fetch("api/allowlist")).json();
+      const bySrc = Object.entries(data.by_source || {})
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ");
+      const rows = (data.entries || [])
+        .map((e) => `<tr><td><code>${e.entity_id}</code></td><td>${e.source}</td></tr>`)
+        .join("");
+      document.getElementById("allowlist").innerHTML = data.count
+        ? `<p style="font-size:.8rem;color:#888;">${data.count} Entitäten (${bySrc})</p>
+           <table><thead><tr><th>Entität</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table>`
+        : "<p>Noch keine Entitäten freigegeben (Zuordnung/Geräte/Prognose in der Addon-Config pflegen).</p>";
+    }
+
     async function loadLogs() {
       const rows = await (await fetch("api/logs?limit=200")).json();
       document.getElementById("log-rows").innerHTML = rows
@@ -223,6 +241,7 @@
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();
     loadDiag();
+    loadAllowlist();
     loadState();
     loadDevices();
     loadForecast();
@@ -234,7 +253,7 @@
       if (document.getElementById("daten").classList.contains("active")) loadState();
       if (document.getElementById("geraete").classList.contains("active")) loadDevices();
       if (document.getElementById("prognose").classList.contains("active")) loadForecast();
-      if (document.getElementById("status").classList.contains("active")) loadDiag();
+      if (document.getElementById("status").classList.contains("active")) { loadDiag(); loadAllowlist(); }
     }, 10000);
   </script>
 </body>

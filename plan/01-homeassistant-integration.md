@@ -53,9 +53,11 @@ EP läuft als eigenständiges HA-Addon mit Ingress-UI. Es liest freigegebene HA-
 ## Prognose-/Preisdaten (D-006)
 - PV-Prognose und Strompreis kommen über **bestehende HA-Sensoren** des Users; deren Entitätsnamen werden in der **Addon-Config** hinterlegt (kein Namensschema). Siehe [06](06-prognosen.md).
 
-## Entity Allowlist
+## Entity Allowlist (D-038)
 - EP liest **nur** explizit konfigurierte/freigegebene Entitäten (Sicherheitsprinzip, info.md §6.1, §13).
-- Allowlist in Config + DB; jede gelesene Entität ist nachvollziehbar.
+- Register leitet sich vollständig aus den drei Config-Quellen ab (Messgrößen-Rollen, Geräte-`ems_*`, PV-Prognose) — keine separate Pflege.
+- **Soft durchgesetzt:** ein Read außerhalb der Allowlist wird protokolliert/auditiert (`audit.action='allowlist_violation'`), aber **nicht blockiert** (Fehlkonfiguration darf den Betrieb nie stören).
+- Allowlist in Config + DB (Tabelle `allowlist`); jede gelesene Entität ist nachvollziehbar. Transparenz: `GET /api/allowlist` + Status-Tab. Modul `allowlist.py`, Guard in `ha_client.py`.
 
 ## Konfigurierbare Einlesegrößen (Auswahl)
 PV-Leistung, Hausverbrauch, Netzpunktleistung, Netzbezug/-einspeisung, Batterieleistung, Batterie-SOC, max. Lade-/Entladeleistung, Verbraucherzustände, Soll-/Ist-Leistungen, Warmwassertemperatur, Wallbox/Fahrzeugstatus (später).

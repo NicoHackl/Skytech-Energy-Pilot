@@ -6,6 +6,7 @@ import json
 import pytest
 
 from energy_pilot.aggregation import RollingAggregator
+from energy_pilot.allowlist import EntityAllowlist
 from energy_pilot.collector import StateCollector
 from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
@@ -126,6 +127,52 @@ async def test_forecast_endpoint_without_collector_is_empty(aiohttp_client, app)
     client = await aiohttp_client(app)
     data = await (await client.get("/api/forecast")).json()
     assert data == {}
+
+
+async def test_allowlist_endpoint_empty_without_allowlist(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/allowlist")).json()
+    assert data == {"count": 0, "by_source": {}, "entries": []}
+
+
+async def test_allowlist_endpoint_and_diagnostics_count(aiohttp_client, tmp_path):
+    config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    allowlist = EntityAllowlist(db, logger)
+    allowlist.register_all({"sensor.pv": "measurement"})
+    app = create_app(config, db, ring, allowlist=allowlist, version="test")
+
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/allowlist")).json()
+    assert data["count"] == 1
+    assert data["entries"][0]["entity_id"] == "sensor.pv"
+
+    diag = await (await client.get("/api/diagnostics")).json()
+    assert diag["allowlist_count"] == 1
+
+
+async def test_discovery_populates_and_persists_allowlist(aiohttp_client, tmp_path):
+    # Beim Start erkennt EP Geräte und nimmt deren Lese-Entitäten in die Allowlist auf.
+    options = tmp_path / "options.json"
+    options.write_text(json.dumps({"devices": [{"name": "heizstab", "class": "controllable"}]}))
+    config = AddonConfig.load(options_path=str(options), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    device_collector = DeviceCollector(None, logger)
+    allowlist = EntityAllowlist(db, logger)
+    app = create_app(
+        config, db, ring, device_collector=device_collector, allowlist=allowlist, version="test"
+    )
+
+    client = await aiohttp_client(app)  # löst die Geräte-Discovery (on_startup) aus
+    data = await (await client.get("/api/allowlist")).json()
+
+    ids = {e["entity_id"] for e in data["entries"]}
+    assert "input_boolean.ems_heizstab_technische_freigabe" in ids
+    # Register wurde nach der Discovery in der DB persistiert.
+    persisted = db.execute("SELECT COUNT(*) AS n FROM allowlist").fetchone()["n"]
+    assert persisted == data["count"]
 
 
 async def test_forecast_endpoint_returns_totals(aiohttp_client, tmp_path):

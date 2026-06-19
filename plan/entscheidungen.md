@@ -205,6 +205,11 @@ Format: **ID · Thema · Entscheidung · Begründung/Detail · betroffene plan-D
 **Detail:** Mappt 1:1 auf HEMS `ems_batterie_geschutzte_mindestleistung_w` (Batterie = `controllable`; HEMS kennt nur die Klassen controllable/binary, keine eigene Batterieklasse).
 **Quelle:** v6-A4. → [01](01-homeassistant-integration.md), [07](07-planning-engine.md)
 
+## D-038 · Entity Allowlist: zentrales Register, **soft** durchgesetzt (Verstöße auditiert, nie blockiert)
+**Entscheidung:** EP führt ein zentrales Register der freigegebenen Lese-Entitäten (info.md §6.1/§13). Es leitet sich **vollständig aus den drei bestehenden Config-Quellen** ab (Messgrößen-Rollen, Geräte-`ems_*`-Felder, PV-Prognosesensoren) — **keine** separate manuelle Allowlist-Pflege, keine Doppelpflege. Durchsetzung ist **soft**: ein Read auf eine nicht freigegebene Entität wird **protokolliert und auditiert** (`audit.action='allowlist_violation'`), aber **nicht blockiert**.
+**Detail:** Da Entity-IDs ohnehin nur aus der Config stammen, ist die Allowlist Defense-in-Depth + Transparenzregister. Soft statt hart, weil eine Fehlkonfiguration der Allowlist den lokalen Anlagenbetrieb **nie** stören darf (Leitprinzip „Fallback blockiert nie"). Umsetzung: Modul `allowlist.py` (`EntityAllowlist`, `collect_entity_ids`), weicher Guard in `HAClient.get_state`, Persistenz in DB-Tabelle `allowlist` (Migration v3) + Audit beim Rebuild, Transparenz unter `GET /api/allowlist` und im Status-Tab. Geräte-IDs kommen nach der HEMS/Config-Discovery hinzu (`_discover_devices`), dann wird das komplette Register einmal persistiert. Doppel-Audits je Entität werden gedrosselt (kein Log-Spam pro Poll-Zyklus).
+**Quelle:** Umsetzung „letzter M1-Baustein" (roadmap); Durchsetzungsgrad vom User auf **soft** festgelegt. → [01](01-homeassistant-integration.md), [08](08-validierung-sicherheit.md), [roadmap](roadmap.md) (M1)
+
 ## Noch offen (geparkt, siehe claude-fragen-v7)
 - **v6-B1** Ampere-Varianten (`_a`) vorausschauend festziehen — nur Bestätigung. HEMS unterstützt Ampere bereits nativ pro Gerät via `output_unit: ampere` (Suffix `_a` + `min_umschaltzeit_s`).
 - **v6-B2** Schreibweise/Umlaute der Suffixe (ASCII-Entity-IDs vs. Umlaut-Anzeige). HEMS-Evidenz: Entity-IDs durchgängig **ASCII ohne Umlaute** (`prioritat`, `geschutzte`, `anderung`).

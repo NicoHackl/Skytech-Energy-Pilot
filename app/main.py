@@ -8,6 +8,7 @@ from aiohttp import web
 
 from energy_pilot import __version__
 from energy_pilot.aggregation import RollingAggregator
+from energy_pilot.allowlist import EntityAllowlist, collect_entity_ids
 from energy_pilot.collector import StateCollector
 from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
@@ -40,8 +41,12 @@ def build() -> web.Application:
 
     db = init_db(DB_PATH)
 
+    # Entity Allowlist: Register der freigegebenen Lese-Entitäten (Soft-Guard, D-038).
+    # Geräte-IDs kommen erst nach der Discovery hinzu (siehe _discover_devices).
+    allowlist = EntityAllowlist(db, logger)
+
     token = config.supervisor_token
-    ha_client = HAClient(token) if token else None
+    ha_client = HAClient(token, allowlist=allowlist) if token else None
     if ha_client is None:
         log(logger, "warning", "SUPERVISOR_TOKEN fehlt – HA-Verbindung deaktiviert")
 
@@ -49,6 +54,7 @@ def build() -> web.Application:
     collector = StateCollector(ha_client, RollingAggregator(), MEASUREMENT_ROLES, logger)
     mapping = mapping_from_options(config.values)
     collector.set_mapping(mapping)
+    allowlist.register_all(collect_entity_ids(mapping=mapping))
     log(logger, "info", "Entitätszuordnung geladen", context={"rollen": sorted(mapping)})
 
     # HEMS-Client für die Geräte-Discovery (D-036); leer => nur Config-Fallback.
@@ -61,6 +67,7 @@ def build() -> web.Application:
     forecast_collector = ForecastCollector(ha_client, logger, unit=str(config.pv_forecast_unit))
     orientations = orientations_from_config(config.values)
     forecast_collector.set_orientations(orientations)
+    allowlist.register_all(collect_entity_ids(orientations=orientations))
     log(
         logger, "info", "PV-Prognose geladen",
         context={"ausrichtungen": [o.label for o in orientations]},
@@ -76,6 +83,7 @@ def build() -> web.Application:
         device_collector,
         forecast_collector,
         hems_client=hems_client,
+        allowlist=allowlist,
         version=__version__,
         logger=logger,
         enable_poller=ha_client is not None,

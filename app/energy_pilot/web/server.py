@@ -32,6 +32,7 @@ def create_app(
     forecast_collector: object | None = None,
     *,
     hems_client: object | None = None,
+    allowlist: object | None = None,
     version: str = "0.0.1",
     logger: logging.Logger | None = None,
     enable_poller: bool = False,
@@ -47,6 +48,7 @@ def create_app(
     app["device_collector"] = device_collector
     app["forecast_collector"] = forecast_collector
     app["hems_client"] = hems_client
+    app["allowlist"] = allowlist
     app["version"] = version
     app["logger"] = logger
     app["poll_interval_s"] = poll_interval_s
@@ -61,6 +63,7 @@ def create_app(
             web.get("/api/entities", entities_get),
             web.get("/api/devices", devices_get),
             web.get("/api/forecast", forecast_get),
+            web.get("/api/allowlist", allowlist_get),
             web.get("/api/diagnostics", diagnostics),
         ]
     )
@@ -76,13 +79,25 @@ def create_app(
 
 
 async def _discover_devices(app: web.Application) -> None:
-    """Erkennt die Geräte beim Start (HEMS-Schema primär, Config-Fallback, D-036)."""
+    """Erkennt die Geräte beim Start (HEMS-Schema primär, Config-Fallback, D-036).
+
+    Nach der Discovery sind alle drei Allowlist-Quellen vollständig: die Geräte-
+    Entitäten werden registriert und das komplette Register einmal persistiert
+    und auditiert (Soft-Guard, D-038).
+    """
+    from energy_pilot.allowlist import collect_entity_ids
     from energy_pilot.devices import discover
 
     device_collector = app["device_collector"]
     logger = app["logger"]
     devices, source = await discover(app.get("hems_client"), app["config"].values, logger)
     device_collector.set_devices(devices, source)
+
+    allowlist = app.get("allowlist")
+    if allowlist is not None:
+        allowlist.register_all(collect_entity_ids(devices=devices))
+        allowlist.persist(app["db"])
+
     if logger is not None:
         log(
             logger, "info", "Geräte erkannt",
@@ -200,6 +215,7 @@ async def diagnostics(request: web.Request) -> web.Response:
     app = request.app
     collector: StateCollector | None = app["collector"]
     device_collector = app.get("device_collector")
+    allowlist = app.get("allowlist")
     poll_task = app.get("_poll_task")
     payload: dict[str, Any] = {
         "ha_configured": app["ha_client"] is not None,
@@ -214,6 +230,7 @@ async def diagnostics(request: web.Request) -> web.Response:
         else "none",
         "device_count": len(getattr(device_collector, "devices", [])) if device_collector else 0,
         "forecast_orientations": len(getattr(app.get("forecast_collector"), "orientations", [])),
+        "allowlist_count": allowlist.snapshot()["count"] if allowlist is not None else 0,
     }
     return web.json_response(payload)
 
@@ -264,3 +281,11 @@ async def forecast_get(request: web.Request) -> web.Response:
     if forecast_collector is None:
         return web.json_response({})
     return web.json_response(forecast_collector.snapshot())
+
+
+async def allowlist_get(request: web.Request) -> web.Response:
+    """Liefert das Register der freigegebenen Lese-Entitäten (read-only, Transparenz)."""
+    allowlist = request.app.get("allowlist")
+    if allowlist is None:
+        return web.json_response({"count": 0, "by_source": {}, "entries": []})
+    return web.json_response(allowlist.snapshot())

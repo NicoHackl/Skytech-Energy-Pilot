@@ -9,9 +9,11 @@ def test_migrations_create_core_tables(tmp_path):
         row["name"]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
-    expected = {"config", "audit", "errors", "ai_calls", "entity_map", "schema_migrations"}
+    expected = {
+        "config", "audit", "errors", "ai_calls", "entity_map", "allowlist", "schema_migrations"
+    }
     assert expected <= tables
-    assert current_version(conn) == 2
+    assert current_version(conn) == 3
     conn.close()
 
 
@@ -27,5 +29,5 @@ def test_migrations_are_idempotent(tmp_path):
 
 def test_in_memory_database_works():
     conn = init_db(":memory:")
-    assert current_version(conn) == 2
+    assert current_version(conn) == 3
     conn.close()

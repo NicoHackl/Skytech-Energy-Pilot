@@ -19,19 +19,18 @@ Legende: ☐ offen · ◐ in Arbeit · ☑ erledigt
 
 ---
 
-## M1 — Daten & Anzeige *(info.md Phase 1)* ◐ IN ARBEIT
+## M1 — Daten & Anzeige *(info.md Phase 1)* ☑ ERLEDIGT (Rest explizit M2)
 **Ziel:** EP liest und zeigt Daten, keine Planung, keine HEMS-Übergabe.
 - ☑ Konfigurierbare Entitätszuordnung + Fallback (in Addon-Config, D-027; UI zeigt sie lesend).
 - ☑ HA-Helfer-YAML-Pakete (`<domain>_ep.yaml`) bereitstellen ([../claude-ha-config-dateien/](../claude-ha-config-dateien/), D-005).
-- ☐ Entity Allowlist.
+- ☑ Entity Allowlist (D-038): zentrales Register der freigegebenen Lese-Entitäten aus den 3 Config-Quellen, **soft** durchgesetzt (Verstöße protokolliert/auditiert, nie blockiert), Config+DB, Transparenz unter `/api/allowlist` + Status-Tab. Module `allowlist.py`; Soft-Guard in `ha_client.py`.
 - ☑ State Collector + History Aggregator inkl. **1/15/60-min-Mittelwerte** (D-001/D-003, [05](05-daten-und-speicherung.md)).
 - ☑ **Geräte-Datenebene:** Discovery via HEMS `/api/device_controls_schema` + Config-Fallback (D-036); EP liest `ems_*`-Gerätewerte (technische Freigabe, Ist-Leistung, min/max technisch) + Heizstab-Temperaturgrenze (D-035). Module `hems_client.py`, `devices.py`, `device_collector.py`; Endpoint `/api/devices`; Geräte-Ansicht in der SPA.
 - ☑ **PV-Prognose-Anbindung** (D-006/D-018/D-026): mehrere Ausrichtungen je in Addon-Config (`pv_forecast`), EP summiert je Wert (akt./nächste Stunde, Rest heute, morgen). Module `forecast.py`, `forecast_collector.py`; Endpoint `/api/forecast`; Prognose-Tab. Strompreis/Wetter in V1 raus.
 - ☑ Dashboard + Geräte- + Prognoseanzeige (read-only).
-- ☐ Entity Allowlist — letzter kleiner M1-Baustein.
 - ☐ Status-Entitäten (`sensor.ep_*`) — kommt mit M2 (Vorschlagswerte).
 
-**DoD:** Aktuelle + verdichtete Werte und Prognosen sind in der UI und als Entitäten sichtbar; Mittelwertbildung getestet.
+**DoD:** Aktuelle + verdichtete Werte und Prognosen sind in der UI und als Entitäten sichtbar; Mittelwertbildung getestet. ✅ erfüllt (Status-Entitäten bewusst nach M2 verschoben).
 
 ---
 

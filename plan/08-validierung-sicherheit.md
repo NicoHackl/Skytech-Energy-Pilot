@@ -4,7 +4,7 @@
 Garantiert, dass nur strukturierte, gültige und sichere Pläne an HEMS gelangen. Sicherheit hat Vorrang vor Optimierung.
 
 ## Verbindliche Sicherheitsregeln (info.md §13)
-- Zugriff nur auf freigegebene Entitäten/Funktionen (Entity Allowlist).
+- Zugriff nur auf freigegebene Entitäten/Funktionen (Entity Allowlist, D-038 — **soft**: Verstöße werden protokolliert/auditiert, nicht blockiert; Register aus den Config-Quellen, siehe [01](01-homeassistant-integration.md)).
 - Keine direkte Ansteuerung von Modbus/MQTT/Geräte-APIs durch das Sprachmodell.
 - Strukturierte Ein-/Ausgaben; **JSON-Schema-Validierung jedes Plans**.
 - Prüfung aller technischen Grenzen (harte Grenzen, siehe [07](07-planning-engine.md)).

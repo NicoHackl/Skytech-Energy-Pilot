@@ -1,14 +1,18 @@
 """Home-Assistant-Connector: REST- und WebSocket-Zugriff über den Supervisor-Proxy.
 
-Authentifizierung erfolgt mit dem vom Supervisor bereitgestellten Token. Der Client
-liest ausschließlich freigegebene Entitäten (Entity Allowlist folgt in M1).
+Authentifizierung erfolgt mit dem vom Supervisor bereitgestellten Token. Lesezugriffe
+laufen gegen die Entity Allowlist: nicht freigegebene Entitäten werden protokolliert
+und auditiert, aber **nicht blockiert** (Soft-Durchsetzung, D-038).
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
+
+if TYPE_CHECKING:
+    from energy_pilot.allowlist import EntityAllowlist
 
 # Interne Supervisor-Endpunkte (innerhalb des Addon-Netzes erreichbar).
 SUPERVISOR_CORE_URL = "http://supervisor/core/api"
@@ -24,12 +28,15 @@ class HAClient:
         base_url: str = SUPERVISOR_CORE_URL,
         ws_url: str = SUPERVISOR_WS_URL,
         session: aiohttp.ClientSession | None = None,
+        allowlist: EntityAllowlist | None = None,
     ) -> None:
         self._token = token
         self.base_url = base_url.rstrip("/")
         self.ws_url = ws_url
         self._session = session
         self._owns_session = session is None
+        # Weicher Allowlist-Guard; None => kein Guard (z.B. in Tests/Selbsttest).
+        self._allowlist = allowlist
 
     @property
     def headers(self) -> dict[str, str]:
@@ -58,7 +65,14 @@ class HAClient:
             return await resp.json()
 
     async def get_state(self, entity_id: str) -> dict[str, Any]:
-        """Liest den aktuellen Zustand einer Entität."""
+        """Liest den aktuellen Zustand einer Entität.
+
+        Vor dem Read prüft der weiche Allowlist-Guard die Entität: nicht
+        freigegebene IDs werden protokolliert/auditiert, der Read läuft aber
+        unverändert weiter (Soft-Durchsetzung, D-038).
+        """
+        if self._allowlist is not None:
+            self._allowlist.check(entity_id)
         session = await self._ensure_session()
         async with session.get(
             f"{self.base_url}/states/{entity_id}", headers=self.headers
