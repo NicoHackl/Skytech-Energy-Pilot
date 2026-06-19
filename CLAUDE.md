@@ -16,6 +16,7 @@ Skytech **Energy Pilot (EP)** = eigenständiges Home-Assistant-Addon. KI-gestüt
    - Wenn zwischen den **.txt** Dateien in **user-beispiele** und den KI generierten Dokumente eine inkonsitenz herscht dann sind die KI generierten Dokumente **info.md** und alle Dateien im Ordner **plan** auszubessern und auf den Stand von den **.txt** Dateien zu bringen
 2. Passe bei allen relevanten Änderungen die eine **Auswirkung auf die Darstellung, Information und Funktion** in Homeassistant haben die Versionsnummer in **config.yaml** an
    - Die Versionsnummer in der **config.yaml** wird immer die Patch-nummer um eins erhöht z.b. 1.2.2 -> 1.2.3
+3. Es ist verpflichtend bei jeder **funktionalen oder Designtechnischen Änderung am Code** einen entsprechenden Eintrag in der **changelog.md** zu verfassen
 
 ## Eiserne Regeln (nicht verhandelbar)
 1. **Git:** committen/pushen **nur** in Branch `claude/main` — **auch im HEMS-Repo** (D-022). CI-Tests laufen nur auf `claude/main` (D-024) nach jeder abgeschlossenen Aufgabe wird ein Commit and Push durchgeführt.

@@ -311,6 +311,12 @@ async def constraints_get(request: web.Request) -> web.Response:
     payload = []
     for constraint in constraints:
         entry = asdict(constraint)
+        # Geräteklasse als `class` ausgeben – gleicher JSON-Vertrag wie /api/devices,
+        # auf den das UI (loadConstraints) baut. Das Dataclass-Feld heißt `device_class`,
+        # da `class` in Python reserviert ist; ohne dieses Mapping ist `d.class` im UI
+        # undefined → der Binär-Zweig greift nie und es würden für Binärgeräte
+        # fälschlich Min./Max.-Leistung statt der festen Leistung angezeigt.
+        entry["class"] = entry.pop("device_class")
         entry["suggestion_keys"] = suggestion_keys(constraint)
         payload.append(entry)
     return web.json_response({"devices": payload})

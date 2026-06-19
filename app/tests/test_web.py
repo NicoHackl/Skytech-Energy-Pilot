@@ -207,6 +207,28 @@ async def test_constraints_endpoint_reflects_discovered_devices(aiohttp_client, 
     assert battery["suggestion_keys"] == ["geschutzte_mindestleistung_w_vorschlag"]
 
 
+async def test_constraints_endpoint_exposes_class_key_for_ui(aiohttp_client, tmp_path):
+    # Regression: das UI (loadConstraints) entscheidet über `d.class` zwischen
+    # Binär ("Feste Leistung") und Regelbar ("Min./Max. Leistung"). Der Endpunkt
+    # muss die Geräteklasse als `class` liefern (nicht als Dataclass-Feld
+    # `device_class`), sonst greift der Binär-Zweig nie und Binärgeräte zeigen
+    # fälschlich Min./Max.-Leistung an.
+    options = tmp_path / "options.json"
+    options.write_text(json.dumps({"devices": [{"name": "heizluefter_1", "class": "binary"}]}))
+    config = AddonConfig.load(options_path=str(options), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    device_collector = DeviceCollector(None, logger)
+    app = create_app(config, db, ring, device_collector=device_collector, version="test")
+
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/constraints")).json()
+
+    device = data["devices"][0]
+    assert device["class"] == "binary"
+    assert "device_class" not in device
+
+
 async def test_plan_schema_endpoint_is_versioned(aiohttp_client, app):
     client = await aiohttp_client(app)
     data = await (await client.get("/api/plan/schema")).json()
