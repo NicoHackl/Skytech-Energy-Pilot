@@ -31,6 +31,7 @@
     <button data-tab="daten">Daten</button>
     <button data-tab="geraete">Geräte</button>
     <button data-tab="prognose">Prognose</button>
+    <button data-tab="grenzen">Grenzen &amp; Ziele</button>
     <button data-tab="einstellungen">Einstellungen</button>
     <button data-tab="logs">Logs</button>
   </nav>
@@ -70,6 +71,22 @@
     <h2 style="font-size:1rem;">PV-Prognose (Summe über alle Ausrichtungen)</h2>
     <div id="forecast-totals"></div>
     <div id="forecast-orient"></div>
+  </section>
+
+  <section id="grenzen" class="tab">
+    <div class="toolbar"><button id="refresh-grenzen">Aktualisieren</button></div>
+    <h2 style="font-size:1rem;">Harte Grenzen je Gerät</h2>
+    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Technische Limits/Freigaben aus den
+       <code>ems_*</code>-Werten. Read-only und <strong>nie</strong> durch die KI änderbar.
+       „Schreibbar" = Vorschlagsfelder, die EP für dieses Gerät erzeugen darf.</p>
+    <div id="constraints-list"></div>
+    <h2 style="font-size:1rem;margin-top:1rem;">Weiche Zielgewichte</h2>
+    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Gewichte (0–100 %) aus info.md §7,
+       in der Addon-Config unter <code>objective_weights</code> pflegbar.</p>
+    <table>
+      <thead><tr><th>Ziel</th><th class="num">Gewicht</th></tr></thead>
+      <tbody id="objective-rows"></tbody>
+    </table>
   </section>
 
   <section id="einstellungen" class="tab">
@@ -227,6 +244,39 @@
         : "<p>Noch keine Entitäten freigegeben (Zuordnung/Geräte/Prognose in der Addon-Config pflegen).</p>";
     }
 
+    async function loadConstraints() {
+      const data = await (await fetch("api/constraints")).json();
+      const html = (data.devices || [])
+        .map((d) => {
+          const unit = d.output_unit === "ampere" ? " A" : " W";
+          const rows = [];
+          const add = (label, val) => rows.push(`<tr><td>${label}</td><td class="num">${val}</td></tr>`);
+          add("Technische Freigabe", d.freigabe === null ? "–" : d.freigabe ? "Ja" : "Nein");
+          if (d.class === "binary") add("Feste Leistung", d.fixed_power == null ? "–" : fmt(d.fixed_power) + unit);
+          else {
+            add("Min. Leistung", d.min_power == null ? "–" : fmt(d.min_power) + unit);
+            add(d.is_battery ? "Max. Ladeleistung" : "Max. Leistung", d.max_power == null ? "–" : fmt(d.max_power) + unit);
+          }
+          if (d.is_heizstab) add("Max. Wassertemperatur", d.max_water_temp == null ? "–" : fmt(d.max_water_temp) + " °C");
+          if (d.forced_prio != null) add("Feste Priorität", d.forced_prio);
+          const cls = d.class === "controllable" ? "regelbar" : "binär";
+          const writable = (d.suggestion_keys || []).map((k) => `<code>${k}</code>`).join(", ") || "–";
+          return `<h3 style="font-size:.95rem;margin:.75rem 0 .25rem;">${d.label} <small style="font-weight:normal;color:#888;">(${cls})</small></h3>
+            <table><tbody>${rows.join("")}</tbody></table>
+            <p style="font-size:.78rem;color:#888;margin:.25rem 0;">Schreibbar: ${writable}</p>`;
+        })
+        .join("");
+      document.getElementById("constraints-list").innerHTML =
+        html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config setzen oder Geräteliste pflegen.</p>";
+    }
+
+    async function loadObjectives() {
+      const data = await (await fetch("api/objectives")).json();
+      document.getElementById("objective-rows").innerHTML = (data.objectives || [])
+        .map((o) => `<tr><td>${o.label}</td><td class="num">${o.weight} %</td></tr>`)
+        .join("");
+    }
+
     async function loadLogs() {
       const rows = await (await fetch("api/logs?limit=200")).json();
       document.getElementById("log-rows").innerHTML = rows
@@ -238,6 +288,7 @@
     document.getElementById("refresh-state").addEventListener("click", loadState);
     document.getElementById("refresh-devices").addEventListener("click", loadDevices);
     document.getElementById("refresh-forecast").addEventListener("click", loadForecast);
+    document.getElementById("refresh-grenzen").addEventListener("click", () => { loadConstraints(); loadObjectives(); });
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();
     loadDiag();
@@ -245,14 +296,17 @@
     loadState();
     loadDevices();
     loadForecast();
+    loadConstraints();
+    loadObjectives();
     loadEntities();
     loadLogs();
 
-    // Daten-, Geräte-, Prognose- und Diagnoseansicht regelmäßig aktualisieren
+    // Daten-, Geräte-, Prognose-, Grenzen- und Diagnoseansicht regelmäßig aktualisieren
     setInterval(() => {
       if (document.getElementById("daten").classList.contains("active")) loadState();
       if (document.getElementById("geraete").classList.contains("active")) loadDevices();
       if (document.getElementById("prognose").classList.contains("active")) loadForecast();
+      if (document.getElementById("grenzen").classList.contains("active")) loadConstraints();
       if (document.getElementById("status").classList.contains("active")) { loadDiag(); loadAllowlist(); }
     }, 10000);
   </script>

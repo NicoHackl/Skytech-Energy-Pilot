@@ -36,10 +36,10 @@ Legende: ☐ offen · ◐ in Arbeit · ☑ erledigt
 
 ## M2 — Vorschlagswerte *(info.md Phase 2 · Betriebsmodi „Beobachten"+„Vorschlagen")*
 **Ziel:** KI liefert **Vorschlagswerte** (D-008) — sichtbar in UI/Sensoren/Logs, **keine Übernahme**.
-- ☐ Device/Constraint-Model + User-Objective-Manager (harte Grenzen; Gewichte in Addon-Config, init aus info.md §7 — D-011) ([07](07-planning-engine.md)).
+- ☑ Device/Constraint-Model + User-Objective-Manager (harte Grenzen aus `ems_*`; Gewichte in Addon-Config `objective_weights`, init aus info.md §7 — D-011) ([07](07-planning-engine.md)). Module `constraints.py`/`objectives.py`; Transparenz `GET /api/constraints` + `/api/objectives`, Tab „Grenzen & Ziele". (D-040)
 - ☐ KI-Provider-Interface; **Start Gemini** (Free, Rate-Limit-Drossel ~10/min), Provider/Modell in Addon-Config umschaltbar (D-007) ([04](04-ki-provider.md)).
 - ☐ Planning Engine: Kandidatenplan (Erststufe: Batterie + Heizstab + Heizlüfter 1/2).
-- ☐ Plan-JSON-Schema (`schema_version`) + lokaler Validator ([08](08-validierung-sicherheit.md)).
+- ☑ Plan-JSON-Schema (`schema_version`) + lokaler Validator ([08](08-validierung-sicherheit.md)). Module `plan_schema.py`/`validator.py` (Stufen 1–3: Schema, harte Grenzen klemmen/ablehnen, Zeitlogik; Stufen 4–6 später). `jsonschema`-Lib (D-039/D-040).
 - ☐ Vorschlagssensoren (Suffix `vorschlag`) + Planexport.
 - ☐ UI: Energieplan-Ansicht, Begründungen, KI-Konfig (Key, Limits, Testverbindung), Kosten-/API-Logging.
 

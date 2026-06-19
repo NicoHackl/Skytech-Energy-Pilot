@@ -24,6 +24,8 @@ DEFAULTS: dict[str, object] = {
     "pv_forecast": [],
     # Anzeigeeinheit der PV-Prognosewerte (EP konvertiert nicht, summiert nur).
     "pv_forecast_unit": "kWh",
+    # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus info.md §7 (objectives.py).
+    "objective_weights": {},
 }
 
 DEFAULT_OPTIONS_PATH = "/data/options.json"

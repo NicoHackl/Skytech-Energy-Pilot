@@ -175,6 +175,45 @@ async def test_discovery_populates_and_persists_allowlist(aiohttp_client, tmp_pa
     assert persisted == data["count"]
 
 
+async def test_objectives_endpoint_returns_defaults(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/objectives")).json()
+    weights = {o["key"]: o["weight"] for o in data["objectives"]}
+    assert weights["versorgungssicherheit"] == 100
+    assert weights["batterieschonung"] == 50
+
+
+async def test_constraints_endpoint_without_collector_is_empty(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/constraints")).json()
+    assert data == {"devices": []}
+
+
+async def test_constraints_endpoint_reflects_discovered_devices(aiohttp_client, tmp_path):
+    options = tmp_path / "options.json"
+    options.write_text(json.dumps({"devices": [{"name": "batterie", "class": "controllable"}]}))
+    config = AddonConfig.load(options_path=str(options), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    device_collector = DeviceCollector(None, logger)
+    app = create_app(config, db, ring, device_collector=device_collector, version="test")
+
+    client = await aiohttp_client(app)  # löst die Geräte-Discovery (on_startup) aus
+    data = await (await client.get("/api/constraints")).json()
+
+    battery = data["devices"][0]
+    assert battery["name"] == "batterie"
+    assert battery["is_battery"] is True
+    assert battery["suggestion_keys"] == ["geschutzte_mindestleistung_w_vorschlag"]
+
+
+async def test_plan_schema_endpoint_is_versioned(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/plan/schema")).json()
+    assert data["schema_version"] == "1.0"
+    assert "devices" in data["schema"]["properties"]
+
+
 async def test_forecast_endpoint_returns_totals(aiohttp_client, tmp_path):
     config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
     logger, ring = setup_logging("DEBUG", stream=io.StringIO())

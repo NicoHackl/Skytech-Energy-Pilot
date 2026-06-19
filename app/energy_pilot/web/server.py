@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +16,11 @@ from aiohttp import web
 
 from energy_pilot.collector import StateCollector, run_poller
 from energy_pilot.config import AddonConfig
+from energy_pilot.constraints import build_constraints
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import RingBufferHandler, log
+from energy_pilot.objectives import objectives_from_config
+from energy_pilot.plan_schema import PLAN_JSON_SCHEMA, SCHEMA_VERSION, suggestion_keys
 from energy_pilot.roles import MEASUREMENT_ROLES
 
 TEMPLATES = Path(__file__).parent / "templates"
@@ -64,6 +68,9 @@ def create_app(
             web.get("/api/devices", devices_get),
             web.get("/api/forecast", forecast_get),
             web.get("/api/allowlist", allowlist_get),
+            web.get("/api/constraints", constraints_get),
+            web.get("/api/objectives", objectives_get),
+            web.get("/api/plan/schema", plan_schema_get),
             web.get("/api/diagnostics", diagnostics),
         ]
     )
@@ -289,3 +296,33 @@ async def allowlist_get(request: web.Request) -> web.Response:
     if allowlist is None:
         return web.json_response({"count": 0, "by_source": {}, "entries": []})
     return web.json_response(allowlist.snapshot())
+
+
+async def constraints_get(request: web.Request) -> web.Response:
+    """Liefert die abgeleiteten **harten Grenzen** je Gerät + den Schreibvertrag (Transparenz).
+
+    Grundlage sind die zuletzt gelesenen `ems_*`-Werte des DeviceCollectors; die
+    harten Grenzen sind read-only und nie durch die KI änderbar.
+    """
+    device_collector = request.app.get("device_collector")
+    if device_collector is None:
+        return web.json_response({"devices": []})
+    constraints = build_constraints(device_collector.devices, device_collector.last_values)
+    payload = []
+    for constraint in constraints:
+        entry = asdict(constraint)
+        entry["suggestion_keys"] = suggestion_keys(constraint)
+        payload.append(entry)
+    return web.json_response({"devices": payload})
+
+
+async def objectives_get(request: web.Request) -> web.Response:
+    """Liefert die aktiven weichen Zielgewichte (Defaults §7 + Addon-Config-Overrides)."""
+    config: AddonConfig = request.app["config"]
+    objectives = [asdict(obj) for obj in objectives_from_config(config.values)]
+    return web.json_response({"objectives": objectives})
+
+
+async def plan_schema_get(request: web.Request) -> web.Response:
+    """Liefert das versionierte Plan-JSON-Schema (Transparenz / spätere HEMS-Abstimmung)."""
+    return web.json_response({"schema_version": SCHEMA_VERSION, "schema": PLAN_JSON_SCHEMA})
