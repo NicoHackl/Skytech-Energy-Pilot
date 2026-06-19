@@ -32,6 +32,7 @@
     <button data-tab="geraete">Geräte</button>
     <button data-tab="prognose">Prognose</button>
     <button data-tab="grenzen">Grenzen &amp; Ziele</button>
+    <button data-tab="plan">Plan</button>
     <button data-tab="einstellungen">Einstellungen</button>
     <button data-tab="logs">Logs</button>
   </nav>
@@ -87,6 +88,19 @@
       <thead><tr><th>Ziel</th><th class="num">Gewicht</th></tr></thead>
       <tbody id="objective-rows"></tbody>
     </table>
+  </section>
+
+  <section id="plan" class="tab">
+    <div class="toolbar">
+      <button id="run-plan">Plan erzeugen</button>
+      <button id="refresh-plan">Aktualisieren</button>
+      <button id="test-ai">KI-Verbindung testen</button>
+      <span id="plan-status"></span>
+    </div>
+    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Die KI erzeugt einen
+       <strong>Vorschlagsplan</strong> (V1). Werte werden lokal gegen die harten Grenzen
+       validiert, aber <strong>nicht</strong> an HEMS übergeben.</p>
+    <div id="plan-result"></div>
   </section>
 
   <section id="einstellungen" class="tab">
@@ -277,6 +291,100 @@
         .join("");
     }
 
+    const PLAN_FIELD_LABELS = {
+      prio_vorschlag: "Priorität",
+      freigabe_vorschlag: "Freigabe",
+      geschutzte_mindestleistung_w_vorschlag: "Geschützte Mindestleistung (W)",
+      geschutzte_mindestleistung_a_vorschlag: "Geschützte Mindestleistung (A)",
+      max_temperatur_vorschlag: "Max. Wassertemperatur (°C)",
+    };
+
+    function renderPlan(data) {
+      const box = document.getElementById("plan-result");
+      const v = (data && data.validation) || {};
+      const errs = v.errors || [];
+      const clamped = v.clamped || [];
+      const p = data && data.plan;
+      if (!p) {
+        box.innerHTML = errs.length
+          ? `<p style="color:#c33;">${errs.join("<br>")}</p>`
+          : "<p>Noch kein Plan erzeugt. Auf „Plan erzeugen“ klicken (KI-Schlüssel in der Addon-Config nötig).</p>";
+        return;
+      }
+      const meta = {
+        "Status": v.ok ? "✅ gültig" : "❌ abgelehnt",
+        "Provider / Modell": `${p.provider || "–"} / ${p.model || "–"}`,
+        "Konfidenz": p.confidence == null ? "–" : p.confidence + " %",
+        "Gültig von": p.valid_from,
+        "Gültig bis": p.valid_until,
+      };
+      if (data.ts) meta["Erzeugt"] = data.ts;
+      if (data.ai_call && data.ai_call.tokens_in != null)
+        meta["Tokens (ein/aus)"] = `${data.ai_call.tokens_in} / ${data.ai_call.tokens_out}`;
+      const metaHtml = Object.entries(meta)
+        .map(([k, val]) => `<div>${k}</div><div><code>${val}</code></div>`)
+        .join("");
+      const errHtml = errs.length ? `<p style="color:#c33;font-size:.85rem;">Fehler: ${errs.join("; ")}</p>` : "";
+      const clampHtml = clamped.length ? `<p style="color:#c93;font-size:.85rem;">Geklemmt: ${clamped.join("; ")}</p>` : "";
+      const devHtml = (p.devices || [])
+        .map((d) => {
+          const rows = Object.entries(d)
+            .filter(([k]) => k !== "name")
+            .map(([k, val]) => {
+              const show = typeof val === "boolean" ? (val ? "Ja" : "Nein") : fmt(val);
+              return `<tr><td>${PLAN_FIELD_LABELS[k] || k}</td><td class="num">${show}</td></tr>`;
+            })
+            .join("");
+          return `<h3 style="font-size:.95rem;margin:.75rem 0 .25rem;">${d.name}</h3>
+            <table><tbody>${rows || "<tr><td>– keine Vorschläge –</td><td></td></tr>"}</tbody></table>`;
+        })
+        .join("");
+      const reasoning = p.reasoning
+        ? `<h3 style="font-size:.95rem;margin-top:1rem;">Begründung</h3><p style="font-size:.85rem;">${p.reasoning}</p>` : "";
+      const warnings = (p.warnings || []).length
+        ? `<h3 style="font-size:.95rem;margin-top:1rem;">Warnungen</h3><ul style="font-size:.85rem;">${p.warnings.map((w) => `<li>${w}</li>`).join("")}</ul>` : "";
+      const context = data.context
+        ? `<details style="margin-top:1rem;"><summary style="cursor:pointer;font-size:.85rem;">An die KI gesendete Daten</summary><pre style="font-size:.75rem;overflow:auto;">${JSON.stringify(data.context, null, 2)}</pre></details>` : "";
+      box.innerHTML = `<div class="kv">${metaHtml}</div>${errHtml}${clampHtml}
+        <h2 style="font-size:1rem;margin-top:1rem;">Geräte-Vorschläge</h2>${devHtml}${reasoning}${warnings}${context}`;
+    }
+
+    async function loadPlan() {
+      try {
+        renderPlan(await (await fetch("api/plan")).json());
+      } catch (e) {
+        document.getElementById("plan-result").innerHTML = `<p style="color:#c33;">${e}</p>`;
+      }
+    }
+
+    async function runPlan() {
+      const status = document.getElementById("plan-status");
+      const btn = document.getElementById("run-plan");
+      status.textContent = " … plane …";
+      btn.disabled = true;
+      try {
+        const data = await (await fetch("api/plan/run", { method: "POST" })).json();
+        const errs = (data.validation && data.validation.errors) || (data.error ? [data.error] : []);
+        status.textContent = data.ok ? " ✅ Plan erzeugt" : ` ❌ ${errs.join("; ")}`;
+        renderPlan(data);
+      } catch (e) {
+        status.textContent = " ❌ " + e;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function testAI() {
+      const status = document.getElementById("plan-status");
+      status.textContent = " … teste KI …";
+      try {
+        const data = await (await fetch("api/ai/test")).json();
+        status.textContent = data.connected ? " ✅ KI verbunden" : ` ❌ ${data.reason || ""}`;
+      } catch (e) {
+        status.textContent = " ❌ " + e;
+      }
+    }
+
     async function loadLogs() {
       const rows = await (await fetch("api/logs?limit=200")).json();
       document.getElementById("log-rows").innerHTML = rows
@@ -289,6 +397,9 @@
     document.getElementById("refresh-devices").addEventListener("click", loadDevices);
     document.getElementById("refresh-forecast").addEventListener("click", loadForecast);
     document.getElementById("refresh-grenzen").addEventListener("click", () => { loadConstraints(); loadObjectives(); });
+    document.getElementById("refresh-plan").addEventListener("click", loadPlan);
+    document.getElementById("run-plan").addEventListener("click", runPlan);
+    document.getElementById("test-ai").addEventListener("click", testAI);
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();
     loadDiag();
@@ -298,6 +409,7 @@
     loadForecast();
     loadConstraints();
     loadObjectives();
+    loadPlan();
     loadEntities();
     loadLogs();
 

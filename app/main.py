@@ -16,9 +16,11 @@ from energy_pilot.device_collector import DeviceCollector
 from energy_pilot.entity_map import mapping_from_options
 from energy_pilot.forecast import orientations_from_config
 from energy_pilot.forecast_collector import ForecastCollector
+from energy_pilot.gemini_provider import GeminiProvider
 from energy_pilot.ha_client import HAClient
 from energy_pilot.hems_client import HEMSClient
 from energy_pilot.logging_setup import log, setup_logging
+from energy_pilot.planner import Planner
 from energy_pilot.roles import MEASUREMENT_ROLES
 from energy_pilot.web.server import create_app
 
@@ -73,6 +75,32 @@ def build() -> web.Application:
         context={"ausrichtungen": [o.label for o in orientations]},
     )
 
+    # KI-Provider (D-007/D-041): nur bei vorhandenem Schlüssel + passendem Provider aktiv.
+    # Ohne Schlüssel bleibt die Planung deaktiviert; EP blockiert nie (Iron Rule 8).
+    api_key = str(config.values.get("api_key") or "").strip()
+    provider = None
+    if api_key and str(config.provider) == "gemini":
+        provider = GeminiProvider(
+            api_key,
+            model=str(config.model),
+            timeout_s=float(config.ai_request_timeout_s),
+            rate_limit_per_min=int(config.ai_rate_limit_per_min),
+        )
+        log(logger, "info", "KI-Provider aktiv", provider="gemini", model=str(config.model))
+    else:
+        log(logger, "warning", "KI-Provider nicht konfiguriert (api_key fehlt) – Planung inaktiv")
+
+    # Planner immer bauen (auch ohne Provider), damit /api/plan die Historie zeigen kann.
+    planner = Planner(
+        provider,
+        config,
+        db,
+        collector=collector,
+        forecast_collector=forecast_collector,
+        device_collector=device_collector,
+        logger=logger,
+    )
+
     poll_interval = float(config.collect_interval_s)
     return create_app(
         config,
@@ -84,6 +112,7 @@ def build() -> web.Application:
         forecast_collector,
         hems_client=hems_client,
         allowlist=allowlist,
+        planner=planner,
         version=__version__,
         logger=logger,
         enable_poller=ha_client is not None,

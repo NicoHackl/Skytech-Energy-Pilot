@@ -69,6 +69,25 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        4,
+        """
+        CREATE TABLE IF NOT EXISTS plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT DEFAULT (datetime('now')),
+            plan_id TEXT,
+            valid_from TEXT,
+            valid_until TEXT,
+            ok INTEGER,
+            provider TEXT,
+            model TEXT,
+            confidence INTEGER,
+            plan_json TEXT,
+            errors_json TEXT,
+            clamped_json TEXT
+        );
+        """,
+    ),
 ]
 
 

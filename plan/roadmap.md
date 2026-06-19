@@ -37,11 +37,11 @@ Legende: ☐ offen · ◐ in Arbeit · ☑ erledigt
 ## M2 — Vorschlagswerte *(info.md Phase 2 · Betriebsmodi „Beobachten"+„Vorschlagen")*
 **Ziel:** KI liefert **Vorschlagswerte** (D-008) — sichtbar in UI/Sensoren/Logs, **keine Übernahme**.
 - ☑ Device/Constraint-Model + User-Objective-Manager (harte Grenzen aus `ems_*`; Gewichte in Addon-Config `objective_weights`, init aus info.md §7 — D-011) ([07](07-planning-engine.md)). Module `constraints.py`/`objectives.py`; Transparenz `GET /api/constraints` + `/api/objectives`, Tab „Grenzen & Ziele". (D-040)
-- ☐ KI-Provider-Interface; **Start Gemini** (Free, Rate-Limit-Drossel ~10/min), Provider/Modell in Addon-Config umschaltbar (D-007) ([04](04-ki-provider.md)).
-- ☐ Planning Engine: Kandidatenplan (Erststufe: Batterie + Heizstab + Heizlüfter 1/2).
+- ☑ KI-Provider-Interface; **Start Gemini** (Free, Rate-Limit-Drossel ~10/min), Provider/Modell in Addon-Config umschaltbar (D-007/D-041). REST/aiohttp (kein SDK), Single-Shot + `responseSchema`. Module `ai_provider.py`/`gemini_provider.py` ([04](04-ki-provider.md)).
+- ☑ Planning Engine: Kandidatenplan (Erststufe: Batterie + Heizstab + Heizlüfter 1/2). Manuell ausgelöst via `POST /api/plan/run`; verdichteter Kontext (Datenminimum) → KI → lokaler Validator → DB. Module `plan_context.py`/`planner.py` (D-041).
 - ☑ Plan-JSON-Schema (`schema_version`) + lokaler Validator ([08](08-validierung-sicherheit.md)). Module `plan_schema.py`/`validator.py` (Stufen 1–3: Schema, harte Grenzen klemmen/ablehnen, Zeitlogik; Stufen 4–6 später). `jsonschema`-Lib (D-039/D-040).
-- ☐ Vorschlagssensoren (Suffix `vorschlag`) + Planexport.
-- ☐ UI: Energieplan-Ansicht, Begründungen, KI-Konfig (Key, Limits, Testverbindung), Kosten-/API-Logging.
+- ☐ Vorschlagssensoren (Suffix `vorschlag`) + Planexport. **(Folgeaufgabe: Schreiben nach HA bewusst noch nicht im Umfang von D-041.)**
+- ◐ UI: Energieplan-Ansicht, Begründungen, KI-Konfig (Key, Limits, Testverbindung), Kosten-/API-Logging. „Plan"-Tab + Begründungen + `GET /api/ai/test` + `ai_calls`-Logging vorhanden (D-041); KI-Konfig läuft über die Addon-Config, automatische Planung (Scheduler) folgt separat.
 
 **DoD:** EP erzeugt validen, begründeten Plan als Vorschlagswerte; sichtbar in UI/Sensoren/Logs; kein automatischer Eingriff.
 

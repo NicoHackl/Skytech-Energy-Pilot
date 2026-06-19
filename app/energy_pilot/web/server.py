@@ -37,6 +37,7 @@ def create_app(
     *,
     hems_client: object | None = None,
     allowlist: object | None = None,
+    planner: object | None = None,
     version: str = "0.0.1",
     logger: logging.Logger | None = None,
     enable_poller: bool = False,
@@ -53,6 +54,7 @@ def create_app(
     app["forecast_collector"] = forecast_collector
     app["hems_client"] = hems_client
     app["allowlist"] = allowlist
+    app["planner"] = planner
     app["version"] = version
     app["logger"] = logger
     app["poll_interval_s"] = poll_interval_s
@@ -71,6 +73,9 @@ def create_app(
             web.get("/api/constraints", constraints_get),
             web.get("/api/objectives", objectives_get),
             web.get("/api/plan/schema", plan_schema_get),
+            web.post("/api/plan/run", plan_run),
+            web.get("/api/plan", plan_get),
+            web.get("/api/ai/test", ai_test),
             web.get("/api/diagnostics", diagnostics),
         ]
     )
@@ -79,6 +84,8 @@ def create_app(
     if device_collector is not None:
         app.on_startup.append(_discover_devices)
         app.on_cleanup.append(_close_hems_client)
+    if planner is not None:
+        app.on_cleanup.append(_close_planner)
     if enable_poller and collector is not None:
         app.on_startup.append(_start_poller)
         app.on_cleanup.append(_stop_poller)
@@ -117,6 +124,12 @@ async def _close_hems_client(app: web.Application) -> None:
     client = app.get("hems_client")
     if client is not None and hasattr(client, "close"):
         await client.close()
+
+
+async def _close_planner(app: web.Application) -> None:
+    planner = app.get("planner")
+    if planner is not None and hasattr(planner, "aclose"):
+        await planner.aclose()
 
 
 async def _ha_selftest(app: web.Application) -> None:
@@ -332,3 +345,56 @@ async def objectives_get(request: web.Request) -> web.Response:
 async def plan_schema_get(request: web.Request) -> web.Response:
     """Liefert das versionierte Plan-JSON-Schema (Transparenz / spätere HEMS-Abstimmung)."""
     return web.json_response({"schema_version": SCHEMA_VERSION, "schema": PLAN_JSON_SCHEMA})
+
+
+async def plan_run(request: web.Request) -> web.Response:
+    """Stößt einen Planungslauf an (KI-Aufruf → Validierung → Persistenz, D-008/D-041).
+
+    Liefert immer eine strukturierte Antwort (`ok` + Validierung + KI-Metadaten +
+    gesendeter Kontext für Transparenz). Ist keine KI konfiguriert, kommt `ok=false`
+    mit klarer Meldung – kein Crash (Iron Rule 8).
+    """
+    planner = request.app.get("planner")
+    if planner is None:
+        return web.json_response(
+            {"ok": False, "error": "KI nicht konfiguriert (api_key fehlt)"}, status=503
+        )
+    result = await planner.run()
+    payload: dict[str, Any] = {
+        "ok": result.ok,
+        "plan": result.plan,
+        "validation": result.validation,
+        "ai_call": result.ai_call,
+        "context": result.context,
+    }
+    if result.error:
+        payload["error"] = result.error
+    return web.json_response(payload)
+
+
+async def plan_get(request: web.Request) -> web.Response:
+    """Liefert den zuletzt erzeugten Plan inkl. Validierungsergebnis (read-only)."""
+    planner = request.app.get("planner")
+    if planner is None:
+        return web.json_response({"plan": None})
+    return web.json_response(planner.latest_plan() or {"plan": None})
+
+
+async def ai_test(request: web.Request) -> web.Response:
+    """Testet die KI-Verbindung (Mini-Aufruf) – meldet jeden Fehler kontrolliert zurück."""
+    planner = request.app.get("planner")
+    provider = getattr(planner, "provider", None) if planner is not None else None
+    if provider is None:
+        return web.json_response(
+            {"connected": False, "reason": "KI nicht konfiguriert (api_key fehlt)"}, status=503
+        )
+    if not hasattr(provider, "test_connection"):
+        return web.json_response(
+            {"connected": False, "reason": "Provider unterstützt keinen Verbindungstest"},
+            status=501,
+        )
+    try:
+        result = await provider.test_connection()
+        return web.json_response({"connected": True, "result": result})
+    except Exception as exc:
+        return web.json_response({"connected": False, "reason": str(exc)}, status=502)
