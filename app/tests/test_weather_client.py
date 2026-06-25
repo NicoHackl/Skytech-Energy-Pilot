@@ -111,14 +111,28 @@ async def test_fetch_forecast_sends_key_as_param_not_in_url():
     assert call["params"]["units"] == "metric"
 
 
-async def test_fetch_forecast_invalid_key_raises():
-    session = _FakeSession(_FakeResponse(status=401, text="Invalid API key"))
-    client = OpenWeatherClient("bad", session=session)
+async def test_fetch_forecast_invalid_key_surfaces_owm_message():
+    body = (
+        '{"cod":401,"message":"Invalid API key. '
+        'Please see https://openweathermap.org/faq#error401 for more info."}'
+    )
+    session = _FakeSession(_FakeResponse(status=401, text=body))
+    client = OpenWeatherClient("bad-key", session=session)
     with pytest.raises(WeatherClientError) as exc:
         await client.fetch_forecast(1.0, 2.0)
-    assert "401" in str(exc.value)
-    # Schlüssel darf nicht in der Fehlermeldung auftauchen.
-    assert "bad" not in str(exc.value) or "401" in str(exc.value)
+    msg = str(exc.value)
+    assert "401" in msg
+    # OWM-Originalgrund wird durchgereicht, damit der echte Grund sichtbar ist.
+    assert "Invalid API key" in msg
+    # Der Schlüssel selbst taucht nie in der Meldung auf (Iron Rule 6).
+    assert "bad-key" not in msg
+
+
+def test_masked_request_url_hides_key():
+    client = OpenWeatherClient("super-secret", units="metric", lang="de")
+    url = client.masked_request_url(48.2, 16.3)
+    assert url.endswith("/forecast?lat=48.2&lon=16.3&appid=***&units=metric&lang=de")
+    assert "super-secret" not in url
 
 
 async def test_fetch_forecast_rate_limit_raises():

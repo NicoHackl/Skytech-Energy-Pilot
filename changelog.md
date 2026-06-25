@@ -6,6 +6,29 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.19] - 2026-06-25
+
+### Geändert
+- **OpenWeatherMap-Fehler zeigen jetzt den Originalgrund:** Bei HTTP 401/404/429 (und anderen
+  4xx/5xx) reicht der Client die OWM-Meldung aus dem Antwort-Body durch (z.B. „Invalid API key.
+  Please see …faq#error401"). Vorher wurde nur eine feste Meldung angezeigt, die den echten
+  Grund verbarg. Der API-Schlüssel ist **nie** Teil des OWM-Fehler-Bodys, bleibt also unsichtbar
+  (Iron Rule 6). Die 401-Meldung benennt zusätzlich explizit „… oder noch nicht aktiviert", da neue
+  OWM-Schlüssel bis zu ~2 h Aktivierungszeit brauchen.
+
+### Hinzugefügt
+- **Diagnose-Button „Wetter testen" + Endpunkt `GET /api/weather/test`:** Führt einen
+  Live-Einzelabruf durch (umgeht den `refresh_min`-Guard) und zeigt bei Erfolg Ort/Anzahl
+  Zeitschritte, bei Fehler den OWM-Originalgrund **plus die maskierte Anfrage-URL**
+  (`appid=***`) — so ist sofort prüfbar, dass der Aufruf korrekt aufgebaut ist und woran ein
+  401 liegt. Neue Client-Methode `masked_request_url`, Collector-Methode `test_fetch`.
+
+### Hinweis
+- Der Wetter-Aufruf war bereits **korrekt** aufgebaut (entspricht exakt der OWM-Doku:
+  `…/data/2.5/forecast?lat=…&lon=…&appid=…&units=metric&lang=de`). Ein HTTP **401** ist ein
+  OWM-seitiges Schlüsselthema (meist: Key noch nicht aktiviert), **kein** Free-Plan-/Limit-Problem
+  (das wäre HTTP 429; die 5-Tage/3-Stunden-Prognose ist im Free-Tier ohne Zahlungsmethode enthalten).
+
 ## [0.0.18] - 2026-06-25
 
 ### Behoben

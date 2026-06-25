@@ -76,6 +76,7 @@
     <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Direkt im EP über OpenWeatherMap
        abgerufen. Koordinaten aus der HA-Zone, API-Schlüssel in der Addon-Config
        (<code>weather</code>). Nur EP-intern — <strong>nicht</strong> als HA-Sensor oder an HEMS.</p>
+    <div class="toolbar"><button id="test-weather">Wetter testen</button><span id="weather-status"></span></div>
     <div id="weather-meta" style="font-size:.8rem;color:#888;margin:.25rem 0;"></div>
     <div id="weather-list"></div>
   </section>
@@ -285,6 +286,26 @@
         + `<th class="num">Regen-W.</th><th class="num">Wind</th><th>Wetter</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
+    async function testWeather() {
+      const status = document.getElementById("weather-status");
+      status.textContent = " … teste Wetterabruf …";
+      try {
+        const res = await fetch("api/weather/test");
+        const data = await res.json();
+        const r = data.result || {};
+        if (data.connected) {
+          const place = r.city ? r.city : "Abruf ok";
+          status.textContent = ` ✅ ${place} (${r.slots ?? 0} Zeitschritte)`;
+        } else {
+          const url = r.request_url ? ` · URL: ${r.request_url}` : "";
+          status.textContent = ` ❌ ${r.reason || data.reason || res.status}${url}`;
+        }
+      } catch (e) {
+        status.textContent = " ❌ " + e;
+      }
+      loadWeather();
+    }
+
     async function loadAllowlist() {
       const data = await (await fetch("api/allowlist")).json();
       const bySrc = Object.entries(data.by_source || {})
@@ -469,6 +490,7 @@
     document.getElementById("refresh-state").addEventListener("click", loadState);
     document.getElementById("refresh-devices").addEventListener("click", loadDevices);
     document.getElementById("refresh-forecast").addEventListener("click", () => { loadForecast(); loadWeather(); });
+    document.getElementById("test-weather").addEventListener("click", testWeather);
     document.getElementById("refresh-grenzen").addEventListener("click", () => { loadConstraints(); loadObjectives(); });
     document.getElementById("refresh-plan").addEventListener("click", loadPlan);
     document.getElementById("run-plan").addEventListener("click", runPlan);

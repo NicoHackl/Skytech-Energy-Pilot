@@ -73,6 +73,46 @@ class WeatherCollector:
                 log(self.logger, "warning", "Wetterabruf fehlgeschlagen",
                     context={"error": str(exc)})
 
+    async def test_fetch(self, now: float | None = None) -> dict:
+        """Einmaliger Live-Abruf für die UI – umgeht den Refresh-Guard.
+
+        Liefert ein strukturiertes Ergebnis statt zu werfen (Muster wie
+        `AIProvider.test_connection`, aber fehlertolerant): so sieht der User im
+        Test sofort den echten OWM-Grund (z.B. „Invalid API key…") und die
+        maskierte Anfrage-URL – ohne dass der Schlüssel sichtbar wird.
+        """
+        now = time.time() if now is None else now
+        if not self.config.enabled:
+            return {"ok": False, "reason": "Kein OpenWeatherMap-Schlüssel konfiguriert"}
+        if self.client is None or self.ha_client is None:
+            return {"ok": False, "reason": "Keine HA-Verbindung für die Zone verfügbar"}
+
+        coords = await self._resolve_coords()
+        if coords is None:
+            return {"ok": False, "reason": self.last_error or "Koordinaten nicht ermittelbar"}
+        self.coords = coords
+        request_url = self.client.masked_request_url(coords[0], coords[1])
+
+        try:
+            self.forecast = await self.client.fetch_forecast(coords[0], coords[1])
+            self.last_fetch_ts = now
+            self.last_error = None
+            return {
+                "ok": True,
+                "city": self.forecast.city,
+                "slots": len(self.forecast.slots),
+                "coords": {"lat": coords[0], "lon": coords[1]},
+                "request_url": request_url,
+            }
+        except WeatherClientError as exc:
+            self.last_error = str(exc)
+            return {
+                "ok": False,
+                "reason": str(exc),
+                "coords": {"lat": coords[0], "lon": coords[1]},
+                "request_url": request_url,
+            }
+
     def _refresh_due(self, now: float) -> bool:
         if self.last_fetch_ts is None:
             return True

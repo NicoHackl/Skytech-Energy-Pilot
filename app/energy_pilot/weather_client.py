@@ -10,12 +10,31 @@ vollständige Request-URL.
 
 from __future__ import annotations
 
+import json
+
 import aiohttp
 
 from energy_pilot.weather import WeatherForecast, WeatherSlot
 
 DEFAULT_BASE_URL = "https://api.openweathermap.org/data/2.5"
 DEFAULT_TIMEOUT_S = 15.0
+
+
+async def _error_message(resp: aiohttp.ClientResponse) -> str:
+    """Holt den OWM-Originalgrund aus dem Fehler-Body.
+
+    OWM antwortet bei Fehlern mit `{"cod":<n>,"message":"…"}`; wir reichen genau diese
+    `message` durch, damit der echte Grund sichtbar wird (z.B. „Invalid API key…").
+    Der Body enthält **nie** den Schlüssel → Iron Rule 6 bleibt gewahrt.
+    """
+    text = await resp.text()
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return text[:200]
+    if isinstance(data, dict) and data.get("message"):
+        return str(data["message"])
+    return text[:200]
 
 
 class WeatherClientError(Exception):
@@ -113,6 +132,17 @@ class OpenWeatherClient:
             await self._session.close()
             self._session = None
 
+    def masked_request_url(self, lat: float, lon: float) -> str:
+        """Die Request-URL mit maskiertem Schlüssel (für die Transparenz-Anzeige im Test).
+
+        Zeigt exakt die gebaute URL-Form, aber `appid=***` statt des echten Schlüssels –
+        damit der User die Aufrufstruktur prüfen kann, ohne dass der Key sichtbar wird.
+        """
+        return (
+            f"{self.base_url}/forecast?lat={lat}&lon={lon}"
+            f"&appid=***&units={self.units}&lang={self.lang}"
+        )
+
     async def fetch_forecast(self, lat: float, lon: float) -> WeatherForecast:
         """Holt die 5-Tage-Prognose für die Koordinaten und liefert sie normalisiert.
 
@@ -132,17 +162,25 @@ class OpenWeatherClient:
         try:
             async with session.get(url, params=params, timeout=self._timeout) as resp:
                 if resp.status == 401:
-                    raise WeatherClientError("OpenWeatherMap: API-Schlüssel ungültig (HTTP 401)")
-                if resp.status == 429:
-                    raise WeatherClientError("OpenWeatherMap-Rate-Limit erreicht (HTTP 429)")
-                if resp.status == 404:
+                    msg = await _error_message(resp)
                     raise WeatherClientError(
-                        "OpenWeatherMap: Koordinaten nicht gefunden (HTTP 404)"
+                        "OpenWeatherMap: API-Schlüssel ungültig oder noch nicht aktiviert "
+                        f"(HTTP 401): {msg}"
+                    )
+                if resp.status == 429:
+                    msg = await _error_message(resp)
+                    raise WeatherClientError(
+                        f"OpenWeatherMap-Rate-Limit erreicht (HTTP 429): {msg}"
+                    )
+                if resp.status == 404:
+                    msg = await _error_message(resp)
+                    raise WeatherClientError(
+                        f"OpenWeatherMap: Koordinaten nicht gefunden (HTTP 404): {msg}"
                     )
                 if resp.status >= 400:
-                    text = await resp.text()
+                    msg = await _error_message(resp)
                     raise WeatherClientError(
-                        f"OpenWeatherMap-Fehler HTTP {resp.status}: {text[:200]}"
+                        f"OpenWeatherMap-Fehler HTTP {resp.status}: {msg}"
                     )
                 payload = await resp.json()
         except TimeoutError as exc:

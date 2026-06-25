@@ -27,6 +27,9 @@ class _FakeOWMClient:
             raise self._error
         return self._forecast
 
+    def masked_request_url(self, lat, lon):
+        return f"https://owm/forecast?lat={lat}&lon={lon}&appid=***&units=metric&lang=de"
+
 
 def _cfg(api_key="key", refresh_min=30):
     return WeatherConfig(
@@ -112,3 +115,47 @@ async def test_fetch_error_recorded_no_crash():
     assert "401" in snap["last_error"]
     # Fehlerhafter Abruf setzt last_fetch_ts nicht → nächster Zyklus versucht es erneut.
     assert snap["last_fetch_ts"] is None
+
+
+async def test_test_fetch_success_bypasses_refresh_guard():
+    owm = _FakeOWMClient(forecast=_forecast())
+    collector = WeatherCollector(_FakeHAClient(_zone_state()), _cfg(refresh_min=30), owm)
+
+    # Erster Abruf füllt last_fetch_ts; ein Live-Test ignoriert den Refresh-Guard.
+    await collector.collect_once(now=1000.0)
+    result = await collector.test_fetch(now=1000.0 + 60)
+
+    assert result["ok"] is True
+    assert result["city"] == "Wien"
+    assert result["slots"] == 1
+    assert result["coords"] == {"lat": 48.2, "lon": 16.3}
+    assert "appid=***" in result["request_url"]
+    assert len(owm.calls) == 2  # trotz kurz zurückliegendem Abruf erneut aufgerufen
+
+
+async def test_test_fetch_disabled_returns_reason():
+    collector = WeatherCollector(_FakeHAClient(_zone_state()), _cfg(api_key=""), None)
+    result = await collector.test_fetch(now=1000.0)
+    assert result["ok"] is False
+    assert "Schlüssel" in result["reason"]
+
+
+async def test_test_fetch_surfaces_fetch_error_and_masked_url():
+    owm = _FakeOWMClient(error=WeatherClientError("HTTP 401: Invalid API key"))
+    collector = WeatherCollector(_FakeHAClient(_zone_state()), _cfg(), owm)
+
+    result = await collector.test_fetch(now=1000.0)
+
+    assert result["ok"] is False
+    assert "Invalid API key" in result["reason"]
+    assert "appid=***" in result["request_url"]
+
+
+async def test_test_fetch_missing_coords_returns_reason():
+    owm = _FakeOWMClient(forecast=_forecast())
+    collector = WeatherCollector(_FakeHAClient(_zone_state(lat=None)), _cfg(), owm)
+
+    result = await collector.test_fetch(now=1000.0)
+    assert result["ok"] is False
+    assert "latitude" in result["reason"]
+    assert owm.calls == []

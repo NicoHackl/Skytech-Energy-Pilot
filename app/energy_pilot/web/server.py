@@ -72,6 +72,7 @@ def create_app(
             web.get("/api/devices", devices_get),
             web.get("/api/forecast", forecast_get),
             web.get("/api/weather", weather_get),
+            web.get("/api/weather/test", weather_test),
             web.get("/api/allowlist", allowlist_get),
             web.get("/api/constraints", constraints_get),
             web.get("/api/objectives", objectives_get),
@@ -326,6 +327,24 @@ async def weather_get(request: web.Request) -> web.Response:
     if weather_collector is None:
         return web.json_response({"enabled": False, "forecast": None})
     return web.json_response(weather_collector.snapshot())
+
+
+async def weather_test(request: web.Request) -> web.Response:
+    """Live-Einzelabruf der Wetterprognose (Diagnose-Button), umgeht den Refresh-Guard.
+
+    Meldet jeden Fehler kontrolliert zurück – inkl. OWM-Originalgrund und maskierter
+    Anfrage-URL, damit ein 401 (Schlüssel ungültig/inaktiv) direkt erkennbar ist.
+    """
+    weather_collector = request.app.get("weather_collector")
+    if weather_collector is None:
+        return web.json_response(
+            {"connected": False, "reason": "Wetter nicht konfiguriert"}, status=503
+        )
+    result = await weather_collector.test_fetch()
+    status = 200 if result.get("ok") else 502
+    return web.json_response(
+        {"connected": result.get("ok", False), "result": result}, status=status
+    )
 
 
 async def allowlist_get(request: web.Request) -> web.Response:
