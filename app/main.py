@@ -8,7 +8,7 @@ from aiohttp import web
 
 from energy_pilot import __version__
 from energy_pilot.aggregation import RollingAggregator
-from energy_pilot.allowlist import EntityAllowlist, collect_entity_ids
+from energy_pilot.allowlist import SOURCE_WEATHER, EntityAllowlist, collect_entity_ids
 from energy_pilot.collector import StateCollector
 from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
@@ -93,7 +93,7 @@ def build() -> web.Application:
     weather_collector = WeatherCollector(ha_client, weather_config, weather_client, logger)
     if weather_config.enabled:
         # Die Zone ist eine Lese-Entität → in die Soft-Allowlist aufnehmen (D-038).
-        allowlist.register_all([weather_config.zone_entity])
+        allowlist.register_all({weather_config.zone_entity: SOURCE_WEATHER})
         log(
             logger, "info", "Wetterprognose aktiv",
             context={"zone": weather_config.zone_entity, "refresh_min": weather_config.refresh_min},

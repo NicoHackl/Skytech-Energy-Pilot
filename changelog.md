@@ -6,6 +6,15 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.18] - 2026-06-25
+
+### Behoben
+- **Start-Crash bei aktiver Wetterprognose:** Die HA-Zone wurde mit einer Liste statt
+  des erwarteten `entity_id → source`-Mappings an `EntityAllowlist.register_all` übergeben
+  (`AttributeError: 'list' object has no attribute 'items'`), wodurch das Add-on beim Start
+  abbrach, sobald ein OpenWeatherMap-Schlüssel gesetzt war. Die Zone wird jetzt korrekt als
+  `{zone_entity: "weather"}` registriert (neue Allowlist-Quelle `SOURCE_WEATHER`).
+
 ## [0.0.17] - 2026-06-25
 
 ### Hinzugefügt

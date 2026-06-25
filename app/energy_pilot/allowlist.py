@@ -27,6 +27,7 @@ from energy_pilot.logging_setup import log
 SOURCE_MEASUREMENT = "measurement"
 SOURCE_DEVICE = "device"
 SOURCE_FORECAST = "forecast"
+SOURCE_WEATHER = "weather"
 
 
 def collect_entity_ids(
