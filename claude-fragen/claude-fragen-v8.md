@@ -19,11 +19,11 @@
 
 ## W — Wetter
 
-### W1 — Wetterdaten in den KI-Planungskontext aufnehmen? *(wichtigste Frage)*
+### W1 — Wetterdaten in den KI-Planungskontext aufnehmen? *(wichtigste Frage)* — ✅ ERLEDIGT → D-043 (v0.0.20)
 Bisher sagen [info.md](../info.md) §6 und [plan/06-prognosen.md](../plan/06-prognosen.md): „Wetter in V1 nicht für die KI nötig (PV-Prognose deckt die Erzeugung ab)". Deine neue Vorgabe ist „Daten **aktuell nur im Energy Pilot** benötigt" — das habe ich als **Sammeln + Anzeigen (UI/API)** umgesetzt, **ohne** den KI-Prompt (`plan_context.py`) zu verändern (Datenminimum, Iron Rule 7; Token-Budget; Antwort-Schema bleibt schlank).
 **Frage:** Sollen die Wetterdaten **jetzt schon** in den KI-Kontext (`build_context`) einfließen, oder bleibt es vorerst bei reiner EP-interner Anzeige? Falls einfließen: welche Felder (Empfehlung: **Bewölkung `clouds` + Niederschlagswahrscheinlichkeit `pop` + Temperatur**, da PV-/Last-relevant) und über welchen Horizont (Empfehlung: nur bis `forecast_horizon_h`, nicht alle 5 Tage)?
 
-Antwort:
+**Antwort (umgesetzt, D-043):** Ja, Wetter fließt in den KI-Kontext. Der **Detailgrad ist in der Addon-Config umschaltbar** (`weather.llm_detail`): `compact` (Default) = Temperatur/Bewölkung/Niederschlagswahrscheinlichkeit je 3-h-Schritt bis `forecast_horizon_h`; `full` = volle 5 Tage, alle Felder. Damit ist die Felder-/Horizont-Frage konfigurierbar gelöst (W2/W5 teilweise mit beantwortet).
 
 ### W2 — Zeitraster: 3-Stunden-Schritte direkt nutzen?
 OWM liefert die 5-Tage-Prognose in **3-Stunden-Schritten** (40 Werte). Das passt nicht zum 1/15/60-min-Mittelungsschema der Messgrößen (D-001), ist aber für den Planungshorizont 24–48 h ausreichend.

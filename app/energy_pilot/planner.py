@@ -32,8 +32,10 @@ from energy_pilot.plan_schema import (
     DeviceSuggestion,
     plan_to_dict,
 )
+from energy_pilot.settings import PLANNING_PROMPT_KEY, get_setting
 from energy_pilot.suggestion_publisher import publish_suggestions
 from energy_pilot.validator import validate
+from energy_pilot.weather import weather_config_from_options
 
 
 @dataclass
@@ -82,6 +84,7 @@ class Planner:
         collector: object | None = None,
         forecast_collector: object | None = None,
         device_collector: object | None = None,
+        weather_collector: object | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.provider = provider
@@ -91,6 +94,7 @@ class Planner:
         self.collector = collector
         self.forecast_collector = forecast_collector
         self.device_collector = device_collector
+        self.weather_collector = weather_collector
         self.logger = logger
 
     async def run(self, *, now: datetime | None = None) -> PlanRunResult:
@@ -100,6 +104,9 @@ class Planner:
         state = self.collector.snapshot() if self.collector is not None else {}
         forecast = (
             self.forecast_collector.snapshot() if self.forecast_collector is not None else {}
+        )
+        weather = (
+            self.weather_collector.snapshot() if self.weather_collector is not None else {}
         )
         dc = self.device_collector
         devices = getattr(dc, "devices", []) if dc is not None else []
@@ -111,9 +118,13 @@ class Planner:
         window_min = int(self.config.planning_interval_min)
         valid_until = (now + timedelta(minutes=window_min)).isoformat()
 
+        weather_detail = weather_config_from_options(self.config.values).llm_detail
         context = build_context(
             state, forecast, constraints, objectives,
             valid_from=valid_from, valid_until=valid_until,
+            weather=weather,
+            horizon_h=int(self.config.forecast_horizon_h),
+            weather_detail=weather_detail,
         )
         run_id = uuid4().hex[:12]
 
@@ -131,7 +142,9 @@ class Planner:
                 error="provider_not_configured",
             )
 
-        prompt = build_prompt(context)
+        # Editierbare Instruktion aus der EP-Oberfläche (sonst Default); Daten-Block hängt
+        # build_prompt selbst an, das Antwort-Schema bleibt code-kontrolliert.
+        prompt = build_prompt(context, get_setting(self.db, PLANNING_PROMPT_KEY))
         schema = build_response_schema(constraints)
         try:
             response = await self.provider.generate(prompt, schema)

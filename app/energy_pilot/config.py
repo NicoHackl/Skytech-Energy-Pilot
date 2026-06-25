@@ -42,6 +42,9 @@ DEFAULTS: dict[str, object] = {
         "units": "metric",
         "lang": "de",
         "refresh_min": 30,
+        # Detailgrad ans LLM: "compact" (Bewölkung/Regen/Temp bis Horizont)
+        # oder "full" (volle 5 Tage, alle Felder).
+        "llm_detail": "compact",
     },
     # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus info.md §7 (objectives.py).
     "objective_weights": {},

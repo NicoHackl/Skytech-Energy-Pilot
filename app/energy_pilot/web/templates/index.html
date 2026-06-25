@@ -110,6 +110,20 @@
        validiert und bei Gültigkeit als <code>sensor.ep_*_vorschlag</code> nach Home
        Assistant geschrieben (reine Anzeige zum manuellen Verdrahten) — aber
        <strong>nicht</strong> an HEMS übergeben.</p>
+    <details style="margin:.5rem 0;">
+      <summary style="cursor:pointer;font-weight:bold;">Planungs-Prompt bearbeiten</summary>
+      <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Die Instruktion an die KI. Änderungen
+         wirken sofort beim nächsten Plan — <strong>kein</strong> Git-Push/Add-on-Update nötig
+         (gespeichert in der EP-Datenbank, übersteht Neustart &amp; Update). Der Datenblock
+         (<code>Daten:</code> mit Zustand/Prognose/Wetter/Geräten/Zielen) wird automatisch angehängt;
+         das JSON-Antwortformat und die harten Grenzen bleiben fest erzwungen.</p>
+      <textarea id="prompt-text" rows="14" style="width:100%;font-family:monospace;font-size:.8rem;box-sizing:border-box;"></textarea>
+      <div class="toolbar">
+        <button id="save-prompt">Speichern</button>
+        <button id="reset-prompt">Auf Standard zurücksetzen</button>
+        <span id="prompt-status"></span>
+      </div>
+    </details>
     <div id="plan-result"></div>
   </section>
 
@@ -468,6 +482,34 @@
       }
     }
 
+    let promptDefault = "";
+    async function loadPrompt() {
+      const data = await (await fetch("api/prompt")).json();
+      promptDefault = data.default || "";
+      document.getElementById("prompt-text").value = data.prompt || "";
+      document.getElementById("prompt-status").textContent = data.is_custom ? " (eigener Prompt)" : " (Standard)";
+    }
+
+    async function savePrompt(prompt) {
+      const status = document.getElementById("prompt-status");
+      status.textContent = " … speichere …";
+      try {
+        const res = await fetch("api/prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          status.textContent = data.is_custom ? " ✅ gespeichert (eigener Prompt)" : " ✅ auf Standard zurückgesetzt";
+        } else {
+          status.textContent = " ❌ " + (data.reason || res.status);
+        }
+      } catch (e) {
+        status.textContent = " ❌ " + e;
+      }
+    }
+
     async function testAI() {
       const status = document.getElementById("plan-status");
       status.textContent = " … teste KI …";
@@ -496,6 +538,11 @@
     document.getElementById("run-plan").addEventListener("click", runPlan);
     document.getElementById("publish-plan").addEventListener("click", publishPlan);
     document.getElementById("test-ai").addEventListener("click", testAI);
+    document.getElementById("save-prompt").addEventListener("click", () => savePrompt(document.getElementById("prompt-text").value));
+    document.getElementById("reset-prompt").addEventListener("click", async () => {
+      document.getElementById("prompt-text").value = promptDefault;
+      await savePrompt("");
+    });
     document.getElementById("refresh-logs").addEventListener("click", loadLogs);
     loadHealth();
     loadDiag();
@@ -507,6 +554,7 @@
     loadConstraints();
     loadObjectives();
     loadPlan();
+    loadPrompt();
     loadEntities();
     loadLogs();
 

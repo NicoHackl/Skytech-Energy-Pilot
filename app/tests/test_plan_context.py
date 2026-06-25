@@ -3,7 +3,33 @@
 from energy_pilot.constraints import build_constraints
 from energy_pilot.devices import BINARY, CONTROLLABLE, Device
 from energy_pilot.objectives import objectives_from_config
-from energy_pilot.plan_context import build_context, build_prompt, build_response_schema
+from energy_pilot.plan_context import (
+    DEFAULT_PLANNING_PROMPT,
+    _condense_weather,
+    build_context,
+    build_prompt,
+    build_response_schema,
+)
+
+
+def _weather_snapshot(n_slots=20):
+    # OWM-Snapshot-Form wie WeatherCollector.snapshot(): forecast.slots[] in 3h-Schritten.
+    slots = [
+        {
+            "time": f"2026-06-25 {3 * i:02d}:00:00",
+            "temp": 20.0 + i,
+            "feels_like": 19.0 + i,
+            "clouds": 10.0 * (i % 10),
+            "pop": 0.1,
+            "wind_speed": 3.0,
+            "humidity": 50.0,
+            "rain_3h": None,
+            "snow_3h": None,
+            "condition": "klar",
+        }
+        for i in range(n_slots)
+    ]
+    return {"enabled": True, "units": "metric", "forecast": {"city": "Wien", "slots": slots}}
 
 
 def _constraints():
@@ -83,3 +109,59 @@ def test_build_prompt_contains_rules_and_data():
     assert isinstance(prompt, str)
     assert "Orchestrator" in prompt
     assert "heizstab" in prompt  # die verdichteten Gerätedaten stehen im Prompt
+
+
+def test_default_prompt_mentions_weather():
+    assert "weather" in DEFAULT_PLANNING_PROMPT or "Wetter" in DEFAULT_PLANNING_PROMPT
+
+
+def test_build_prompt_uses_custom_template_and_always_appends_data():
+    ctx = build_context(
+        {}, {}, _constraints(), objectives_from_config({}), valid_from="A", valid_until="B"
+    )
+    prompt = build_prompt(ctx, "MEIN EIGENER PROMPT")
+    assert prompt.startswith("MEIN EIGENER PROMPT")
+    assert "Orchestrator" not in prompt  # Default-Text ersetzt
+    assert "Daten:" in prompt  # Datenblock wird IMMER angehängt
+    assert "heizstab" in prompt
+
+
+def test_build_prompt_blank_template_falls_back_to_default():
+    ctx = build_context(
+        {}, {}, _constraints(), objectives_from_config({}), valid_from="A", valid_until="B"
+    )
+    assert "Orchestrator" in build_prompt(ctx, "   ")
+
+
+def test_condense_weather_compact_trims_to_horizon_and_keeps_few_fields():
+    out = _condense_weather(_weather_snapshot(20), horizon_h=24, detail="compact")
+    # 24h / 3h-Schritte = 8 Schritte
+    assert len(out["slots"]) == 8
+    assert out["detail"] == "compact"
+    assert out["city"] == "Wien"
+    slot = out["slots"][0]
+    assert set(slot.keys()) == {"time", "temp", "clouds", "pop"}
+
+
+def test_condense_weather_full_keeps_all_slots_and_fields():
+    out = _condense_weather(_weather_snapshot(20), horizon_h=24, detail="full")
+    assert len(out["slots"]) == 20  # nicht gekürzt
+    assert out["detail"] == "full"
+    assert "wind_speed" in out["slots"][0]
+    assert "humidity" in out["slots"][0]
+
+
+def test_condense_weather_empty_without_forecast():
+    assert _condense_weather({}, horizon_h=24, detail="compact") == {}
+    no_fc = {"enabled": False, "forecast": None}
+    assert _condense_weather(no_fc, horizon_h=24, detail="compact") == {}
+
+
+def test_build_context_includes_weather():
+    ctx = build_context(
+        {}, {}, _constraints(), objectives_from_config({}),
+        valid_from="A", valid_until="B",
+        weather=_weather_snapshot(4), horizon_h=24, weather_detail="full",
+    )
+    assert ctx["weather"]["detail"] == "full"
+    assert len(ctx["weather"]["slots"]) == 4

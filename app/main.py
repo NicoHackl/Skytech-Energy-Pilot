@@ -125,6 +125,7 @@ def build() -> web.Application:
         collector=collector,
         forecast_collector=forecast_collector,
         device_collector=device_collector,
+        weather_collector=weather_collector,
         logger=logger,
     )
 

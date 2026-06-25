@@ -21,7 +21,8 @@ Forecast Manager
 - **Wetter (D-042):** **direkt im EP** über die OpenWeatherMap-„5 day / 3 hour forecast"-API abgerufen (eigene externe Quelle, **nicht** über HA-Sensoren wie die PV-Prognose).
   - Koordinaten aus einer **HA-Zone** (`zone.*`, Attribute `latitude`/`longitude`); API-Schlüssel + Parameter (`units`, `lang`, `refresh_min`) in der Addon-Config-Gruppe `weather`. Schlüssel wird nie geloggt (Iron Rule 6).
   - Module `weather.py`/`weather_client.py`/`weather_collector.py`; Endpoint `GET /api/weather`; Wetter-Block im Prognose-Tab. Abruf gedrosselt auf `refresh_min` (Default 30 min).
-  - **V1-Scope:** Daten **nur EP-intern** (UI/API). **Noch nicht** als HA-Sensor und **nicht** über die HEMS-API. Einspeisung in den KI-Kontext ist offen (claude-fragen-v8 W1).
+  - **KI-Kontext (D-043):** Wetter fließt in die Planung ein; Detailgrad in der Addon-Config umschaltbar (`weather.llm_detail`: `compact` = Temp/Bewölkung/Regen-W. bis Horizont; `full` = volle 5 Tage, alle Felder).
+  - **V1-Scope:** **Noch nicht** als HA-Sensor und **nicht** über die HEMS-API (eigener späterer Schritt).
 - **Lastprognose** primär **intern** aus verdichteter Historie (typische Profile nach Wochentag/Uhrzeit, basierend auf 60-min-agg, siehe [05](05-daten-und-speicherung.md)).
 
 ## Verarbeitung

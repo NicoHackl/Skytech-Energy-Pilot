@@ -21,6 +21,11 @@ DEFAULT_LANG = "de"
 # Mindestabstand zweier OWM-Aufrufe (min). Die 5-Tage-Prognose ändert sich serverseitig
 # nur alle paar Stunden; häufigere Abrufe wären reine Verschwendung (Rate-Limit-Schutz).
 DEFAULT_REFRESH_MIN = 30
+# Detailgrad der Wetterdaten, die ans LLM gehen (in der Addon-Config umschaltbar):
+# "compact" = Bewölkung/Regen/Temp bis Planungshorizont (Datenminimum, Iron Rule 7),
+# "full" = volle 5-Tage-Prognose mit allen Feldern (mehr Tokens, mehr Kontext).
+DEFAULT_LLM_DETAIL = "compact"
+LLM_DETAIL_CHOICES = ("compact", "full")
 
 
 @dataclass(frozen=True)
@@ -32,6 +37,7 @@ class WeatherConfig:
     units: str
     lang: str
     refresh_min: int
+    llm_detail: str = DEFAULT_LLM_DETAIL
 
     @property
     def enabled(self) -> bool:
@@ -58,6 +64,9 @@ def weather_config_from_options(values: dict) -> WeatherConfig:
         refresh_min = DEFAULT_REFRESH_MIN
     if refresh_min < 1:
         refresh_min = DEFAULT_REFRESH_MIN
+    llm_detail = str(cfg.get("llm_detail") or "").strip().lower()
+    if llm_detail not in LLM_DETAIL_CHOICES:
+        llm_detail = DEFAULT_LLM_DETAIL
 
     return WeatherConfig(
         api_key=api_key,
@@ -65,6 +74,7 @@ def weather_config_from_options(values: dict) -> WeatherConfig:
         units=units,
         lang=lang,
         refresh_min=refresh_min,
+        llm_detail=llm_detail,
     )
 
 

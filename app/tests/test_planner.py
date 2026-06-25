@@ -81,7 +81,25 @@ _VALID_DATA = {
 }
 
 
-def _planner(tmp_path, provider, *, ha_client=None, options=None):
+class _Weather:
+    """Wetter-Collector-Doppel mit einem Snapshot wie WeatherCollector.snapshot()."""
+
+    def snapshot(self):
+        return {
+            "enabled": True,
+            "units": "metric",
+            "forecast": {
+                "city": "Wien",
+                "slots": [
+                    {"time": "2026-06-19 12:00:00", "temp": 24.0, "clouds": 20.0, "pop": 0.1,
+                     "feels_like": 23.0, "wind_speed": 3.0, "humidity": 50.0,
+                     "rain_3h": None, "snow_3h": None, "condition": "klar"},
+                ],
+            },
+        }
+
+
+def _planner(tmp_path, provider, *, ha_client=None, options=None, weather_collector=None):
     config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
     if options:
         config.values.update(options)
@@ -89,7 +107,8 @@ def _planner(tmp_path, provider, *, ha_client=None, options=None):
     db = init_db(str(tmp_path / "ep.db"))
     planner = Planner(
         provider, config, db,
-        ha_client=ha_client, device_collector=_Devices(), logger=logger,
+        ha_client=ha_client, device_collector=_Devices(),
+        weather_collector=weather_collector, logger=logger,
     )
     return planner, db
 
@@ -126,6 +145,22 @@ async def test_run_produces_valid_plan(tmp_path):
     latest = planner.latest_plan()
     assert latest["ok"]
     assert latest["plan"]["devices"]
+
+
+async def test_run_includes_weather_in_context(tmp_path):
+    planner, _ = _planner(
+        tmp_path, _FakeProvider(_VALID_DATA),
+        weather_collector=_Weather(),
+        options={"weather": {"llm_detail": "full"}},
+    )
+
+    result = await planner.run(now=NOW)
+
+    assert result.ok
+    weather = result.context["weather"]
+    assert weather["city"] == "Wien"
+    assert weather["detail"] == "full"
+    assert weather["slots"][0]["temp"] == 24.0
 
 
 async def test_run_rejects_contract_violation(tmp_path):

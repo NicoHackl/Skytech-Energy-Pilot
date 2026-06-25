@@ -6,6 +6,26 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.20] - 2026-06-25
+
+### Hinzugefügt
+- **Wetterprognose fließt in die KI-Planung (D-043, beantwortet W1):** Der Planungskontext
+  enthält jetzt einen `weather`-Block. Der **Detailgrad ist in der Addon-Config umschaltbar**
+  (`weather.llm_detail`): `compact` (Default) liefert je 3-Stunden-Schritt nur Temperatur,
+  Bewölkung und Niederschlagswahrscheinlichkeit und kürzt auf den Planungshorizont
+  (`forecast_horizon_h`) — Datenminimum (Iron Rule 7); `full` übergibt die komplette
+  5-Tage-Prognose mit allen Feldern (mehr Tokens, mehr Kontext). Der Default-Prompt weist die
+  KI an, Bewölkung/Regen (PV-Erwartung) und Temperatur (Heizbedarf) einzubeziehen.
+- **Editierbarer Planungs-Prompt in der EP-Oberfläche (D-043):** Im Plan-Tab unter
+  „Planungs-Prompt bearbeiten" lässt sich die KI-Instruktion direkt bearbeiten, speichern und
+  auf den Standard zurücksetzen — **ohne Git-Push/Add-on-Update**. Der Prompt wird in der
+  bestehenden `config`-Key/Value-Tabelle persistiert (übersteht Neustart **und** Add-on-Update,
+  keine Migration). Neue Endpunkte `GET/POST /api/prompt`, neues Modul `settings.py`
+  (generischer KV-Speicher). **Sicherheit:** Der Datenblock (`Daten:`) wird immer automatisch
+  angehängt, das JSON-Antwort-Schema bleibt code-kontrolliert und der Validator erzwingt die
+  harten Grenzen unabhängig vom Prompt (Iron Rules 5/6). Prompt-Änderungen werden auditiert
+  (nur Länge, kein Volltext).
+
 ## [0.0.19] - 2026-06-25
 
 ### Geändert

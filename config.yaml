@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.19"
+version: "0.0.20"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -51,6 +51,9 @@ options:
     units: metric
     lang: de
     refresh_min: 30
+    # Detailgrad der Wetterdaten ans LLM: compact (Bewölkung/Regen/Temp bis Planungshorizont,
+    # spart Tokens) oder full (volle 5-Tage-Prognose mit allen Feldern, genauer aber mehr Tokens).
+    llm_detail: compact
   # Weiche Zielgewichte (Prozent 0–100, D-011). Initialwerte aus info.md §7.
   # Harte Grenzen sind nicht hier, sondern werden aus den ems_*-Werten abgeleitet (constraints.py).
   objective_weights:
@@ -112,6 +115,7 @@ schema:
     units: list(metric|imperial|standard)?
     lang: str?
     refresh_min: int(1,720)?
+    llm_detail: list(compact|full)?
   objective_weights:
     versorgungssicherheit: int(0,100)?
     eauto_ladeziel: int(0,100)?

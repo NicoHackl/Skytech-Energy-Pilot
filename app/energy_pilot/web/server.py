@@ -20,8 +20,15 @@ from energy_pilot.constraints import build_constraints
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import RingBufferHandler, log
 from energy_pilot.objectives import objectives_from_config
+from energy_pilot.plan_context import DEFAULT_PLANNING_PROMPT
 from energy_pilot.plan_schema import PLAN_JSON_SCHEMA, SCHEMA_VERSION, suggestion_keys
 from energy_pilot.roles import MEASUREMENT_ROLES
+from energy_pilot.settings import (
+    PLANNING_PROMPT_KEY,
+    delete_setting,
+    get_setting,
+    set_setting,
+)
 
 TEMPLATES = Path(__file__).parent / "templates"
 
@@ -77,6 +84,8 @@ def create_app(
             web.get("/api/constraints", constraints_get),
             web.get("/api/objectives", objectives_get),
             web.get("/api/plan/schema", plan_schema_get),
+            web.get("/api/prompt", prompt_get),
+            web.post("/api/prompt", prompt_post),
             web.post("/api/plan/run", plan_run),
             web.post("/api/plan/publish", plan_publish),
             web.get("/api/plan", plan_get),
@@ -389,6 +398,59 @@ async def objectives_get(request: web.Request) -> web.Response:
 async def plan_schema_get(request: web.Request) -> web.Response:
     """Liefert das versionierte Plan-JSON-Schema (Transparenz / spätere HEMS-Abstimmung)."""
     return web.json_response({"schema_version": SCHEMA_VERSION, "schema": PLAN_JSON_SCHEMA})
+
+
+async def prompt_get(request: web.Request) -> web.Response:
+    """Liefert die aktuell wirksame Planungs-Instruktion + den Standard (für den Editor).
+
+    `is_custom` zeigt an, ob ein eigener Prompt gespeichert ist; `default` ist der
+    eingebaute Standard (zum Zurücksetzen/Vergleich).
+    """
+    db = request.app.get("db")
+    custom = get_setting(db, PLANNING_PROMPT_KEY)
+    return web.json_response(
+        {
+            "prompt": custom or DEFAULT_PLANNING_PROMPT,
+            "is_custom": bool(custom),
+            "default": DEFAULT_PLANNING_PROMPT,
+        }
+    )
+
+
+async def prompt_post(request: web.Request) -> web.Response:
+    """Speichert die editierte Planungs-Instruktion; leerer Text setzt auf Standard zurück.
+
+    Der Datenblock und das JSON-Antwort-Schema bleiben code-kontrolliert und die harten
+    Grenzen erzwingt der Validator unabhängig vom Prompt (Iron Rules 5/6).
+    """
+    db = request.app.get("db")
+    if db is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+    prompt = str(body.get("prompt") or "").strip()
+    if prompt:
+        set_setting(db, PLANNING_PROMPT_KEY, prompt)
+        action, is_custom = "prompt_updated", True
+    else:
+        delete_setting(db, PLANNING_PROMPT_KEY)
+        action, is_custom = "prompt_reset", False
+    _audit_prompt(db, action, len(prompt))
+    return web.json_response({"ok": True, "is_custom": is_custom})
+
+
+def _audit_prompt(db: sqlite3.Connection, action: str, length: int) -> None:
+    """Protokolliert die Prompt-Änderung (nur Länge, kein Volltext); blockiert nie."""
+    try:
+        db.execute(
+            "INSERT INTO audit (actor, action, subject, detail_json) VALUES (?, ?, ?, ?)",
+            ("user", action, PLANNING_PROMPT_KEY, f'{{"length": {length}}}'),
+        )
+        db.commit()
+    except sqlite3.Error:  # pragma: no cover - Audit darf den Vorgang nie stören
+        pass
 
 
 async def plan_run(request: web.Request) -> web.Response:

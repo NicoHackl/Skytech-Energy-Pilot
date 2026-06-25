@@ -30,6 +30,8 @@ Geräte initial: **Batteriespeicher (E3DC), Heizstab, Heizlüfter 1, Heizlüfter
 
 ## Erzeugung des Kandidatenplans
 - **V1 (D-008): KI erzeugt strukturierten Plan über Tools** (siehe [04](04-ki-provider.md)), gegen harte Grenzen geklemmt. Ergebnis sind **reine Vorschlagswerte** — sichtbar in UI, HA-Sensoren (`sensor.ep_*`) und Logging, aber **keine Übernahme** durch HEMS.
+- **Kontext (D-042/D-043):** verdichteter Zustand, PV-Prognose, **Wetterprognose** (`weather.llm_detail`: `compact`/`full`), harte Grenzen, Ziele (Datenminimum, Iron Rule 7).
+- **Editierbarer Prompt (D-043):** Die KI-Instruktion ist in der EP-Oberfläche (Plan-Tab) editierbar und in der `config`-Tabelle persistiert (überdauert Neustart/Update). Der `Daten:`-Block wird immer code-seitig angehängt; das Antwort-Schema bleibt code-kontrolliert und der Validator erzwingt die harten Grenzen unabhängig vom Prompt (Iron Rules 5/6).
 - Zielbild (Phase 6): deterministische **lokale Optimierungsengine** (mathematische Fahrplanoptimierung, Speicherverluste, Kosten/Eigenverbrauch, rollierende Planung); KI orchestriert/bewertet/erklärt.
 
 ## Simulation

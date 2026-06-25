@@ -38,6 +38,14 @@ def test_parses_values_and_enabled_with_key():
     assert cfg.refresh_min == 15
 
 
+def test_llm_detail_default_and_parsing():
+    assert weather_config_from_options({}).llm_detail == "compact"
+    full = weather_config_from_options({"weather": {"llm_detail": "FULL"}})
+    assert full.llm_detail == "full"  # normalisiert auf Kleinschreibung
+    # Ungültiger Wert fällt auf den Default zurück.
+    assert weather_config_from_options({"weather": {"llm_detail": "xxl"}}).llm_detail == "compact"
+
+
 def test_invalid_refresh_falls_back_to_default():
     cfg = weather_config_from_options({"weather": {"refresh_min": "abc"}})
     assert cfg.refresh_min == DEFAULT_REFRESH_MIN
