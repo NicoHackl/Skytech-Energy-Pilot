@@ -8,7 +8,7 @@ Stellt strukturierte Prognosen für die Planung bereit. Externe Daten werden dur
 Forecast Manager
 ├── PV Forecast               # PV-Erzeugungsprognose  ← V1: einzige externe Quelle
 ├── Load Forecast             # Lastprognose aus Historie/Lastprofilen (intern)
-├── Weather Forecast          # später optional (in V1 NICHT benötigt)
+├── Weather Forecast          # OpenWeatherMap, direkt im EP (D-042) – V1: nur EP-intern
 └── Electricity Price Forecast# VORERST RAUS – kein dynamischer Tarif beim User
 ```
 
@@ -18,7 +18,10 @@ Forecast Manager
   - Vier Werte: **Energie aktuelle Stunde, Energie nächste Stunde, Energie verbleibend heute, Energie morgen**.
   - **Jeder Wert liegt direkt im State eines eigenen Sensors** (kein Attribut, D-026) → in der Addon-Config also je Wert (und je Ausrichtung) ein Entitätsname.
 - **Strompreis:** in V1 **weggelassen** (kein dynamischer Tarif). Architektur so halten, dass eine Preisquelle später ohne Umbau ergänzbar ist.
-- **Wetter:** in V1 **nicht** benötigt (PV-Prognose deckt die Erzeugungsgrundlage ab).
+- **Wetter (D-042):** **direkt im EP** über die OpenWeatherMap-„5 day / 3 hour forecast"-API abgerufen (eigene externe Quelle, **nicht** über HA-Sensoren wie die PV-Prognose).
+  - Koordinaten aus einer **HA-Zone** (`zone.*`, Attribute `latitude`/`longitude`); API-Schlüssel + Parameter (`units`, `lang`, `refresh_min`) in der Addon-Config-Gruppe `weather`. Schlüssel wird nie geloggt (Iron Rule 6).
+  - Module `weather.py`/`weather_client.py`/`weather_collector.py`; Endpoint `GET /api/weather`; Wetter-Block im Prognose-Tab. Abruf gedrosselt auf `refresh_min` (Default 30 min).
+  - **V1-Scope:** Daten **nur EP-intern** (UI/API). **Noch nicht** als HA-Sensor und **nicht** über die HEMS-API. Einspeisung in den KI-Kontext ist offen (claude-fragen-v8 W1).
 - **Lastprognose** primär **intern** aus verdichteter Historie (typische Profile nach Wochentag/Uhrzeit, basierend auf 60-min-agg, siehe [05](05-daten-und-speicherung.md)).
 
 ## Verarbeitung

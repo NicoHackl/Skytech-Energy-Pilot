@@ -26,7 +26,8 @@ Legende: ☐ offen · ◐ in Arbeit · ☑ erledigt
 - ☑ Entity Allowlist (D-038): zentrales Register der freigegebenen Lese-Entitäten aus den 3 Config-Quellen, **soft** durchgesetzt (Verstöße protokolliert/auditiert, nie blockiert), Config+DB, Transparenz unter `/api/allowlist` + Status-Tab. Module `allowlist.py`; Soft-Guard in `ha_client.py`.
 - ☑ State Collector + History Aggregator inkl. **1/15/60-min-Mittelwerte** (D-001/D-003, [05](05-daten-und-speicherung.md)).
 - ☑ **Geräte-Datenebene:** Discovery via HEMS `/api/device_controls_schema` + Config-Fallback (D-036); EP liest `ems_*`-Gerätewerte (technische Freigabe, Ist-Leistung, min/max technisch) + Heizstab-Temperaturgrenze (D-035). Module `hems_client.py`, `devices.py`, `device_collector.py`; Endpoint `/api/devices`; Geräte-Ansicht in der SPA.
-- ☑ **PV-Prognose-Anbindung** (D-006/D-018/D-026): mehrere Ausrichtungen je in Addon-Config (`pv_forecast`), EP summiert je Wert (akt./nächste Stunde, Rest heute, morgen). Module `forecast.py`, `forecast_collector.py`; Endpoint `/api/forecast`; Prognose-Tab. Strompreis/Wetter in V1 raus.
+- ☑ **PV-Prognose-Anbindung** (D-006/D-018/D-026): mehrere Ausrichtungen je in Addon-Config (`pv_forecast`), EP summiert je Wert (akt./nächste Stunde, Rest heute, morgen). Module `forecast.py`, `forecast_collector.py`; Endpoint `/api/forecast`; Prognose-Tab. Strompreis in V1 raus.
+- ☑ **Wettervorhersage (OpenWeatherMap, D-042):** 5-Tage/3-Stunden-Prognose direkt im EP abgerufen; Koordinaten aus HA-Zone, Schlüssel/Parameter in Addon-Config (`weather`). Module `weather.py`, `weather_client.py`, `weather_collector.py`; Endpoint `/api/weather`; Wetter-Block im Prognose-Tab. V1: nur EP-intern (keine HA-Sensoren/HEMS, KI-Kontext offen → claude-fragen-v8).
 - ☑ Dashboard + Geräte- + Prognoseanzeige (read-only).
 - ☐ Status-Entitäten (`sensor.ep_*`) — kommt mit M2 (Vorschlagswerte).
 

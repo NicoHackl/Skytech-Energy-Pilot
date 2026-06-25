@@ -22,6 +22,9 @@ from energy_pilot.hems_client import HEMSClient
 from energy_pilot.logging_setup import log, setup_logging
 from energy_pilot.planner import Planner
 from energy_pilot.roles import MEASUREMENT_ROLES
+from energy_pilot.weather import weather_config_from_options
+from energy_pilot.weather_client import OpenWeatherClient
+from energy_pilot.weather_collector import WeatherCollector
 from energy_pilot.web.server import create_app
 
 DB_PATH = os.environ.get("EP_DB_PATH", "/data/energy_pilot.db")
@@ -75,6 +78,29 @@ def build() -> web.Application:
         context={"ausrichtungen": [o.label for o in orientations]},
     )
 
+    # Wetterprognose (OpenWeatherMap, direkt im EP): Koordinaten aus der HA-Zone.
+    # Ohne API-Schlüssel bzw. ohne HA-Client bleibt der Collector inaktiv (Iron Rule 8).
+    weather_config = weather_config_from_options(config.values)
+    weather_client = (
+        OpenWeatherClient(
+            weather_config.api_key,
+            units=weather_config.units,
+            lang=weather_config.lang,
+        )
+        if weather_config.enabled
+        else None
+    )
+    weather_collector = WeatherCollector(ha_client, weather_config, weather_client, logger)
+    if weather_config.enabled:
+        # Die Zone ist eine Lese-Entität → in die Soft-Allowlist aufnehmen (D-038).
+        allowlist.register_all([weather_config.zone_entity])
+        log(
+            logger, "info", "Wetterprognose aktiv",
+            context={"zone": weather_config.zone_entity, "refresh_min": weather_config.refresh_min},
+        )
+    else:
+        log(logger, "info", "Wetterprognose inaktiv (kein OpenWeatherMap-Schlüssel)")
+
     # KI-Provider (D-007/D-041): nur bei vorhandenem Schlüssel + passendem Provider aktiv.
     # Ohne Schlüssel bleibt die Planung deaktiviert; EP blockiert nie (Iron Rule 8).
     api_key = str(config.values.get("api_key") or "").strip()
@@ -111,6 +137,7 @@ def build() -> web.Application:
         collector,
         device_collector,
         forecast_collector,
+        weather_collector=weather_collector,
         hems_client=hems_client,
         allowlist=allowlist,
         planner=planner,

@@ -6,6 +6,31 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.17] - 2026-06-25
+
+### Hinzugefügt
+- **Wettervorhersage über OpenWeatherMap (direkt im EP):** EP ruft die
+  „5 day / 3 hour forecast"-API von OpenWeatherMap jetzt **direkt** ab (eigene externe
+  Quelle, nicht über HA-Sensoren wie die PV-Prognose). Längen-/Breitengrad kommen aus
+  einer **HA-Zone** (`zone.*`, Attribute `latitude`/`longitude`), der API-Schlüssel und
+  alle Parameter werden in der Addon-Config gepflegt. Neue Module `weather.py`
+  (Config-Parsing + normalisierte Dataclasses), `weather_client.py` (aiohttp-Client,
+  Muster wie `gemini_provider.py`; `appid` als Query-Param, **nie geloggt**, Iron Rule 6)
+  und `weather_collector.py` (löst die Zone in Koordinaten auf, drosselt OWM-Aufrufe
+  selbst auf `refresh_min`). Die Zone wird als Lese-Entität in die Soft-Allowlist
+  aufgenommen (D-038).
+- **Neue Addon-Option-Gruppe `weather`** (`api_key`, `zone_entity` [Default `zone.home`],
+  `units` [Default `metric`], `lang` [Default `de`], `refresh_min` [Default 30]). Ohne
+  `api_key` bleibt der Wetterabruf inaktiv – EP blockiert nie (Iron Rule 8).
+- **Endpunkt `GET /api/weather`** (read-only Momentaufnahme) und ein **Wetter-Block im
+  Prognose-Tab** der UI (Temperatur, Bewölkung, Niederschlagswahrscheinlichkeit, Wind,
+  Zustand je 3-Stunden-Schritt). Diagnose um `weather_enabled`/`weather_last_fetch_ts`/
+  `weather_last_error` ergänzt.
+- **Scope V1 (bewusst):** Die Wetterdaten werden **aktuell nur EP-intern** genutzt
+  (UI/API). Sie werden **noch nicht** als HA-Sensoren bereitgestellt und **nicht** über
+  die interne API an das HEMS übergeben. Ob/wie sie in den KI-Planungskontext einfließen,
+  ist offen → [claude-fragen/claude-fragen-v8.md](claude-fragen/claude-fragen-v8.md).
+
 ## [0.0.16] - 2026-06-19
 
 ### Hinzugefügt

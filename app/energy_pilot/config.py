@@ -32,6 +32,17 @@ DEFAULTS: dict[str, object] = {
     "pv_forecast": [],
     # Anzeigeeinheit der PV-Prognosewerte (EP konvertiert nicht, summiert nur).
     "pv_forecast_unit": "kWh",
+    # Wetterprognose (OpenWeatherMap 5-Tage/3-Stunden, direkt im EP abgerufen).
+    # api_key leer => Wetterabruf deaktiviert; Koordinaten aus der HA-Zone (Attribute
+    # latitude/longitude). Schlüssel wird nie geloggt (Iron Rule 6). Nur EP-intern,
+    # noch nicht als HA-Sensor/HEMS-Übergabe.
+    "weather": {
+        "api_key": "",
+        "zone_entity": "zone.home",
+        "units": "metric",
+        "lang": "de",
+        "refresh_min": 30,
+    },
     # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus info.md §7 (objectives.py).
     "objective_weights": {},
 }

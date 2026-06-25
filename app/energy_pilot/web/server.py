@@ -35,6 +35,7 @@ def create_app(
     device_collector: object | None = None,
     forecast_collector: object | None = None,
     *,
+    weather_collector: object | None = None,
     hems_client: object | None = None,
     allowlist: object | None = None,
     planner: object | None = None,
@@ -52,6 +53,7 @@ def create_app(
     app["collector"] = collector
     app["device_collector"] = device_collector
     app["forecast_collector"] = forecast_collector
+    app["weather_collector"] = weather_collector
     app["hems_client"] = hems_client
     app["allowlist"] = allowlist
     app["planner"] = planner
@@ -69,6 +71,7 @@ def create_app(
             web.get("/api/entities", entities_get),
             web.get("/api/devices", devices_get),
             web.get("/api/forecast", forecast_get),
+            web.get("/api/weather", weather_get),
             web.get("/api/allowlist", allowlist_get),
             web.get("/api/constraints", constraints_get),
             web.get("/api/objectives", objectives_get),
@@ -87,6 +90,8 @@ def create_app(
         app.on_cleanup.append(_close_hems_client)
     if planner is not None:
         app.on_cleanup.append(_close_planner)
+    if weather_collector is not None:
+        app.on_cleanup.append(_close_weather_client)
     if enable_poller and collector is not None:
         app.on_startup.append(_start_poller)
         app.on_cleanup.append(_stop_poller)
@@ -133,6 +138,13 @@ async def _close_planner(app: web.Application) -> None:
         await planner.aclose()
 
 
+async def _close_weather_client(app: web.Application) -> None:
+    collector = app.get("weather_collector")
+    client = getattr(collector, "client", None) if collector is not None else None
+    if client is not None and hasattr(client, "close"):
+        await client.close()
+
+
 async def _ha_selftest(app: web.Application) -> None:
     """Einmaliger Verbindungstest beim Start – Ergebnis landet sichtbar im Log."""
     client: HAClient | None = app["ha_client"]
@@ -154,6 +166,7 @@ async def _start_poller(app: web.Application) -> None:
             app["logger"],
             device_collector=app.get("device_collector"),
             forecast_collector=app.get("forecast_collector"),
+            weather_collector=app.get("weather_collector"),
         )
     )
 
@@ -251,6 +264,9 @@ async def diagnostics(request: web.Request) -> web.Response:
         else "none",
         "device_count": len(getattr(device_collector, "devices", [])) if device_collector else 0,
         "forecast_orientations": len(getattr(app.get("forecast_collector"), "orientations", [])),
+        "weather_enabled": bool(getattr(app.get("weather_collector"), "enabled", False)),
+        "weather_last_fetch_ts": getattr(app.get("weather_collector"), "last_fetch_ts", None),
+        "weather_last_error": getattr(app.get("weather_collector"), "last_error", None),
         "allowlist_count": allowlist.snapshot()["count"] if allowlist is not None else 0,
     }
     return web.json_response(payload)
@@ -302,6 +318,14 @@ async def forecast_get(request: web.Request) -> web.Response:
     if forecast_collector is None:
         return web.json_response({})
     return web.json_response(forecast_collector.snapshot())
+
+
+async def weather_get(request: web.Request) -> web.Response:
+    """Liefert die OWM-Wetterprognose (5 Tage/3 h) – read-only, nur EP-intern."""
+    weather_collector = request.app.get("weather_collector")
+    if weather_collector is None:
+        return web.json_response({"enabled": False, "forecast": None})
+    return web.json_response(weather_collector.snapshot())
 
 
 async def allowlist_get(request: web.Request) -> web.Response:

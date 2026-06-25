@@ -72,6 +72,12 @@
     <h2 style="font-size:1rem;">PV-Prognose (Summe über alle Ausrichtungen)</h2>
     <div id="forecast-totals"></div>
     <div id="forecast-orient"></div>
+    <h2 style="font-size:1rem;margin-top:1.5rem;">Wetter (OpenWeatherMap, 5 Tage / 3 h)</h2>
+    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Direkt im EP über OpenWeatherMap
+       abgerufen. Koordinaten aus der HA-Zone, API-Schlüssel in der Addon-Config
+       (<code>weather</code>). Nur EP-intern — <strong>nicht</strong> als HA-Sensor oder an HEMS.</p>
+    <div id="weather-meta" style="font-size:.8rem;color:#888;margin:.25rem 0;"></div>
+    <div id="weather-list"></div>
   </section>
 
   <section id="grenzen" class="tab">
@@ -245,6 +251,38 @@
             <table><thead><tr><th>Wert</th><th class="num">Wert</th><th>Entität</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table>`;
         })
         .join("");
+    }
+
+    async function loadWeather() {
+      const data = await (await fetch("api/weather")).json();
+      const meta = document.getElementById("weather-meta");
+      const list = document.getElementById("weather-list");
+      if (!data.enabled) {
+        meta.textContent = "Wetterabruf inaktiv – OpenWeatherMap-Schlüssel in der Addon-Config (weather) setzen.";
+        list.innerHTML = "";
+        return;
+      }
+      const fc = data.forecast;
+      const place = fc && fc.city ? `${fc.city}${fc.country ? ", " + fc.country : ""}` : "–";
+      const coords = data.coords ? `${fmt(data.coords.lat)}/${fmt(data.coords.lon)}` : "–";
+      const ts = data.last_fetch_ts ? new Date(data.last_fetch_ts * 1000).toLocaleString("de-DE") : "–";
+      meta.innerHTML = `Ort: <code>${place}</code> · Zone: <code>${data.zone_entity}</code> (${coords})`
+        + ` · Stand: ${ts}` + (data.last_error ? ` · ⚠️ ${data.last_error}` : "");
+      const slots = (fc && fc.slots) || [];
+      if (!slots.length) {
+        list.innerHTML = "<p>Noch keine Prognose abgerufen.</p>";
+        return;
+      }
+      const rows = slots
+        .map((s) => {
+          const t = s.time || (s.dt ? new Date(s.dt * 1000).toLocaleString("de-DE") : "–");
+          const pop = s.pop == null ? "–" : Math.round(s.pop * 100) + " %";
+          return `<tr><td>${t}</td><td class="num">${fmt(s.temp)} °</td><td class="num">${fmt(s.clouds)} %</td>`
+            + `<td class="num">${pop}</td><td class="num">${fmt(s.wind_speed)}</td><td>${s.condition || "–"}</td></tr>`;
+        })
+        .join("");
+      list.innerHTML = `<table><thead><tr><th>Zeit</th><th class="num">Temp</th><th class="num">Bewölkung</th>`
+        + `<th class="num">Regen-W.</th><th class="num">Wind</th><th>Wetter</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     async function loadAllowlist() {
@@ -430,7 +468,7 @@
 
     document.getElementById("refresh-state").addEventListener("click", loadState);
     document.getElementById("refresh-devices").addEventListener("click", loadDevices);
-    document.getElementById("refresh-forecast").addEventListener("click", loadForecast);
+    document.getElementById("refresh-forecast").addEventListener("click", () => { loadForecast(); loadWeather(); });
     document.getElementById("refresh-grenzen").addEventListener("click", () => { loadConstraints(); loadObjectives(); });
     document.getElementById("refresh-plan").addEventListener("click", loadPlan);
     document.getElementById("run-plan").addEventListener("click", runPlan);
@@ -443,6 +481,7 @@
     loadState();
     loadDevices();
     loadForecast();
+    loadWeather();
     loadConstraints();
     loadObjectives();
     loadPlan();
@@ -453,7 +492,7 @@
     setInterval(() => {
       if (document.getElementById("daten").classList.contains("active")) loadState();
       if (document.getElementById("geraete").classList.contains("active")) loadDevices();
-      if (document.getElementById("prognose").classList.contains("active")) loadForecast();
+      if (document.getElementById("prognose").classList.contains("active")) { loadForecast(); loadWeather(); }
       if (document.getElementById("grenzen").classList.contains("active")) loadConstraints();
       if (document.getElementById("status").classList.contains("active")) { loadDiag(); loadAllowlist(); }
     }, 10000);

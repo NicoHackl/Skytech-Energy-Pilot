@@ -108,15 +108,17 @@ async def run_poller(
     logger: logging.Logger | None = None,
     device_collector: object | None = None,
     forecast_collector: object | None = None,
+    weather_collector: object | None = None,
 ) -> None:
     """Periodischer Sammellauf, bis die Aufgabe abgebrochen wird.
 
-    Erfasst je Zyklus die Haus-Messgrößen und – falls vorhanden – die Geräte-
-    und PV-Prognosewerte. Jeder Collector wird einzeln gekapselt, damit ein
-    Fehler im einen den anderen nicht ausfällt.
+    Erfasst je Zyklus die Haus-Messgrößen und – falls vorhanden – die Geräte-,
+    PV-Prognose- und Wetterwerte. Jeder Collector wird einzeln gekapselt, damit ein
+    Fehler im einen den anderen nicht ausfällt. (Der Wetter-Collector drosselt seine
+    OWM-Aufrufe selbst auf `refresh_min`, läuft also nicht bei jedem Zyklus.)
     """
     while True:
-        for component in (collector, device_collector, forecast_collector):
+        for component in (collector, device_collector, forecast_collector, weather_collector):
             if component is None:
                 continue
             try:
