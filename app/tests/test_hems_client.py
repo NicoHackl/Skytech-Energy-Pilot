@@ -59,3 +59,36 @@ async def test_device_schema_raises_on_error_status():
 
     with pytest.raises(RuntimeError):
         await client.device_schema()
+
+
+@pytest.mark.asyncio
+async def test_status_calls_endpoint():
+    payload = {"status": {"pool_w": 1000.0, "devices": []}, "cycle_count": 7}
+    session = _FakeSession(payload)
+    client = HEMSClient("http://hems:8099", session=session)
+
+    result = await client.status()
+
+    assert result == payload
+    assert session.urls[0].endswith("/api/status")
+
+
+@pytest.mark.asyncio
+async def test_controls_calls_endpoint():
+    payload = {"input_number.ems_heizstab_min_technisch_w": {"state": "500"}}
+    session = _FakeSession(payload)
+    client = HEMSClient("http://hems:8099", session=session)
+
+    result = await client.controls()
+
+    assert result == payload
+    assert session.urls[0].endswith("/api/controls")
+
+
+@pytest.mark.asyncio
+async def test_status_raises_on_error_status():
+    session = _FakeSession({}, status=500)
+    client = HEMSClient("http://hems:8099", session=session)
+
+    with pytest.raises(RuntimeError):
+        await client.status()

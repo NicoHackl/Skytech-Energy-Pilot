@@ -49,9 +49,25 @@ class HEMSClient:
         Wirft bei Nichterreichbarkeit/Fehlerstatus – der Aufrufer entscheidet über
         den Config-Fallback.
         """
+        return await self._get_json("/api/device_controls_schema")
+
+    async def status(self) -> dict[str, Any]:
+        """Liefert den letzten HEMS-Regelzyklus (`GET /api/status`).
+
+        Format: `{"status": {pool_w, current_deficit_w, devices: [...], ...},
+        "last_cycle_at", "cycle_count", "error", "interval_s"}` (gegen
+        SkytechHEMS `app/main.py` verifiziert). Wirft bei Nichterreichbarkeit/
+        Fehlerstatus – der Aufrufer (Status-Collector) fängt das fehlertolerant ab.
+        """
+        return await self._get_json("/api/status")
+
+    async def controls(self) -> dict[str, Any]:
+        """Liefert die Live-States aller `ems_*`-Helfer (`GET /api/controls`)."""
+        return await self._get_json("/api/controls")
+
+    async def _get_json(self, path: str) -> Any:
+        """Gemeinsamer GET-Helfer: Session sicherstellen, Status prüfen, JSON liefern."""
         session = await self._ensure_session()
-        async with session.get(
-            f"{self.base_url}/api/device_controls_schema", timeout=self._timeout
-        ) as resp:
+        async with session.get(f"{self.base_url}{path}", timeout=self._timeout) as resp:
             resp.raise_for_status()
             return await resp.json()

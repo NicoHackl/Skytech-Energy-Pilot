@@ -19,6 +19,7 @@ from energy_pilot.forecast_collector import ForecastCollector
 from energy_pilot.gemini_provider import GeminiProvider
 from energy_pilot.ha_client import HAClient
 from energy_pilot.hems_client import HEMSClient
+from energy_pilot.hems_status_collector import HEMSStatusCollector
 from energy_pilot.logging_setup import log, setup_logging
 from energy_pilot.onecall_client import OneCallClient
 from energy_pilot.planner import Planner
@@ -148,6 +149,23 @@ def build() -> web.Application:
         logger=logger,
     )
 
+    # HEMS-Status-Rückkopplung (M3): nur bei konfiguriertem HEMS. Liest /api/status,
+    # leitet die beobachtete Plan-Übereinstimmung ab und spiegelt sie als EP-Sensoren.
+    hems_status_collector = (
+        HEMSStatusCollector(
+            hems_client,
+            logger=logger,
+            planner=planner,
+            device_collector=device_collector,
+            ha_client=ha_client,
+            db=db,
+            publish_status_enabled=bool(config.values.get("publish_status", True)),
+            interval_s=float(config.hems_status_interval_s),
+        )
+        if hems_client is not None
+        else None
+    )
+
     poll_interval = float(config.collect_interval_s)
     return create_app(
         config,
@@ -159,6 +177,7 @@ def build() -> web.Application:
         forecast_collector,
         weather_collector=weather_collector,
         hems_client=hems_client,
+        hems_status_collector=hems_status_collector,
         allowlist=allowlist,
         planner=planner,
         version=__version__,

@@ -33,6 +33,7 @@
     <button data-tab="prognose">Prognose</button>
     <button data-tab="grenzen">Grenzen &amp; Ziele</button>
     <button data-tab="plan">Plan</button>
+    <button data-tab="hems">HEMS</button>
     <button data-tab="einstellungen">Einstellungen</button>
     <button data-tab="logs">Logs</button>
   </nav>
@@ -126,6 +127,25 @@
       </div>
     </details>
     <div id="plan-result"></div>
+  </section>
+
+  <section id="hems" class="tab">
+    <div class="toolbar">
+      <button id="refresh-hems">Aktualisieren</button>
+      <button id="test-hems">Jetzt prüfen</button>
+      <span id="hems-status"></span>
+    </div>
+    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Status-Rückkopplung (M3): EP liest den
+       HEMS-Zustand (<code>/api/status</code>) und vergleicht die KI-Vorschläge mit dem Ist-Zustand.
+       Die Aussage ist <strong>beobachtend</strong> — in V1 verdrahtet der User die Vorschläge selbst
+       in HA. Gespiegelt als <code>sensor.ep_plan_status</code> und <code>sensor.ep_hems_verbindung</code>.
+       HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen.</p>
+    <h2 style="font-size:1rem;margin-top:1rem;">Verbindung &amp; Regelzyklus</h2>
+    <div class="kv" id="hems-conn"></div>
+    <h2 style="font-size:1rem;margin-top:1rem;">Plan-Rückkopplung</h2>
+    <div id="hems-feedback"></div>
+    <h2 style="font-size:1rem;margin-top:1rem;">HEMS-Gerätezustände</h2>
+    <div id="hems-devices"></div>
   </section>
 
   <section id="einstellungen" class="tab">
@@ -600,6 +620,109 @@
       }
     }
 
+    const HEMS_OVERALL = {
+      kein_plan: ["Kein Plan", "#888"],
+      unbekannt: ["Unbekannt", "#c93"],
+      beobachtet_konform: ["Beobachtet konform", "#2a8"],
+      beobachtet_abweichend: ["Beobachtet abweichend", "#c33"],
+    };
+    const FIELD_STATUS = { match: "✅", abweichend: "❌", unbekannt: "–" };
+    const hemsTs = (t) => (t ? new Date(t * 1000).toLocaleString("de-DE") : "–");
+    const boolDe = (v) => (v ? "Ja" : "Nein");
+
+    function renderHemsFeedback(fb) {
+      const box = document.getElementById("hems-feedback");
+      if (!fb) { box.innerHTML = "<p>Keine Daten.</p>"; return; }
+      const [label, color] = HEMS_OVERALL[fb.overall] || [fb.overall, "#888"];
+      const badge = `<span style="font-weight:bold;color:${color};">${label}</span>`;
+      const meta = [];
+      if (fb.plan_id) meta.push(`Plan <code>${fb.plan_id}</code>`);
+      if (fb.valid_until) meta.push(`gültig bis ${fb.valid_until}`);
+      if (fb.reason) meta.push(fb.reason);
+      const devHtml = (fb.devices || [])
+        .map((d) => {
+          const rows = (d.fields || [])
+            .map((f) => {
+              const sug = typeof f.vorschlag === "boolean" ? boolDe(f.vorschlag) : fmt(f.vorschlag);
+              const ist = f.ist == null ? "–" : (typeof f.ist === "boolean" ? boolDe(f.ist) : fmt(f.ist));
+              return `<tr><td>${PLAN_FIELD_LABELS[f.feld] || f.feld}</td><td class="num">${sug}</td>`
+                + `<td class="num">${ist}</td><td>${FIELD_STATUS[f.status] || f.status}</td></tr>`;
+            })
+            .join("");
+          const vColor = d.verdict === "abweichend" ? "#c33" : d.verdict === "konform" ? "#2a8" : "#c93";
+          const notFound = d.matched ? "" : ' <small style="color:#c93;">nicht im HEMS gefunden</small>';
+          return `<h3 style="font-size:.95rem;margin:.6rem 0 .25rem;">${d.label} `
+            + `<small style="font-weight:normal;color:${vColor};">(${d.verdict})</small>${notFound}</h3>`
+            + `<table><thead><tr><th>Feld</th><th class="num">Vorschlag</th><th class="num">HEMS-Ist</th><th>✓</th></tr></thead>`
+            + `<tbody>${rows || '<tr><td>– keine vergleichbaren Felder –</td><td></td><td></td><td></td></tr>'}</tbody></table>`;
+        })
+        .join("");
+      box.innerHTML = `<p>Gesamt: ${badge} <span style="font-size:.8rem;color:#888;">${meta.join(" · ")}</span></p>`
+        + (devHtml || "<p>Keine Geräte im Plan.</p>");
+    }
+
+    function renderHemsDevices(devices) {
+      const box = document.getElementById("hems-devices");
+      if (!devices.length) {
+        box.innerHTML = "<p>Keine Gerätezustände (HEMS offline oder ohne Geräte).</p>";
+        return;
+      }
+      const rows = devices
+        .map((d) => {
+          const ist = d.type === "binary"
+            ? (d.actual_on ? "an" : "aus")
+            : (d.actual_w == null ? "–" : fmt(d.actual_w) + " W");
+          return `<tr><td>${d.label || d.id}</td><td>${d.type || "–"}</td>`
+            + `<td class="num">${d.priority ?? "–"}</td><td>${boolDe(d.eligible)}</td><td class="num">${ist}</td></tr>`;
+        })
+        .join("");
+      box.innerHTML = `<table><thead><tr><th>Gerät</th><th>Typ</th><th class="num">Priorität</th>`
+        + `<th>Eligible</th><th class="num">Ist</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    async function loadHems() {
+      const data = await (await fetch("api/hems/status")).json();
+      const conn = document.getElementById("hems-conn");
+      if (!data.configured) {
+        conn.innerHTML = "<div>Status</div><div><code>HEMS nicht konfiguriert (hems_base_url leer)</code></div>";
+        document.getElementById("hems-feedback").innerHTML = "";
+        document.getElementById("hems-devices").innerHTML = "";
+        return;
+      }
+      const rows = {
+        "Verbindung": data.online ? "🟢 online" : "🔴 offline",
+        "Letzter Abruf": hemsTs(data.last_fetch_ts),
+        "Letzter Regelzyklus": data.last_cycle_at || "–",
+        "Zyklen": data.cycle_count ?? "–",
+        "Regelintervall (s)": data.interval_s ?? "–",
+        "Pool": data.pool_w == null ? "–" : fmt(data.pool_w) + " W",
+        "Defizit": data.current_deficit_w == null ? "–" : fmt(data.current_deficit_w) + " W",
+        "Globaler Modus": data.global_mode || "–",
+        "HEMS-Fehler": data.error || data.last_error || "–",
+      };
+      conn.innerHTML = Object.entries(rows)
+        .map(([k, v]) => `<div>${k}</div><div><code>${v}</code></div>`)
+        .join("");
+      renderHemsFeedback(data.feedback);
+      renderHemsDevices(data.devices || []);
+    }
+
+    async function testHems() {
+      const status = document.getElementById("hems-status");
+      status.textContent = " … prüfe HEMS …";
+      try {
+        const res = await fetch("api/hems/test");
+        const data = await res.json();
+        const r = data.result || {};
+        status.textContent = data.connected
+          ? ` ✅ online (Zyklus ${r.cycle_count ?? "?"})`
+          : ` ❌ ${r.reason || data.reason || res.status}`;
+      } catch (e) {
+        status.textContent = " ❌ " + e;
+      }
+      loadHems();
+    }
+
     async function loadLogs() {
       const rows = await (await fetch("api/logs?limit=200")).json();
       document.getElementById("log-rows").innerHTML = rows
@@ -617,6 +740,8 @@
     document.getElementById("run-plan").addEventListener("click", runPlan);
     document.getElementById("publish-plan").addEventListener("click", publishPlan);
     document.getElementById("test-ai").addEventListener("click", testAI);
+    document.getElementById("refresh-hems").addEventListener("click", loadHems);
+    document.getElementById("test-hems").addEventListener("click", testHems);
     document.getElementById("save-prompt").addEventListener("click", () => savePrompt(document.getElementById("prompt-text").value));
     document.getElementById("reset-prompt").addEventListener("click", async () => {
       document.getElementById("prompt-text").value = promptDefault;
@@ -634,6 +759,7 @@
     loadObjectives();
     loadPlan();
     loadPrompt();
+    loadHems();
     loadEntities();
     loadLogs();
 
@@ -643,6 +769,7 @@
       if (document.getElementById("geraete").classList.contains("active")) loadDevices();
       if (document.getElementById("prognose").classList.contains("active")) { loadForecast(); loadWeather(); }
       if (document.getElementById("grenzen").classList.contains("active")) loadConstraints();
+      if (document.getElementById("hems").classList.contains("active")) loadHems();
       if (document.getElementById("status").classList.contains("active")) { loadDiag(); loadAllowlist(); }
     }, 10000);
   </script>

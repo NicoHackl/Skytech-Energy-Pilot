@@ -6,6 +6,34 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.23] - 2026-06-26
+
+### Hinzugefügt
+- **M3 Durchstich 1 — HEMS-Status-Rückkopplung (Read-Back-Loop):** EP liest den HEMS-Zustand
+  zyklisch (`GET /api/status`, neuer Selbst-Drossel-Collector `hems_status_collector.py`,
+  Intervall `hems_status_interval_s`, Default 60 s) und leitet daraus eine **beobachtete**
+  Plan-Übereinstimmung ab (neues, reines Modul `plan_feedback.py`): je Gerät wird der KI-Vorschlag
+  mit dem HEMS-Ist verglichen (`prio_vorschlag` ↔ `priority`, `geschutzte_mindestleistung_w_vorschlag`
+  ↔ `schutz_w`, `freigabe_vorschlag` ↔ `eligible` weich) und ein Gesamtstatus gebildet
+  (`beobachtet_konform` / `beobachtet_abweichend` / `unbekannt` / `kein_plan`) inkl.
+  Gültigkeitsfenster-Prüfung. **Bewusst „beobachtend", nicht „bestätigt"** (D-032/D-033: der User
+  verdrahtet die Vorschläge in V1 selbst). Das Feld-Mapping ist **read-only** (nicht der in B4 offene
+  Schreibweg) und zentral gehalten für die spätere Ebene 2.
+- **EP-Status-Sensoren (`status_publisher.py`):** Spiegelung nach HA als `sensor.ep_plan_status`
+  (Gesamtstatus + Abweichungen je Gerät) und `sensor.ep_hems_verbindung` (online/offline, letzter
+  Regelzyklus, Pool/Defizit, Modus). Schalter `publish_status` (Default an); fehlertolerant je Entität
+  (Iron Rule 8). Audit `status_published`, Verlaufstabelle `hems_feedback` (DB-Migration 5).
+- **HEMS-Tab in der UI** (`/api/hems/status`): Verbindung & Regelzyklus, Plan-Rückkopplung
+  (Vorschlag vs. Ist je Gerät + Gesamt-Badge), HEMS-Gerätezustände; Button „Jetzt prüfen"
+  (`/api/hems/test`, Live-Einzelabruf). Diagnose-Tab um `hems_configured`/`hems_online`/
+  `hems_last_fetch_ts`/`hems_last_error` ergänzt.
+- **HEMS-Client erweitert:** `HEMSClient.status()` + `controls()` (zusätzlich zu `device_schema()`).
+
+### Hinweise
+- HEMS bleibt **unverändert** — EP nutzt nur GET-Endpunkte; bei HEMS-Ausfall läuft EP weiter
+  (`online=false`, kein Crash). Echte Plan-Übergabe (Ebene 2 / B4) und Steuermodi (B3) folgen in
+  späteren M3-Slices.
+
 ## [0.0.22] - 2026-06-26
 
 ### Hinzugefügt

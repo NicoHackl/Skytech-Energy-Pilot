@@ -88,6 +88,19 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        5,
+        """
+        CREATE TABLE IF NOT EXISTS hems_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT DEFAULT (datetime('now')),
+            plan_id TEXT,
+            hems_online INTEGER,
+            plan_status TEXT,
+            detail_json TEXT
+        );
+        """,
+    ),
 ]
 
 

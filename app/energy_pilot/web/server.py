@@ -44,6 +44,7 @@ def create_app(
     *,
     weather_collector: object | None = None,
     hems_client: object | None = None,
+    hems_status_collector: object | None = None,
     allowlist: object | None = None,
     planner: object | None = None,
     version: str = "0.0.1",
@@ -62,6 +63,7 @@ def create_app(
     app["forecast_collector"] = forecast_collector
     app["weather_collector"] = weather_collector
     app["hems_client"] = hems_client
+    app["hems_status_collector"] = hems_status_collector
     app["allowlist"] = allowlist
     app["planner"] = planner
     app["version"] = version
@@ -80,6 +82,8 @@ def create_app(
             web.get("/api/forecast", forecast_get),
             web.get("/api/weather", weather_get),
             web.get("/api/weather/test", weather_test),
+            web.get("/api/hems/status", hems_status_get),
+            web.get("/api/hems/test", hems_test),
             web.get("/api/allowlist", allowlist_get),
             web.get("/api/constraints", constraints_get),
             web.get("/api/objectives", objectives_get),
@@ -177,6 +181,7 @@ async def _start_poller(app: web.Application) -> None:
             device_collector=app.get("device_collector"),
             forecast_collector=app.get("forecast_collector"),
             weather_collector=app.get("weather_collector"),
+            hems_status_collector=app.get("hems_status_collector"),
         )
     )
 
@@ -277,6 +282,10 @@ async def diagnostics(request: web.Request) -> web.Response:
         "weather_enabled": bool(getattr(app.get("weather_collector"), "enabled", False)),
         "weather_last_fetch_ts": getattr(app.get("weather_collector"), "last_fetch_ts", None),
         "weather_last_error": getattr(app.get("weather_collector"), "last_error", None),
+        "hems_configured": bool(getattr(app.get("hems_status_collector"), "configured", False)),
+        "hems_online": bool(getattr(app.get("hems_status_collector"), "online", False)),
+        "hems_last_fetch_ts": getattr(app.get("hems_status_collector"), "last_fetch_ts", None),
+        "hems_last_error": getattr(app.get("hems_status_collector"), "last_error", None),
         "allowlist_count": allowlist.snapshot()["count"] if allowlist is not None else 0,
     }
     return web.json_response(payload)
@@ -350,6 +359,31 @@ async def weather_test(request: web.Request) -> web.Response:
             {"connected": False, "reason": "Wetter nicht konfiguriert"}, status=503
         )
     result = await weather_collector.test_fetch()
+    status = 200 if result.get("ok") else 502
+    return web.json_response(
+        {"connected": result.get("ok", False), "result": result}, status=status
+    )
+
+
+async def hems_status_get(request: web.Request) -> web.Response:
+    """Liefert den HEMS-Zustand + die abgeleitete Plan-Rückkopplung (M3, read-only)."""
+    collector = request.app.get("hems_status_collector")
+    if collector is None:
+        return web.json_response({"configured": False, "online": False, "feedback": None})
+    payload = collector.snapshot()
+    payload["feedback"] = getattr(collector, "last_feedback", None)
+    return web.json_response(payload)
+
+
+async def hems_test(request: web.Request) -> web.Response:
+    """Live-Einzelabruf des HEMS-Status (Diagnose-Button) – meldet Fehler kontrolliert zurück."""
+    collector = request.app.get("hems_status_collector")
+    if collector is None:
+        return web.json_response(
+            {"connected": False, "reason": "HEMS nicht konfiguriert (hems_base_url leer)"},
+            status=503,
+        )
+    result = await collector.test_fetch()
     status = 200 if result.get("ok") else 502
     return web.json_response(
         {"connected": result.get("ok", False), "result": result}, status=status

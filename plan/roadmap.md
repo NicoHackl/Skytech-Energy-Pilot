@@ -55,7 +55,7 @@ Legende: ☐ offen · ◐ in Arbeit · ☑ erledigt
 - ☐ **Ebene 2 (D-002):** versionierter Plan-Endpunkt im **HEMS-Repo** + interne API ([03](03-api-schnittstelle-hems.md)).
 - ☐ Steuermodi Manuell/Hybrid/Automatisch wirksam ([12](12-steuermodi.md), D-009); Hybrid-Fixierungen als harte Vorgaben ([08](08-validierung-sicherheit.md)).
 - ☐ Externer Schreibzugriff (iOS/Java-Backend) über HA-Helfer vorbereiten (D-013).
-- ☐ Annahme/Ablehnung + Ausführungsstatus zurücklesen + in UI/Entitäten spiegeln.
+- ◐ **Annahme/Ablehnung + Ausführungsstatus zurücklesen + in UI/Entitäten spiegeln.** *(Durchstich 1, v0.0.23):* EP pollt HEMS `/api/status`, leitet eine **beobachtete** Plan-Übereinstimmung ab (`plan_feedback.py`), spiegelt sie als `sensor.ep_plan_status`/`sensor.ep_hems_verbindung` + HEMS-Tab. Read-only, HEMS unverändert. Echte Accept/Reject (statt „beobachtet") kommt mit Ebene 2/B4.
 - ☐ Planablauf + Fallback-Logik, HEMS-Doppelvalidierung.
 - ☐ Delta-Limit zwischen Plänen.
 

@@ -24,8 +24,16 @@ DEFAULTS: dict[str, object] = {
     # Vorschlagswerte als sensor.ep_*_vorschlag nach HA schreiben (M2-Schreibweg, D-008).
     # False => reiner Beobachten-Modus: Plan bleibt in UI/DB, EP schreibt nichts nach HA.
     "publish_suggestions": True,
-    # Basis-URL des HEMS-Addons für die Geräte-Discovery (D-036). Leer => nur Config-Fallback.
+    # Basis-URL des HEMS-Addons für die Geräte-Discovery (D-036) UND die Status-Rückkopplung
+    # (M3). Leer => keine HEMS-Anbindung (nur Config-Fallback bei der Discovery).
     "hems_base_url": "",
+    # HEMS-Status-Rückkopplung (M3): Intervall (s), in dem EP /api/status pollt, die
+    # beobachtete Plan-Übereinstimmung ableitet und nach HA spiegelt (entkoppelt vom
+    # collect_interval_s; der Collector drosselt sich selbst).
+    "hems_status_interval_s": 60,
+    # Plan-/HEMS-Status als sensor.ep_plan_status / sensor.ep_hems_verbindung nach HA
+    # schreiben (M3). False => nur in UI/DB, kein HA-Schreibweg (Iron Rule 8 bleibt aktiv).
+    "publish_status": True,
     # Geräteliste als Fallback, falls HEMS nicht erreichbar ist (entity_prefix/class/output_unit).
     "devices": [],
     # PV-Prognose (D-006/D-018/D-026): je Ausrichtung 4 Sensoren, EP summiert je Wert.

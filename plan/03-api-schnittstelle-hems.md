@@ -51,6 +51,16 @@ Plus optionales **post-cycle-script** (HEMS triggert nach jedem Zyklus ein HA-Sc
 - HEMS meldet: Annahme / Ablehnung (mit Grund) / aktueller Ausführungsstatus.
 - EP protokolliert beides im Audit-Log und spiegelt es in Status-Entitäten + UI.
 
+> **Umgesetzt — Durchstich 1 (v0.0.23, Read-Back-Loop):** Solange es noch keine echte Accept/Reject-
+> Rückmeldung von HEMS gibt (Ebene 2), liest EP den HEMS-Zustand über `GET /api/status` zyklisch
+> (Collector `hems_status_collector.py`) und bildet eine **beobachtete** Plan-Übereinstimmung
+> (`plan_feedback.py`): je Gerät Vorschlag↔Ist (`prio_vorschlag`↔`priority`,
+> `geschutzte_mindestleistung_w_vorschlag`↔`schutz_w`, `freigabe_vorschlag`↔`eligible` weich), Gesamt
+> `beobachtet_konform|beobachtet_abweichend|unbekannt|kein_plan`. Spiegelung als
+> `sensor.ep_plan_status` + `sensor.ep_hems_verbindung` (`status_publisher.py`), Verlauf in
+> `hems_feedback`, Anzeige im HEMS-Tab (`/api/hems/status`, `/api/hems/test`). HEMS bleibt
+> **unverändert**. Das Lese-Mapping ist die leichte Vorform des in B4 offenen Schreib-Mappings.
+
 ## Externer Schreibzugriff vorbereiten (D-013)
 Der User will aus dem internen Netz über ein **iOS-Backend (Java auf Linux-Server)** bestimmte Werte **setzen** (z.B. **E-Auto-Abfahrtszeit** für Mindestladung).
 - **Bevorzugter Weg (V1):** Das externe Backend schreibt direkt in **HA-Helfer** (z.B. `input_datetime.ep_eauto_abfahrtszeit`); EP liest sie wie jede andere Eingabe. Kein zusätzlicher EP-Endpunkt nötig, nutzt HA-Auth.
