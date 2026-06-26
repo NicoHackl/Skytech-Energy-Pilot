@@ -44,6 +44,17 @@ ONECALL_TIMELINES = ("15min", "1h", "1day")
 DEFAULT_LLM_TIMELINE = "1h"
 # Default-Refresh je Timeline (Minuten); jede Timeline ist ein eigener bezahlter Call.
 DEFAULT_ONECALL_REFRESH = {"15min": 15, "1h": 60, "1day": 180}
+# Paginierte Calls je Timeline (O2, D-045): wie viele Seiten je Refresh geholt werden.
+# Jede Seite ist ein eigener bezahlter Call → bewusst eng begrenzt (1–5), Default 1 (erste Seite).
+DEFAULT_PAGES = 1
+MIN_PAGES = 1
+MAX_PAGES = 5
+# Tages-Call-Budget (O2, D-045): harte Obergrenze bezahlter One-Call-Anfragen pro Tag (UTC).
+# Default = OWM-Freikontingent „One Call by Call". Schützt vor versehentlichem Überschreiten.
+DEFAULT_DAILY_CALL_BUDGET = 1000
+# Unwetter-Alerts (O3, D-045): standardmäßig an (User: „definitiv mitnehmen"); eigener Refresh.
+DEFAULT_ENABLE_ALERTS = True
+DEFAULT_REFRESH_ALERTS = 30
 
 
 def _parse_bool(value: object, default: bool) -> bool:
@@ -69,6 +80,24 @@ def _parse_refresh(value: object, default: int) -> int:
     return minutes if minutes >= 1 else default
 
 
+def _parse_pages(value: object, default: int = DEFAULT_PAGES) -> int:
+    """Liest die Seitenzahl je Timeline; ungültig → Default, sonst auf 1–5 begrenzt (O2)."""
+    try:
+        pages = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(MIN_PAGES, min(MAX_PAGES, pages))
+
+
+def _parse_budget(value: object, default: int = DEFAULT_DAILY_CALL_BUDGET) -> int:
+    """Liest das Tages-Call-Budget; ungültig/<1 → Default (mind. 1 Call/Tag)."""
+    try:
+        budget = int(value)
+    except (TypeError, ValueError):
+        return default
+    return budget if budget >= 1 else default
+
+
 @dataclass(frozen=True)
 class OneCallConfig:
     """One-Call-4.0-Einstellungen: je Timeline aktivierbar mit eigenem Refresh-Intervall."""
@@ -80,6 +109,15 @@ class OneCallConfig:
     refresh_1h: int = DEFAULT_ONECALL_REFRESH["1h"]
     refresh_1day: int = DEFAULT_ONECALL_REFRESH["1day"]
     llm_timeline: str = DEFAULT_LLM_TIMELINE
+    # Paginierte Calls je Timeline (1–5, O2): wie viele Seiten je Refresh geholt werden.
+    pages_15min: int = DEFAULT_PAGES
+    pages_1h: int = DEFAULT_PAGES
+    pages_1day: int = DEFAULT_PAGES
+    # Harte Tagesobergrenze bezahlter One-Call-Anfragen (Timelines + Alerts), O2-Pflichtschutz.
+    daily_call_budget: int = DEFAULT_DAILY_CALL_BUDGET
+    # Unwetter-Alerts (O3): eigener Schalter + Refresh-Intervall.
+    enable_alerts: bool = DEFAULT_ENABLE_ALERTS
+    refresh_alerts: int = DEFAULT_REFRESH_ALERTS
 
     def is_enabled(self, resolution: str) -> bool:
         return {
@@ -94,6 +132,14 @@ class OneCallConfig:
             "1h": self.refresh_1h,
             "1day": self.refresh_1day,
         }.get(resolution, DEFAULT_ONECALL_REFRESH.get(resolution, DEFAULT_REFRESH_MIN))
+
+    def pages_for(self, resolution: str) -> int:
+        """Wie viele Seiten je Refresh für diese Timeline geholt werden (1–5)."""
+        return {
+            "15min": self.pages_15min,
+            "1h": self.pages_1h,
+            "1day": self.pages_1day,
+        }.get(resolution, DEFAULT_PAGES)
 
     @property
     def enabled_timelines(self) -> tuple[str, ...]:
@@ -136,6 +182,12 @@ def _onecall_config_from_options(cfg: dict) -> OneCallConfig:
         refresh_1h=_parse_refresh(oc.get("refresh_1h"), defaults.refresh_1h),
         refresh_1day=_parse_refresh(oc.get("refresh_1day"), defaults.refresh_1day),
         llm_timeline=llm_timeline,
+        pages_15min=_parse_pages(oc.get("pages_15min"), defaults.pages_15min),
+        pages_1h=_parse_pages(oc.get("pages_1h"), defaults.pages_1h),
+        pages_1day=_parse_pages(oc.get("pages_1day"), defaults.pages_1day),
+        daily_call_budget=_parse_budget(oc.get("daily_call_budget"), defaults.daily_call_budget),
+        enable_alerts=_parse_bool(oc.get("enable_alerts"), defaults.enable_alerts),
+        refresh_alerts=_parse_refresh(oc.get("refresh_alerts"), defaults.refresh_alerts),
     )
 
 
@@ -267,6 +319,32 @@ class OneCallSlot:
             "snow": self.snow,
             "condition": self.condition,
             "condition_id": self.condition_id,
+        }
+
+
+@dataclass(frozen=True)
+class OneCallAlert:
+    """Eine behördliche Unwetterwarnung der One Call API 4.0 (O3, D-045).
+
+    Vorerst werden die Daten nur mitgeführt/angezeigt – noch keine Einspeisung in die Planung.
+    Der Zukunftsaspekt (z.B. Batterieladung bei drohendem Gewitter priorisieren) baut darauf auf.
+    """
+
+    sender_name: str | None
+    event: str | None
+    start: int | None  # Unix-Zeitstempel (UTC) – Beginn der Warnung
+    end: int | None  # Unix-Zeitstempel (UTC) – Ende der Warnung
+    description: str | None
+    tags: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {
+            "sender_name": self.sender_name,
+            "event": self.event,
+            "start": self.start,
+            "end": self.end,
+            "description": self.description,
+            "tags": list(self.tags),
         }
 
 

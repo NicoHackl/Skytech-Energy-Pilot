@@ -1,6 +1,8 @@
 """Tests für den Weather Collector (Fake-HA-Client + Fake-OWM-Client)."""
 
+from energy_pilot.database import init_db
 from energy_pilot.weather import (
+    OneCallAlert,
     OneCallConfig,
     OneCallSlot,
     OneCallTimeline,
@@ -176,48 +178,69 @@ async def test_test_fetch_missing_coords_returns_reason():
 # --- One Call API 4.0 (OneCallCollector) -----------------------------------------------------
 
 class _FakeOneCallClient:
-    def __init__(self, slots_by_res=None, error=None):
+    def __init__(self, slots_by_res=None, error=None, *, pages_by_res=None,
+                 alerts=None, alerts_error=None):
         self._slots = slots_by_res or {}
+        self._pages = pages_by_res or {}  # wie viele Seiten je Timeline verfügbar sind
         self._error = error
+        self._alerts = alerts or []
+        self._alerts_error = alerts_error
         self.calls = []
+        self.alert_calls = []
 
-    async def fetch_timeline(self, resolution, lat, lon):
-        self.calls.append((resolution, lat, lon))
+    async def fetch_timeline(self, resolution, lat, lon, *, max_calls=1):
+        self.calls.append((resolution, lat, lon, max_calls))
         if self._error is not None:
             raise self._error
-        n = self._slots.get(resolution, 1)
+        pages = min(max_calls, self._pages.get(resolution, 1))  # paginiert bis max_calls
+        per_page = self._slots.get(resolution, 1)
         slots = [
             OneCallSlot(
                 dt=i, time="t", temp=20.0, feels_like=19.0, temp_min=None, temp_max=None,
                 clouds=10.0, pop=0.1, wind_speed=3.0, humidity=50.0, rain=None, snow=None,
                 condition="klar", condition_id=800,
             )
-            for i in range(n)
+            for i in range(per_page * pages)
         ]
-        return OneCallTimeline(
+        timeline = OneCallTimeline(
             resolution=resolution, lat=lat, lon=lon, timezone_offset_s=7200, slots=slots
         )
+        return timeline, pages
+
+    async def fetch_alerts(self, lat, lon):
+        self.alert_calls.append((lat, lon))
+        if self._alerts_error is not None:
+            raise self._alerts_error
+        return list(self._alerts)
 
     def masked_request_url(self, resolution, lat, lon):
         return f"https://owm/timeline/{resolution}?lat={lat}&lon={lon}&appid=***&units=metric&lang=de"
 
+    def masked_alert_url(self, lat, lon):
+        return f"https://owm/alert?lat={lat}&lon={lon}&appid=***&units=metric&lang=de"
+
 
 def _oc_cfg(api_key="key", *, enable_15min=False, enable_1h=True, enable_1day=True,
-            refresh_15min=15, refresh_1h=60, refresh_1day=180, llm_timeline="1h"):
+            refresh_15min=15, refresh_1h=60, refresh_1day=180, llm_timeline="1h",
+            pages_15min=1, pages_1h=1, pages_1day=1, daily_call_budget=1000,
+            enable_alerts=True, refresh_alerts=30):
     return WeatherConfig(
         api_key=api_key, zone_entity="zone.home", units="metric", lang="de",
         refresh_min=60, source="onecall",
         onecall=OneCallConfig(
             enable_15min=enable_15min, enable_1h=enable_1h, enable_1day=enable_1day,
             refresh_15min=refresh_15min, refresh_1h=refresh_1h, refresh_1day=refresh_1day,
-            llm_timeline=llm_timeline,
+            llm_timeline=llm_timeline, pages_15min=pages_15min, pages_1h=pages_1h,
+            pages_1day=pages_1day, daily_call_budget=daily_call_budget,
+            enable_alerts=enable_alerts, refresh_alerts=refresh_alerts,
         ),
     )
 
 
 def _calls_by_res(client):
     out: dict[str, int] = {}
-    for res, _lat, _lon in client.calls:
+    for entry in client.calls:
+        res = entry[0]
         out[res] = out.get(res, 0) + 1
     return out
 
@@ -231,11 +254,20 @@ async def test_onecall_disabled_without_api_key():
 
 async def test_onecall_disabled_without_active_timeline():
     client = _FakeOneCallClient()
-    cfg = _oc_cfg(enable_1h=False, enable_1day=False)
+    cfg = _oc_cfg(enable_1h=False, enable_1day=False, enable_alerts=False)
     collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client)
     assert collector.enabled is False
     await collector.collect_once(now=1000.0)
     assert client.calls == []
+    assert client.alert_calls == []
+
+
+async def test_onecall_enabled_with_only_alerts():
+    # Alerts allein (ohne aktive Timeline) halten den Collector aktiv (neue O3-Semantik).
+    client = _FakeOneCallClient()
+    cfg = _oc_cfg(enable_1h=False, enable_1day=False, enable_alerts=True)
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client)
+    assert collector.enabled is True
 
 
 async def test_onecall_collect_fetches_only_enabled_timelines():
@@ -308,3 +340,127 @@ async def test_resolve_zone_coords_helper_shared_behavior():
     coords2, err2 = await resolve_zone_coords(_FakeHAClient(_zone_state(lat=None)), "zone.home")
     assert coords2 is None
     assert "latitude" in err2
+
+
+# --- O2: Pagination + Tages-Call-Budget ------------------------------------------------------
+
+async def test_onecall_pagination_accumulates_slots_and_consumes_budget():
+    db = init_db(":memory:")
+    client = _FakeOneCallClient(slots_by_res={"1h": 2}, pages_by_res={"1h": 3})
+    cfg = _oc_cfg(enable_1day=False, enable_alerts=False, pages_1h=3, daily_call_budget=100)
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
+
+    await collector.collect_once(now=1000.0)
+
+    snap = collector.snapshot()
+    assert len(snap["timelines"]["1h"]["slots"]) == 6  # 2 Slots × 3 Seiten
+    assert snap["timelines"]["1h"]["pages"] == 3
+    assert snap["calls_today"] == 3  # 3 bezahlte Seiten-Calls verbucht
+
+
+async def test_onecall_pages_capped_by_remaining_budget():
+    db = init_db(":memory:")
+    client = _FakeOneCallClient(slots_by_res={"1h": 1}, pages_by_res={"1h": 5})
+    cfg = _oc_cfg(enable_1day=False, enable_alerts=False, pages_1h=5, daily_call_budget=2)
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
+
+    await collector.collect_once(now=1000.0)
+
+    snap = collector.snapshot()
+    # Budget 2 begrenzt die 5 konfigurierten Seiten auf 2.
+    assert client.calls[0][3] == 2  # max_calls an den Client = min(pages, remaining)
+    assert len(snap["timelines"]["1h"]["slots"]) == 2
+    assert snap["calls_today"] == 2
+    assert snap["budget_exhausted"] is True
+
+
+async def test_onecall_budget_skips_further_timelines_when_exhausted():
+    db = init_db(":memory:")
+    client = _FakeOneCallClient(slots_by_res={"1h": 2, "1day": 2})
+    cfg = _oc_cfg(daily_call_budget=1, enable_alerts=False)  # nur 1 Call/Tag
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
+
+    await collector.collect_once(now=1000.0)
+
+    by_res = _calls_by_res(client)
+    assert by_res.get("1h") == 1  # erste Timeline verbraucht das Budget
+    assert "1day" not in by_res  # zweite Timeline wird übersprungen
+    snap = collector.snapshot()
+    assert snap["calls_today"] == 1
+    assert snap["budget_remaining"] == 0
+    assert snap["budget_exhausted"] is True
+
+
+async def test_onecall_budget_resets_on_new_utc_day():
+    db = init_db(":memory:")
+    from energy_pilot import onecall_budget
+    onecall_budget.consume(db, 5, now_day="2026-06-26")
+    assert onecall_budget.calls_today(db, now_day="2026-06-26") == 5
+    # Neuer Tag → Zähler springt auf 0 (OWM-Quota-Reset um Mitternacht UTC).
+    assert onecall_budget.calls_today(db, now_day="2026-06-27") == 0
+    assert onecall_budget.remaining(db, 1000, now_day="2026-06-27") == 1000
+
+
+async def test_onecall_budget_survives_fresh_connection(tmp_path):
+    from energy_pilot import onecall_budget
+    db_path = str(tmp_path / "ep.db")
+    db1 = init_db(db_path)
+    onecall_budget.consume(db1, 3, now_day="2026-06-26")
+    db1.close()
+    # „Neustart": frische Connection auf dieselbe Datei → Zähler bleibt erhalten.
+    db2 = init_db(db_path)
+    assert onecall_budget.calls_today(db2, now_day="2026-06-26") == 3
+
+
+# --- O3: Unwetter-Alerts ---------------------------------------------------------------------
+
+async def test_onecall_collect_fetches_alerts_into_snapshot():
+    db = init_db(":memory:")
+    alerts = [OneCallAlert(sender_name="DWD", event="Sturm", start=1, end=2,
+                           description="Sturmböen", tags=["Wind"])]
+    client = _FakeOneCallClient(alerts=alerts)
+    cfg = _oc_cfg(enable_1h=False, enable_1day=False, enable_alerts=True, daily_call_budget=100)
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
+
+    await collector.collect_once(now=1000.0)
+
+    assert client.alert_calls == [(48.2, 16.3)]
+    snap = collector.snapshot()
+    assert snap["alerts_enabled"] is True
+    assert len(snap["alerts"]) == 1
+    assert snap["alerts"][0]["event"] == "Sturm"
+    assert snap["calls_today"] == 1  # Alert-Abruf zählt gegen dasselbe Budget
+
+
+async def test_onecall_alerts_skipped_when_budget_exhausted():
+    db = init_db(":memory:")
+    client = _FakeOneCallClient(slots_by_res={"1h": 1}, alerts=[
+        OneCallAlert(None, "Sturm", 1, 2, None, [])
+    ])
+    cfg = _oc_cfg(enable_1day=False, enable_alerts=True, daily_call_budget=1)
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
+
+    await collector.collect_once(now=1000.0)
+
+    # 1h verbraucht das eine erlaubte Call → Alerts werden übersprungen.
+    assert client.alert_calls == []
+    assert collector.snapshot()["alerts"] == []
+
+
+async def test_onecall_test_fetch_reports_alerts_and_budget():
+    db = init_db(":memory:")
+    client = _FakeOneCallClient(slots_by_res={"1h": 2, "1day": 2}, alerts=[
+        OneCallAlert(None, "Hitze", 1, 2, None, [])
+    ])
+    cfg = _oc_cfg(daily_call_budget=1, enable_alerts=True)
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
+
+    result = await collector.test_fetch(now=1000.0)
+
+    by_res = {t["resolution"]: t for t in result["timelines"]}
+    assert by_res["1h"]["ok"] is True
+    assert by_res["1day"]["ok"] is False
+    assert "Budget" in by_res["1day"]["reason"]
+    assert result["alerts"]["ok"] is False  # Budget bereits erschöpft
+    assert result["calls_today"] == 1
+    assert result["daily_call_budget"] == 1

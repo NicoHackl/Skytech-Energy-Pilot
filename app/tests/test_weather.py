@@ -129,6 +129,58 @@ def test_onecall_invalid_llm_timeline_falls_back():
     assert oc.llm_timeline == "1h"
 
 
+def test_onecall_pages_defaults_and_clamping():
+    # Default: 1 Seite je Timeline (erste Seite, O2).
+    oc = weather_config_from_options({}).onecall
+    assert oc.pages_for("1h") == 1
+    assert oc.pages_for("15min") == 1
+    assert oc.pages_for("1day") == 1
+    # 1–5 clamping: <1 → 1, >5 → 5, ungültig → Default 1.
+    oc2 = weather_config_from_options(
+        {"weather": {"onecall": {"pages_15min": 0, "pages_1h": 9, "pages_1day": "x"}}}
+    ).onecall
+    assert oc2.pages_for("15min") == 1
+    assert oc2.pages_for("1h") == 5
+    assert oc2.pages_for("1day") == 1
+
+
+def test_onecall_daily_call_budget_default_and_parsing():
+    assert weather_config_from_options({}).onecall.daily_call_budget == 1000
+    oc = weather_config_from_options({"weather": {"onecall": {"daily_call_budget": 250}}}).onecall
+    assert oc.daily_call_budget == 250
+    # Ungültig/<1 → Default 1000.
+    assert weather_config_from_options(
+        {"weather": {"onecall": {"daily_call_budget": 0}}}
+    ).onecall.daily_call_budget == 1000
+    assert weather_config_from_options(
+        {"weather": {"onecall": {"daily_call_budget": "abc"}}}
+    ).onecall.daily_call_budget == 1000
+
+
+def test_onecall_alerts_defaults_and_parsing():
+    oc = weather_config_from_options({}).onecall
+    assert oc.enable_alerts is True  # O3: standardmäßig an
+    assert oc.refresh_alerts == 30
+    oc2 = weather_config_from_options(
+        {"weather": {"onecall": {"enable_alerts": False, "refresh_alerts": 90}}}
+    ).onecall
+    assert oc2.enable_alerts is False
+    assert oc2.refresh_alerts == 90
+
+
+def test_onecall_alert_as_dict_roundtrip():
+    from energy_pilot.weather import OneCallAlert
+    alert = OneCallAlert(
+        sender_name="DWD", event="Sturm", start=100, end=200,
+        description="Sturmböen", tags=["Wind", "Sturm"],
+    )
+    d = alert.as_dict()
+    assert d["sender_name"] == "DWD"
+    assert d["event"] == "Sturm"
+    assert d["start"] == 100
+    assert d["tags"] == ["Wind", "Sturm"]
+
+
 def test_onecall_slot_as_dict_roundtrip():
     slot = OneCallSlot(
         dt=1, time="2026-06-25 12:00", temp=25.0, feels_like=24.5, temp_min=14.0,

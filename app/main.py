@@ -93,7 +93,10 @@ def build() -> web.Application:
             if weather_config.enabled
             else None
         )
-        weather_collector = OneCallCollector(ha_client, weather_config, onecall_client, logger)
+        # db für den persistenten Tages-Call-Budget-Zähler (O2, D-045).
+        weather_collector = OneCallCollector(
+            ha_client, weather_config, onecall_client, logger, db=db
+        )
     else:
         weather_client = (
             OpenWeatherClient(

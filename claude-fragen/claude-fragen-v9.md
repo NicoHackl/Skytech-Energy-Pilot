@@ -1,5 +1,9 @@
 # Claude-Fragen — v9 (Stand 26.06.2026)
 
+> **STATUS (verarbeitet 26.06.2026):** O1–O5 beantwortet. **O2/O3 umgesetzt → Decision Log D-045**
+> (v0.0.22: Pagination 1–5 + Pflicht-Tages-Call-Budget; Unwetter-Alerts). **O1/O4/O5 für die
+> Zukunft geparkt** → [claude-fragen-v10.md](claude-fragen-v10.md). Diese Datei bleibt als Q&A-Historie.
+
 > Neue offene Fragen rund um die **OpenWeatherMap One Call API 4.0**, die ich in v0.0.21 als
 > **opt-in-Alternative** zur bestehenden „5 day / 3 hour forecast"-API integriert habe.
 > Die **B-Fragen aus [claude-fragen-v6.md](claude-fragen-v6.md) (B1–B4)** sind weiterhin offen und
@@ -32,7 +36,7 @@ Die 4.0-API bietet neben den Timelines einen `current`-Endpunkt (aktuelles Wette
 **Frage:** Soll das Ist-Wetter (`current`) zusätzlich abgerufen und in UI/KI-Kontext angezeigt werden,
 oder reichen die Forecast-Timelines? — Empfehlung: vorerst nur Timelines.
 
-Antwort:
+Antwort: vorerst nicht implementieren, aber für die Zukunft im Hinterkopf lassen
 
 ### O2 — Tiefer als die erste Seite paginieren (+ Call-Budget-Schutz)?
 Aktuell wird je Timeline **nur die erste Seite** geholt (15min ≈ 12,5 h, 1h ≈ 20 h). Für den vollen
@@ -41,25 +45,25 @@ Aktuell wird je Timeline **nur die erste Seite** geholt (15min ≈ 12,5 h, 1h �
 und falls ja, mit einem **Tages-Call-Zähler** als Schutz gegen versehentliches Überschreiten der
 1000 Calls/Tag? — Empfehlung: erst bei konkretem Bedarf, dann mit Budget-Zähler.
 
-Antwort:
+Antwort: wir machen es das man zwischen 1-5 paginierte Calls auswählen kann und **GANZ WICHTIG** es **MUSS** ein Schutz für die 1000 Calls/Tag eingebaut sein
 
 ### O3 — Unwetter-Alerts auswerten?
 Die 4.0-API liefert behördliche Unwetterwarnungen (`alert/{alert_id}`). Aktuell ungenutzt.
 **Frage:** Sind Alerts energierelevant genug, um sie anzuzeigen / in den KI-Kontext zu nehmen
 (z.B. Sturm/Hagel → PV-Schutz)? — Empfehlung: optionaler späterer Meilenstein.
 
-Antwort:
+Antwort: wir nhemen die Daten definitv mal mit auf, vorallem für den Zukunftsaspekt das man dann z.b. die Batterieladung stärke priorisieren kann wenn ein gewitter droht und somit ein möglicher stromausfall
 
 ### O4 — Mehrere Timelines gleichzeitig ans LLM?
 Derzeit fließt **genau eine** Timeline (`llm_timeline`, Default 1h) in den KI-Kontext (Token-Budget).
 **Frage:** Soll die KI später **kombiniert** Fein- + Grob-Auflösung bekommen (z.B. 1h bis Horizont
 **plus** 1day-Ausblick), oder bleibt es bei einer Timeline? — Empfehlung: vorerst eine Timeline.
 
-Antwort:
+Antwort: vorerst eine timeline, aber ich kann mir für die Zukunft sehr gut vorstellen z.b. 15 min timeline für 3h und die 1h stunden timeline für 2 tage etc.
 
 ### O5 — Historische Daten (47 Jahre) später für PV-Kalibrierung?
 Die 4.0-API kann auch weit zurückliegende Verläufe liefern. Aktuell ausschließlich Forecast genutzt.
 **Frage:** Ist historischer Abruf (z.B. zur Kalibrierung der PV-Erwartung) ein späteres Thema, oder
 dauerhaft außerhalb des EP-Scopes? — Empfehlung: außerhalb V1-Scope, später prüfen.
 
-Antwort:
+Antwort: im aktuellen Scope ist es für uns defintiv kein Thema, da es einen geringen einfluss haben wird, für v2+ kann ich es mir sehr gut vorstellen das wir irgedwas in diese richtung noch machen werden

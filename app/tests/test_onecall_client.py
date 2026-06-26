@@ -2,7 +2,7 @@
 
 import pytest
 
-from energy_pilot.onecall_client import OneCallClient, parse_timeline
+from energy_pilot.onecall_client import OneCallClient, parse_alerts, parse_timeline
 from energy_pilot.weather_client import WeatherClientError
 
 
@@ -134,8 +134,9 @@ async def test_fetch_timeline_sends_key_as_param_not_in_url():
     session = _FakeSession(_FakeResponse(payload=_onecall_1h_payload()))
     client = OneCallClient("secret-key", units="metric", lang="de", session=session)
 
-    tl = await client.fetch_timeline("1h", 48.2, 16.3)
+    tl, calls = await client.fetch_timeline("1h", 48.2, 16.3)
 
+    assert calls == 1  # Default max_calls=1 → nur die erste Seite (trotz `next`)
     assert len(tl.slots) == 2
     call = session.calls[0]
     assert call["url"].endswith("/timeline/1h")
@@ -143,6 +144,33 @@ async def test_fetch_timeline_sends_key_as_param_not_in_url():
     assert "secret-key" not in call["url"]
     assert call["params"]["lat"] == "48.2"
     assert call["params"]["units"] == "metric"
+
+
+async def test_fetch_timeline_paginates_following_next_up_to_max_calls():
+    # Das Payload trägt immer einen `next`-Link → bis max_calls Seiten werden geholt.
+    session = _FakeSession(_FakeResponse(payload=_onecall_1h_payload()))
+    client = OneCallClient("secret-key", session=session)
+
+    tl, calls = await client.fetch_timeline("1h", 48.2, 16.3, max_calls=3)
+
+    assert calls == 3
+    assert len(tl.slots) == 6  # 2 Slots je Seite × 3 Seiten
+    assert len(session.calls) == 3
+    for c in session.calls:  # Schlüssel nie in der URL, immer als appid-Param (Iron Rule 6)
+        assert "secret-key" not in c["url"]
+        assert c["params"]["appid"] == "secret-key"
+
+
+async def test_fetch_timeline_stops_when_no_next_link():
+    payload = _onecall_1h_payload()
+    payload.pop("next")
+    session = _FakeSession(_FakeResponse(payload=payload))
+    client = OneCallClient("k", session=session)
+
+    tl, calls = await client.fetch_timeline("1h", 1.0, 2.0, max_calls=5)
+
+    assert calls == 1  # keine Folgeseite vorhanden → früher Stopp trotz max_calls=5
+    assert len(tl.slots) == 2
 
 
 async def test_fetch_timeline_unknown_resolution_raises():
@@ -175,4 +203,52 @@ def test_masked_request_url_hides_key():
     client = OneCallClient("super-secret", units="metric", lang="de")
     url = client.masked_request_url("15min", 48.2, 16.3)
     assert url.endswith("/timeline/15min?lat=48.2&lon=16.3&appid=***&units=metric&lang=de")
+    assert "super-secret" not in url
+
+
+# --- Unwetter-Alerts (O3) --------------------------------------------------------------------
+
+def test_parse_alerts_normalizes_entries_and_skips_garbage():
+    payload = {
+        "alerts": [
+            {"sender_name": "DWD", "event": "Sturm", "start": 100, "end": 200,
+             "description": "Sturmböen", "tags": ["Wind"]},
+            "kein-dict",  # wird übersprungen
+            {"event": "Hitzewarnung"},  # fehlende Felder → None/[]
+        ]
+    }
+    alerts = parse_alerts(payload)
+    assert len(alerts) == 2
+    assert alerts[0].sender_name == "DWD"
+    assert alerts[0].start == 100
+    assert alerts[0].tags == ["Wind"]
+    assert alerts[1].event == "Hitzewarnung"
+    assert alerts[1].sender_name is None
+    assert alerts[1].tags == []
+
+
+def test_parse_alerts_missing_list_returns_empty():
+    assert parse_alerts({}) == []
+    assert parse_alerts({"alerts": None}) == []
+
+
+async def test_fetch_alerts_returns_normalized_list_with_masked_key():
+    payload = {"alerts": [{"event": "Sturm", "start": 1, "end": 2, "tags": ["Wind"]}]}
+    session = _FakeSession(_FakeResponse(payload=payload))
+    client = OneCallClient("secret", session=session)
+
+    alerts = await client.fetch_alerts(48.2, 16.3)
+
+    assert len(alerts) == 1
+    assert alerts[0].event == "Sturm"
+    call = session.calls[0]
+    assert call["url"].endswith("/alert")
+    assert call["params"]["appid"] == "secret"
+    assert "secret" not in call["url"]
+
+
+def test_masked_alert_url_hides_key():
+    client = OneCallClient("super-secret", units="metric", lang="de")
+    url = client.masked_alert_url(48.2, 16.3)
+    assert url.endswith("/alert?lat=48.2&lon=16.3&appid=***&units=metric&lang=de")
     assert "super-secret" not in url

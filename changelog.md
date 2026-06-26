@@ -6,6 +6,31 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.22] - 2026-06-26
+
+### Hinzugefügt
+- **One Call API 4.0: paginierte Calls je Timeline + Pflicht-Tages-Call-Budget (D-045, beantwortet
+  O2):** Je Timeline (15min/1h/1day) lassen sich jetzt **1–5 paginierte Seiten** je Refresh holen
+  (`weather.onecall.pages_15min/1h/1day`, Default 1 = erste Seite; jede Seite folgt dem `next`-
+  Cursor und ist ein eigener bezahlter Call → mehr Horizont gegen mehr Kosten). **GANZ WICHTIG:**
+  ein **harter Tages-Call-Schutz** verhindert das Überschreiten des Kontingents
+  (`weather.onecall.daily_call_budget`, Default **1000** = OWM-Freikontingent „One Call by Call").
+  Das Budget gilt für **alle** bezahlten One-Call-Anfragen (Timelines **und** Alerts), wird in
+  **UTC** gezählt (Reset um Mitternacht, deckt sich mit OWM) und über den persistenten KV-Speicher
+  (`config`-Tabelle, `/data`) geführt — so kann auch ein **Neustart-Loop** das Limit nicht umgehen.
+  Ist das Budget erschöpft, werden weitere Abrufe **übersprungen** (EP blockiert nie, Iron Rule 8),
+  einmalig auditiert (`onecall_budget_exhausted`) und im Wetter-Tab angezeigt. Auch der Button
+  „Wetter testen" prüft/bucht gegen dasselbe Budget. Neues Modul `onecall_budget.py`;
+  `fetch_timeline` paginiert und liefert die verbrauchten Calls zurück.
+- **One Call API 4.0: behördliche Unwetter-Warnungen (D-045, beantwortet O3):** EP ruft die
+  Unwetter-Alerts der 4.0-API ab (`weather.onecall.enable_alerts`, **Default an**; eigener Refresh
+  `refresh_alerts`, Default 30 min) und zeigt sie im Wetter-Tab (`/api/weather`). Neue Dataclass
+  `OneCallAlert`, Client-Methode `fetch_alerts` + `parse_alerts` (tolerant gegenüber fehlenden
+  Feldern). **Bewusst V1:** Die Alerts werden **nur mitgeführt/angezeigt** — noch **keine**
+  Einspeisung in die Planung; der Zukunftsaspekt (z.B. Batterieladung bei drohendem Gewitter
+  priorisieren) baut darauf auf. Schlüssel weiterhin nur als `appid`-Query-Param, nie geloggt
+  (Iron Rule 6).
+
 ## [0.0.21] - 2026-06-26
 
 ### Hinzugefügt

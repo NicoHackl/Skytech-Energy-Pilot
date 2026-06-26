@@ -12,11 +12,17 @@ Der API-Schlüssel steht ausschließlich in der Addon-Config, geht als Query-Par
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import aiohttp
 
-from energy_pilot.weather import ONECALL_TIMELINES, OneCallSlot, OneCallTimeline
+from energy_pilot.weather import (
+    ONECALL_TIMELINES,
+    OneCallAlert,
+    OneCallSlot,
+    OneCallTimeline,
+)
 from energy_pilot.weather_client import (
     WeatherClientError,
     _int,
@@ -90,6 +96,30 @@ def parse_timeline(resolution: str, payload: dict) -> OneCallTimeline:
     )
 
 
+def parse_alerts(payload: dict) -> list[OneCallAlert]:
+    """Normalisiert die `alerts`-Liste einer One-Call-Antwort auf `OneCallAlert` (O3).
+
+    Tolerant gegenüber fehlenden Feldern: Einträge ohne sinnvolle Daten werden übersprungen,
+    eine fehlende `alerts`-Liste ergibt eine leere Liste (kein Fehler – Iron Rule 8).
+    """
+    alerts: list[OneCallAlert] = []
+    for entry in payload.get("alerts") or []:
+        if not isinstance(entry, dict):
+            continue
+        tags = entry.get("tags")
+        alerts.append(
+            OneCallAlert(
+                sender_name=str(entry["sender_name"]) if entry.get("sender_name") else None,
+                event=str(entry["event"]) if entry.get("event") else None,
+                start=_int(entry.get("start")),
+                end=_int(entry.get("end")),
+                description=str(entry["description"]) if entry.get("description") else None,
+                tags=[str(t) for t in tags] if isinstance(tags, list) else [],
+            )
+        )
+    return alerts
+
+
 class OneCallClient:
     """Schlanker Async-Client für die One-Call-4.0-Timelines (erste Seite je Abruf)."""
 
@@ -125,6 +155,19 @@ class OneCallClient:
     def _endpoint(self, resolution: str) -> str:
         return f"{self.base_url}/timeline/{resolution}"
 
+    def _alert_endpoint(self) -> str:
+        return f"{self.base_url}/alert"
+
+    def _base_params(self, lat: float, lon: float) -> dict[str, str]:
+        # appid bewusst als params-Eintrag → erscheint in keinem von uns geloggten String.
+        return {
+            "lat": f"{lat}",
+            "lon": f"{lon}",
+            "appid": self._api_key,
+            "units": self.units,
+            "lang": self.lang,
+        }
+
     def masked_request_url(self, resolution: str, lat: float, lon: float) -> str:
         """Request-URL mit maskiertem Schlüssel (Transparenz-Anzeige, ohne echten Key)."""
         return (
@@ -132,24 +175,16 @@ class OneCallClient:
             f"&appid=***&units={self.units}&lang={self.lang}"
         )
 
-    async def fetch_timeline(self, resolution: str, lat: float, lon: float) -> OneCallTimeline:
-        """Holt eine Timeline (erste Seite) und liefert sie normalisiert.
+    def masked_alert_url(self, lat: float, lon: float) -> str:
+        """Alert-Request-URL mit maskiertem Schlüssel (Transparenz-Anzeige)."""
+        return (
+            f"{self._alert_endpoint()}?lat={lat}&lon={lon}"
+            f"&appid=***&units={self.units}&lang={self.lang}"
+        )
 
-        Fehler (ungültiger Schlüssel, Rate-Limit, Netz) werden als `WeatherClientError`
-        mit klarer, schlüsselfreier Meldung gemeldet.
-        """
-        if resolution not in ONECALL_TIMELINES:
-            raise WeatherClientError(f"Unbekannte One-Call-Timeline: {resolution}")
+    async def _get(self, url: str, params: dict[str, str]) -> dict:
+        """Ein GET mit OWM-Fehlerbehandlung; liefert das JSON-Objekt (schlüsselfrei im Log)."""
         session = await self._ensure_session()
-        url = self._endpoint(resolution)
-        # appid bewusst als params-Eintrag → erscheint in keinem von uns geloggten String.
-        params = {
-            "lat": f"{lat}",
-            "lon": f"{lon}",
-            "appid": self._api_key,
-            "units": self.units,
-            "lang": self.lang,
-        }
         try:
             async with session.get(url, params=params, timeout=self._timeout) as resp:
                 await raise_for_owm_status(resp)
@@ -162,4 +197,40 @@ class OneCallClient:
             raise WeatherClientError(f"OpenWeatherMap-Verbindungsfehler: {exc}") from exc
         if not isinstance(payload, dict):
             raise WeatherClientError("OpenWeatherMap lieferte kein JSON-Objekt")
-        return parse_timeline(resolution, payload)
+        return payload
+
+    async def fetch_timeline(
+        self, resolution: str, lat: float, lon: float, *, max_calls: int = 1
+    ) -> tuple[OneCallTimeline, int]:
+        """Holt eine Timeline (bis zu `max_calls` paginierte Seiten) normalisiert.
+
+        Folgt dem `next`-Cursor der Antwort bis maximal `max_calls` Seiten (jede Seite = ein
+        eigener bezahlter Call, O2). Stoppt früher, wenn die API keinen `next`-Link mehr liefert.
+        Rückgabe: `(kombinierte Timeline, tatsächlich abgerufene Seiten)` – damit der Aufrufer
+        exakt gegen das Tagesbudget abbuchen kann. Fehler (ungültiger Schlüssel, Rate-Limit, Netz)
+        werden als `WeatherClientError` mit klarer, schlüsselfreier Meldung gemeldet.
+        """
+        if resolution not in ONECALL_TIMELINES:
+            raise WeatherClientError(f"Unbekannte One-Call-Timeline: {resolution}")
+        payload = await self._get(self._endpoint(resolution), self._base_params(lat, lon))
+        timeline = parse_timeline(resolution, payload)
+        slots = list(timeline.slots)
+        calls_used = 1
+        next_url = payload.get("next")
+        while calls_used < max_calls and isinstance(next_url, str) and next_url:
+            # Der `next`-Link trägt die Folge-Parameter, aber nie den Schlüssel → appid ergänzen.
+            payload = await self._get(next_url, {"appid": self._api_key})
+            slots.extend(parse_timeline(resolution, payload).slots)
+            calls_used += 1
+            next_url = payload.get("next")
+        return replace(timeline, slots=slots), calls_used
+
+    async def fetch_alerts(self, lat: float, lon: float) -> list[OneCallAlert]:
+        """Holt die behördlichen Unwetterwarnungen (O3); ein bezahlter Call.
+
+        Tolerant: liefert die `alerts`-Liste der Antwort normalisiert; meldet API-Fehler als
+        `WeatherClientError`. Der genaue Endpunkt/Shape der „One Call by Call"-Alerts ist gegen
+        die OWM-Doku zu bestätigen – `parse_alerts` toleriert abweichende/fehlende Felder.
+        """
+        payload = await self._get(self._alert_endpoint(), self._base_params(lat, lon))
+        return parse_alerts(payload)
