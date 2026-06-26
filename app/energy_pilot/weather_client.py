@@ -41,6 +41,29 @@ class WeatherClientError(Exception):
     """Kontrollierter Wetter-Abruffehler (nie der nackte aiohttp-Fehler nach außen)."""
 
 
+async def raise_for_owm_status(resp: aiohttp.ClientResponse) -> None:
+    """Wirft bei OWM-Fehlerstatus einen `WeatherClientError` mit klarer, schlüsselfreier Meldung.
+
+    Gemeinsam genutzt von `OpenWeatherClient` und `OneCallClient` — der OWM-Originalgrund
+    wird durchgereicht (z.B. „Invalid API key…"), der Schlüssel taucht nie auf (Iron Rule 6).
+    """
+    if resp.status == 401:
+        msg = await _error_message(resp)
+        raise WeatherClientError(
+            "OpenWeatherMap: API-Schlüssel ungültig oder noch nicht aktiviert "
+            f"(HTTP 401): {msg}"
+        )
+    if resp.status == 429:
+        msg = await _error_message(resp)
+        raise WeatherClientError(f"OpenWeatherMap-Rate-Limit erreicht (HTTP 429): {msg}")
+    if resp.status == 404:
+        msg = await _error_message(resp)
+        raise WeatherClientError(f"OpenWeatherMap: Koordinaten nicht gefunden (HTTP 404): {msg}")
+    if resp.status >= 400:
+        msg = await _error_message(resp)
+        raise WeatherClientError(f"OpenWeatherMap-Fehler HTTP {resp.status}: {msg}")
+
+
 def _num(value: object) -> float | None:
     """Wandelt einen OWM-Zahlwert defensiv in float; None bei fehlend/ungültig."""
     if isinstance(value, bool) or value is None:
@@ -161,27 +184,7 @@ class OpenWeatherClient:
         }
         try:
             async with session.get(url, params=params, timeout=self._timeout) as resp:
-                if resp.status == 401:
-                    msg = await _error_message(resp)
-                    raise WeatherClientError(
-                        "OpenWeatherMap: API-Schlüssel ungültig oder noch nicht aktiviert "
-                        f"(HTTP 401): {msg}"
-                    )
-                if resp.status == 429:
-                    msg = await _error_message(resp)
-                    raise WeatherClientError(
-                        f"OpenWeatherMap-Rate-Limit erreicht (HTTP 429): {msg}"
-                    )
-                if resp.status == 404:
-                    msg = await _error_message(resp)
-                    raise WeatherClientError(
-                        f"OpenWeatherMap: Koordinaten nicht gefunden (HTTP 404): {msg}"
-                    )
-                if resp.status >= 400:
-                    msg = await _error_message(resp)
-                    raise WeatherClientError(
-                        f"OpenWeatherMap-Fehler HTTP {resp.status}: {msg}"
-                    )
+                await raise_for_owm_status(resp)
                 payload = await resp.json()
         except TimeoutError as exc:
             total = self._timeout.total

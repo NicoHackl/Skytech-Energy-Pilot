@@ -20,11 +20,12 @@ from energy_pilot.gemini_provider import GeminiProvider
 from energy_pilot.ha_client import HAClient
 from energy_pilot.hems_client import HEMSClient
 from energy_pilot.logging_setup import log, setup_logging
+from energy_pilot.onecall_client import OneCallClient
 from energy_pilot.planner import Planner
 from energy_pilot.roles import MEASUREMENT_ROLES
-from energy_pilot.weather import weather_config_from_options
+from energy_pilot.weather import SOURCE_ONECALL, weather_config_from_options
 from energy_pilot.weather_client import OpenWeatherClient
-from energy_pilot.weather_collector import WeatherCollector
+from energy_pilot.weather_collector import OneCallCollector, WeatherCollector
 from energy_pilot.web.server import create_app
 
 DB_PATH = os.environ.get("EP_DB_PATH", "/data/energy_pilot.db")
@@ -78,26 +79,41 @@ def build() -> web.Application:
         context={"ausrichtungen": [o.label for o in orientations]},
     )
 
-    # Wetterprognose (OpenWeatherMap, direkt im EP): Koordinaten aus der HA-Zone.
-    # Ohne API-Schlüssel bzw. ohne HA-Client bleibt der Collector inaktiv (Iron Rule 8).
+    # Wetterprognose (OpenWeatherMap, direkt im EP): Koordinaten aus der HA-Zone. Die Quelle ist
+    # in der Addon-Config umschaltbar (D-044): forecast3h (5-Tage/3-Stunden) oder onecall (One Call
+    # API 4.0). Ohne API-Schlüssel bzw. ohne HA-Client bleibt der Collector inaktiv (Iron Rule 8).
     weather_config = weather_config_from_options(config.values)
-    weather_client = (
-        OpenWeatherClient(
-            weather_config.api_key,
-            units=weather_config.units,
-            lang=weather_config.lang,
+    if weather_config.source == SOURCE_ONECALL:
+        onecall_client = (
+            OneCallClient(
+                weather_config.api_key,
+                units=weather_config.units,
+                lang=weather_config.lang,
+            )
+            if weather_config.enabled
+            else None
         )
-        if weather_config.enabled
-        else None
-    )
-    weather_collector = WeatherCollector(ha_client, weather_config, weather_client, logger)
+        weather_collector = OneCallCollector(ha_client, weather_config, onecall_client, logger)
+    else:
+        weather_client = (
+            OpenWeatherClient(
+                weather_config.api_key,
+                units=weather_config.units,
+                lang=weather_config.lang,
+            )
+            if weather_config.enabled
+            else None
+        )
+        weather_collector = WeatherCollector(ha_client, weather_config, weather_client, logger)
     if weather_config.enabled:
         # Die Zone ist eine Lese-Entität → in die Soft-Allowlist aufnehmen (D-038).
         allowlist.register_all({weather_config.zone_entity: SOURCE_WEATHER})
-        log(
-            logger, "info", "Wetterprognose aktiv",
-            context={"zone": weather_config.zone_entity, "refresh_min": weather_config.refresh_min},
-        )
+        context = {"zone": weather_config.zone_entity, "source": weather_config.source}
+        if weather_config.source == SOURCE_ONECALL:
+            context["timelines"] = list(weather_config.onecall.enabled_timelines)
+        else:
+            context["refresh_min"] = weather_config.refresh_min
+        log(logger, "info", "Wetterprognose aktiv", context=context)
     else:
         log(logger, "info", "Wetterprognose inaktiv (kein OpenWeatherMap-Schlüssel)")
 

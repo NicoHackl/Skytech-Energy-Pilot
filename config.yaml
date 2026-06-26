@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.20"
+version: "0.0.21"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -42,18 +42,31 @@ options:
   # EP summiert je Wert über alle Ausrichtungen. Jeder Wert liegt im State eines eigenen Sensors.
   pv_forecast: []
   pv_forecast_unit: kWh
-  # Wetterprognose (OpenWeatherMap 5-Tage/3-Stunden, direkt im EP abgerufen).
+  # Wetterprognose (OpenWeatherMap, direkt im EP abgerufen).
   # api_key leer => Wetterabruf aus. Koordinaten aus der HA-Zone (Attribute latitude/longitude).
   # units: metric|imperial|standard, lang: OWM-Sprachcode, refresh_min: Mindestabstand der Abrufe.
+  # source: forecast3h (5-Tage/3-Stunden, Default) oder onecall (One Call API 4.0, Abo-pflichtig).
   weather:
     api_key: ""
     zone_entity: zone.home
     units: metric
     lang: de
-    refresh_min: 30
-    # Detailgrad der Wetterdaten ans LLM: compact (Bewölkung/Regen/Temp bis Planungshorizont,
-    # spart Tokens) oder full (volle 5-Tage-Prognose mit allen Feldern, genauer aber mehr Tokens).
+    source: forecast3h
+    refresh_min: 60
+    # Detailgrad der Wetterdaten ans LLM (nur forecast3h): compact (Bewölkung/Regen/Temp bis
+    # Planungshorizont, spart Tokens) oder full (volle 5-Tage-Prognose, genauer aber mehr Tokens).
     llm_detail: compact
+    # One Call API 4.0: je Timeline (15min/1h/1day) einzeln aktivierbar mit eigenem Refresh-Intervall
+    # (Minuten). Jede Timeline ist ein eigener bezahlter Call. Nur erste Seite je Abruf.
+    # llm_timeline: welche Timeline (15min|1h|1day) in den KI-Kontext fließt.
+    onecall:
+      enable_15min: false
+      enable_1h: true
+      enable_1day: true
+      refresh_15min: 15
+      refresh_1h: 60
+      refresh_1day: 180
+      llm_timeline: "1h"
   # Weiche Zielgewichte (Prozent 0–100, D-011). Initialwerte aus info.md §7.
   # Harte Grenzen sind nicht hier, sondern werden aus den ems_*-Werten abgeleitet (constraints.py).
   objective_weights:
@@ -114,8 +127,17 @@ schema:
     zone_entity: str?
     units: list(metric|imperial|standard)?
     lang: str?
+    source: list(forecast3h|onecall)?
     refresh_min: int(1,720)?
     llm_detail: list(compact|full)?
+    onecall:
+      enable_15min: bool?
+      enable_1h: bool?
+      enable_1day: bool?
+      refresh_15min: int(1,1440)?
+      refresh_1h: int(1,1440)?
+      refresh_1day: int(1,1440)?
+      llm_timeline: list(15min|1h|1day)?
   objective_weights:
     versorgungssicherheit: int(0,100)?
     eauto_ladeziel: int(0,100)?

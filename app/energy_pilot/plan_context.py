@@ -53,18 +53,61 @@ def _condense_forecast(forecast: dict) -> dict:
 
 # OWM liefert die Prognose in 3-Stunden-Schritten; daraus folgt die Schrittzahl je Horizont.
 _FORECAST_STEP_H = 3
+# Schrittweite je One-Call-Timeline (Minuten) – für die Kürzung auf den Planungshorizont.
+_ONECALL_STEP_MIN = {"15min": 15, "1h": 60, "1day": 24 * 60}
+
+
+def _condense_onecall(weather: dict, *, horizon_h: int) -> dict:
+    """Verdichtet die in `weather.llm_timeline` gewählte One-Call-Timeline für den KI-Kontext.
+
+    Es geht **genau eine** Timeline ans LLM (Token-Budget): 15min/1h werden auf
+    `forecast_horizon_h` gekürzt, `1day` komplett übernommen. Behalten werden nur
+    energierelevante Felder (Temperatur, Bewölkung, Regenwahrscheinlichkeit; bei `1day`
+    zusätzlich Min/Max). Leer, wenn die gewählte Timeline keine Schritte hat.
+    """
+    timeline = weather.get("llm_timeline") or "1h"
+    tl = (weather.get("timelines") or {}).get(timeline) or {}
+    slots = tl.get("slots") or []
+    if not slots:
+        return {}
+    if timeline == "1day":
+        chosen = slots
+    else:
+        step_min = _ONECALL_STEP_MIN.get(timeline, 60)
+        max_steps = max(1, math.ceil(horizon_h * 60 / step_min))
+        chosen = slots[:max_steps]
+    out_slots: list[dict] = []
+    for s in chosen:
+        item = {
+            "time": s.get("time"),
+            "temp": s.get("temp"),
+            "clouds": s.get("clouds"),
+            "pop": s.get("pop"),
+        }
+        if timeline == "1day":
+            item["temp_min"] = s.get("temp_min")
+            item["temp_max"] = s.get("temp_max")
+        out_slots.append(item)
+    return {
+        "source": "onecall",
+        "timeline": timeline,
+        "units": weather.get("units"),
+        "slots": out_slots,
+    }
 
 
 def _condense_weather(weather: dict, *, horizon_h: int, detail: str) -> dict:
-    """Verdichtet die OWM-Wetterprognose für den KI-Kontext (Detailgrad config-gesteuert).
+    """Verdichtet die OWM-Wetterprognose für den KI-Kontext (quellen-/detailabhängig).
 
-    `compact` (Default): nur energierelevante Felder (Temperatur, Bewölkung, Regen-
-    wahrscheinlichkeit) je 3-Stunden-Schritt, gekürzt auf den Planungshorizont
-    (Datenminimum, Iron Rule 7). `full`: die komplette 5-Tage-Prognose mit allen
-    normalisierten Feldern. Leer, wenn keine Prognose vorliegt.
+    Bei `source="onecall"` geht die konfigurierte Timeline (`llm_timeline`) ein (siehe
+    `_condense_onecall`). Sonst (forecast3h): `compact` (Default) = Temperatur/Bewölkung/
+    Regenwahrscheinlichkeit je 3-Stunden-Schritt bis zum Planungshorizont (Datenminimum,
+    Iron Rule 7); `full` = komplette 5-Tage-Prognose mit allen Feldern. Leer ohne Prognose.
     """
     if not weather:
         return {}
+    if weather.get("source") == "onecall":
+        return _condense_onecall(weather, horizon_h=horizon_h)
     forecast = weather.get("forecast")
     if not forecast:
         return {}

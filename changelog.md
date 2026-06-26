@@ -6,6 +6,30 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.21] - 2026-06-26
+
+### Hinzugefügt
+- **OpenWeatherMap One Call API 4.0 als umschaltbare Wetterquelle (D-044, beantwortet W2):**
+  Neuer Config-Schalter `weather.source` (`forecast3h` = bestehende 5-Tage/3-Stunden-API,
+  **Default** — oder `onecall` = One Call API 4.0). Bei `onecall` werden die Timelines
+  **15min**, **1h** und **1day** über getrennte Endpunkte (`/timeline/<res>`) abgerufen, **je
+  einzeln aktivierbar** (`weather.onecall.enable_15min/1h/1day`) mit **eigenem Abruf-/Refresh-
+  Intervall** (`refresh_15min/1h/1day`, Minuten). Welche Timeline in den KI-Kontext fließt, ist
+  konfigurierbar (`weather.onecall.llm_timeline`, Default `1h`; 15min/1h werden auf
+  `forecast_horizon_h` gekürzt, 1day vollständig). Es wird je Abruf bewusst **nur die erste
+  Seite** geholt (1 bezahlter Call/Timeline/Refresh — Kosten-/Budget-Schutz). Neue Module
+  `onecall_client.py` (`OneCallClient`) und `OneCallCollector` (per-Timeline-Drosselung, Fehler
+  je Timeline isoliert, Iron Rule 8); neue Dataclasses `OneCallConfig`/`OneCallSlot`/
+  `OneCallTimeline`. **Sicherheit:** Schlüssel geht nur als Query-Param `appid`, nie ins Log
+  (Iron Rule 6, geteilter `raise_for_owm_status`-Helfer). Die UI (`/api/weather`, „Wetter
+  testen") zeigt je aktivierter Timeline eine eigene Tabelle inkl. Stand/Refresh.
+  **Hinweis:** One Call API 4.0 erfordert das kostenpflichtige Abo „One Call by Call"; der
+  Default-Pfad `forecast3h` bleibt schlüssel-/abofrei.
+
+### Geändert
+- **forecast3h-Default-Refresh 30 → 60 min (W3, D-044):** Die 5-Tage/3-Stunden-Prognose ändert
+  sich serverseitig nur alle paar Stunden; 60 min sparen Abrufe ohne Informationsverlust.
+
 ## [0.0.20] - 2026-06-25
 
 ### Hinzugefügt

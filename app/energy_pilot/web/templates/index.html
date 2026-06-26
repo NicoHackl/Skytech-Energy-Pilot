@@ -72,10 +72,11 @@
     <h2 style="font-size:1rem;">PV-Prognose (Summe über alle Ausrichtungen)</h2>
     <div id="forecast-totals"></div>
     <div id="forecast-orient"></div>
-    <h2 style="font-size:1rem;margin-top:1.5rem;">Wetter (OpenWeatherMap, 5 Tage / 3 h)</h2>
+    <h2 style="font-size:1rem;margin-top:1.5rem;">Wetter (OpenWeatherMap)</h2>
     <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Direkt im EP über OpenWeatherMap
-       abgerufen. Koordinaten aus der HA-Zone, API-Schlüssel in der Addon-Config
-       (<code>weather</code>). Nur EP-intern — <strong>nicht</strong> als HA-Sensor oder an HEMS.</p>
+       abgerufen (Quelle umschaltbar: 5 Tage / 3 h oder One Call API 4.0). Koordinaten aus der
+       HA-Zone, API-Schlüssel in der Addon-Config (<code>weather</code>). Nur EP-intern —
+       <strong>nicht</strong> als HA-Sensor oder an HEMS.</p>
     <div class="toolbar"><button id="test-weather">Wetter testen</button><span id="weather-status"></span></div>
     <div id="weather-meta" style="font-size:.8rem;color:#888;margin:.25rem 0;"></div>
     <div id="weather-list"></div>
@@ -268,6 +269,51 @@
         .join("");
     }
 
+    function weatherTime(s) {
+      if (s.dt) return new Date(s.dt * 1000).toLocaleString("de-DE");
+      return s.time || "–";
+    }
+
+    function renderOneCallTable(res, slots) {
+      if (!slots.length) return "<p>Noch keine Prognose abgerufen.</p>";
+      const daily = res === "1day";
+      const rows = slots
+        .map((s) => {
+          const pop = s.pop == null ? "–" : Math.round(s.pop * 100) + " %";
+          const temp = daily ? `${fmt(s.temp_min)}–${fmt(s.temp_max)} °` : `${fmt(s.temp)} °`;
+          const wind = daily ? "" : `<td class="num">${fmt(s.wind_speed)}</td>`;
+          return `<tr><td>${weatherTime(s)}</td><td class="num">${temp}</td>`
+            + `<td class="num">${fmt(s.clouds)} %</td><td class="num">${pop}</td>${wind}`
+            + `<td>${s.condition || "–"}</td></tr>`;
+        })
+        .join("");
+      const windHead = daily ? "" : `<th class="num">Wind</th>`;
+      return `<table><thead><tr><th>Zeit</th><th class="num">Temp</th>`
+        + `<th class="num">Bewölkung</th><th class="num">Regen-W.</th>${windHead}`
+        + `<th>Wetter</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderOneCall(data, meta, list) {
+      const coords = data.coords ? `${fmt(data.coords.lat)}/${fmt(data.coords.lon)}` : "–";
+      const ts = data.last_fetch_ts ? new Date(data.last_fetch_ts * 1000).toLocaleString("de-DE") : "–";
+      meta.innerHTML = `Quelle: <code>One Call API 4.0</code> · Zone: <code>${data.zone_entity}</code> (${coords})`
+        + ` · KI-Timeline: <code>${data.llm_timeline}</code> · Stand: ${ts}`
+        + (data.last_error ? ` · ⚠️ ${data.last_error}` : "");
+      const labels = { "15min": "15-Minuten", "1h": "Stündlich", "1day": "Täglich" };
+      const tl = data.timelines || {};
+      let html = "";
+      for (const res of ["15min", "1h", "1day"]) {
+        const t = tl[res];
+        if (!t || !t.enabled) continue;
+        const tts = t.last_fetch_ts ? new Date(t.last_fetch_ts * 1000).toLocaleString("de-DE") : "–";
+        html += `<h3 style="font-size:.9rem;margin:.75rem 0 .25rem;">${labels[res]} `
+          + `<span style="font-weight:normal;color:#888;">(alle ${t.refresh_min} min · Stand ${tts}`
+          + (t.last_error ? ` · ⚠️ ${t.last_error}` : "") + `)</span></h3>`;
+        html += renderOneCallTable(res, t.slots || []);
+      }
+      list.innerHTML = html || "<p>Keine One-Call-Timeline aktiviert oder noch keine Daten abgerufen.</p>";
+    }
+
     async function loadWeather() {
       const data = await (await fetch("api/weather")).json();
       const meta = document.getElementById("weather-meta");
@@ -277,6 +323,7 @@
         list.innerHTML = "";
         return;
       }
+      if (data.source === "onecall") { renderOneCall(data, meta, list); return; }
       const fc = data.forecast;
       const place = fc && fc.city ? `${fc.city}${fc.country ? ", " + fc.country : ""}` : "–";
       const coords = data.coords ? `${fmt(data.coords.lat)}/${fmt(data.coords.lon)}` : "–";
@@ -307,7 +354,12 @@
         const res = await fetch("api/weather/test");
         const data = await res.json();
         const r = data.result || {};
-        if (data.connected) {
+        if (Array.isArray(r.timelines)) {
+          const parts = r.timelines.map((t) =>
+            t.ok ? `${t.resolution} ✅ ${t.slots ?? 0}` : `${t.resolution} ❌ ${t.reason || ""}`
+          );
+          status.textContent = (data.connected ? " ✅ " : " ❌ ") + parts.join(" · ");
+        } else if (data.connected) {
           const place = r.city ? r.city : "Abruf ok";
           status.textContent = ` ✅ ${place} (${r.slots ?? 0} Zeitschritte)`;
         } else {

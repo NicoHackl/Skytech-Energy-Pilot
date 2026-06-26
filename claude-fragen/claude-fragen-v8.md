@@ -29,28 +29,28 @@ Bisher sagen [info.md](../info.md) §6 und [plan/06-prognosen.md](../plan/06-pro
 OWM liefert die 5-Tage-Prognose in **3-Stunden-Schritten** (40 Werte). Das passt nicht zum 1/15/60-min-Mittelungsschema der Messgrößen (D-001), ist aber für den Planungshorizont 24–48 h ausreichend.
 **Frage:** 3-Stunden-Raster **unverändert** übernehmen (meine aktuelle Umsetzung), oder soll EP auf z.B. stündlich **interpolieren**? — Empfehlung: 3h-Raster direkt, keine Interpolation.
 
-Antwort:
+Antwort: Wir nehme das 3h-Raster, es wird noch eine genauere möglichkeit implementiert werden die dann in der regel auch 15 und/oder 60 min vorhersagen kann
 
 ### W3 — Defaults Einheiten/Sprache/Refresh bestätigen
 Aktuelle Defaults: `units=metric` (°C, m/s), `lang=de` (lokalisierte Wetterbeschreibung), `refresh_min=30` (OWM-Forecast ändert sich serverseitig nur alle paar Stunden — häufigere Abrufe wären reine Verschwendung).
 **Frage:** Passen diese Defaults so? Insbesondere `refresh_min=30` ok, oder lieber seltener (z.B. 60)?
 
-Antwort:
+Antwort: für dieses Modell als das 3h-5day nehmen wir 60 minuten als default, alles andere passt
 
 ### W4 — Koordinatenquelle: Zone vs. HA-Kernstandort
 Ich lese Länge/Breite aus der **HA-Zone** (`zone.home`), wie von dir vorgegeben. HA hat zusätzlich einen globalen Standort (`config/latitude`,`longitude`).
 **Frage:** Bei `zone.home` als Default bleiben (so umgesetzt) — oder soll der globale HA-Standort als zusätzlicher **Fallback** dienen, falls die Zone keine Koordinaten hat? — Empfehlung: vorerst nur Zone, klare Fehlermeldung bei fehlenden Koordinaten.
 
-Antwort:
+Antwort: zone.home bleibt default
 
 ### W5 — Behaltene Wetterfelder
 Ich normalisiere je Schritt: `temp`, `feels_like`, `clouds`, `pop`, `wind_speed`, `humidity`, `rain_3h`, `snow_3h`, `condition`/`condition_id`. Verworfen: Druck, Sicht, Windrichtung/-böen, temp_min/max.
 **Frage:** Reicht dieser Satz, oder fehlt etwas Energierelevantes (z.B. Windrichtung für spätere Windkraft)?
 
-Antwort:
+Antwort: Nein das passt so, wir werden (aktueller Stand) ausschließlich solar/pv verwenden
 
 ### W6 — Spätere Bereitstellung (HA-Sensoren / HEMS) als eigener Schritt
 Du hast „**aktuell** noch nicht als HA-Sensoren oder über die interne API an das HEMS" gesagt — ich habe das daher bewusst ausgelassen (analog zur Staffelung der Vorschlagssensoren M2/M3).
 **Frage (nur Bestätigung):** Wetter-als-HA-Sensor und Wetter-über-HEMS-API kommen als **eigener, späterer Meilenstein** — keine sofortige Aktion?
 
-Antwort:
+Antwort: Ja genau das ist ein (optionaler) Meilenstein mit zwei unterpunkten HA und API

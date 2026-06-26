@@ -165,3 +165,62 @@ def test_build_context_includes_weather():
     )
     assert ctx["weather"]["detail"] == "full"
     assert len(ctx["weather"]["slots"]) == 4
+
+
+def _onecall_snapshot(llm_timeline="1h", n_15min=12, n_1h=30, n_1day=8):
+    # OneCallCollector.snapshot()-Form: timelines je Auflösung mit slots[].
+    def slot(i, daily=False):
+        d = {"time": f"t{i}", "temp": 20.0 + i, "clouds": 10.0, "pop": 0.1}
+        if daily:
+            d["temp_min"] = 10.0 + i
+            d["temp_max"] = 25.0 + i
+        return d
+
+    return {
+        "enabled": True,
+        "source": "onecall",
+        "units": "metric",
+        "llm_timeline": llm_timeline,
+        "timelines": {
+            "15min": {"enabled": True, "slots": [slot(i) for i in range(n_15min)]},
+            "1h": {"enabled": True, "slots": [slot(i) for i in range(n_1h)]},
+            "1day": {"enabled": True, "slots": [slot(i, daily=True) for i in range(n_1day)]},
+        },
+    }
+
+
+def test_condense_weather_onecall_1h_trims_to_horizon():
+    out = _condense_weather(_onecall_snapshot("1h"), horizon_h=24, detail="compact")
+    assert out["source"] == "onecall"
+    assert out["timeline"] == "1h"
+    assert len(out["slots"]) == 24  # 24 h / 1-h-Schritte
+    assert set(out["slots"][0].keys()) == {"time", "temp", "clouds", "pop"}
+
+
+def test_condense_weather_onecall_15min_trims_to_horizon():
+    out = _condense_weather(_onecall_snapshot("15min"), horizon_h=2, detail="compact")
+    assert out["timeline"] == "15min"
+    assert len(out["slots"]) == 8  # 2 h * 60 / 15 min
+
+
+def test_condense_weather_onecall_1day_full_with_minmax():
+    out = _condense_weather(_onecall_snapshot("1day"), horizon_h=24, detail="compact")
+    assert out["timeline"] == "1day"
+    assert len(out["slots"]) == 8  # Tages-Timeline wird nicht gekürzt
+    assert "temp_min" in out["slots"][0]
+    assert "temp_max" in out["slots"][0]
+
+
+def test_condense_weather_onecall_empty_timeline():
+    snap = _onecall_snapshot("1h", n_1h=0)
+    assert _condense_weather(snap, horizon_h=24, detail="compact") == {}
+
+
+def test_build_context_includes_onecall_weather():
+    ctx = build_context(
+        {}, {}, _constraints(), objectives_from_config({}),
+        valid_from="A", valid_until="B",
+        weather=_onecall_snapshot("1day"), horizon_h=24,
+    )
+    assert ctx["weather"]["source"] == "onecall"
+    assert ctx["weather"]["timeline"] == "1day"

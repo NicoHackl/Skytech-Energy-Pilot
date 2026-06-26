@@ -32,19 +32,31 @@ DEFAULTS: dict[str, object] = {
     "pv_forecast": [],
     # Anzeigeeinheit der PV-Prognosewerte (EP konvertiert nicht, summiert nur).
     "pv_forecast_unit": "kWh",
-    # Wetterprognose (OpenWeatherMap 5-Tage/3-Stunden, direkt im EP abgerufen).
-    # api_key leer => Wetterabruf deaktiviert; Koordinaten aus der HA-Zone (Attribute
-    # latitude/longitude). Schlüssel wird nie geloggt (Iron Rule 6). Nur EP-intern,
-    # noch nicht als HA-Sensor/HEMS-Übergabe.
+    # Wetterprognose (OpenWeatherMap, direkt im EP abgerufen). api_key leer => Wetterabruf
+    # deaktiviert; Koordinaten aus der HA-Zone (Attribute latitude/longitude). Schlüssel wird
+    # nie geloggt (Iron Rule 6). Nur EP-intern, noch nicht als HA-Sensor/HEMS-Übergabe.
+    # source: forecast3h (5-Tage/3-Stunden, Default) | onecall (One Call API 4.0, Abo-pflichtig).
     "weather": {
         "api_key": "",
         "zone_entity": "zone.home",
         "units": "metric",
         "lang": "de",
-        "refresh_min": 30,
-        # Detailgrad ans LLM: "compact" (Bewölkung/Regen/Temp bis Horizont)
+        "source": "forecast3h",
+        "refresh_min": 60,
+        # Detailgrad ans LLM (nur forecast3h): "compact" (Bewölkung/Regen/Temp bis Horizont)
         # oder "full" (volle 5 Tage, alle Felder).
         "llm_detail": "compact",
+        # One Call API 4.0: je Timeline (15min/1h/1day) aktivierbar mit eigenem Refresh-Intervall.
+        # Jede Timeline ist ein eigener bezahlter Call. llm_timeline = welche Timeline ans LLM geht.
+        "onecall": {
+            "enable_15min": False,
+            "enable_1h": True,
+            "enable_1day": True,
+            "refresh_15min": 15,
+            "refresh_1h": 60,
+            "refresh_1day": 180,
+            "llm_timeline": "1h",
+        },
     },
     # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus info.md §7 (objectives.py).
     "objective_weights": {},
