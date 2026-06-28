@@ -37,8 +37,17 @@ ABWEICHEND = "beobachtet_abweichend"
 POWER_TOLERANCE_W = 1.0
 
 
-def _norm(value: object) -> str:
-    return str(value or "").strip().casefold()
+# Vergleichs-Slug für das Geräte-Matching: casefold + HA-Umlaut-Faltung
+# (ü→u, ä→a, ö→o, ß→ss) + nur Alphanumerik. Robust gegen die typischen
+# HA-Naming-Divergenzen zwischen EP- und HEMS-Config (ü/u, `_`/Leerzeichen,
+# Groß/Klein), die sonst ein „nicht im HEMS gefunden" trotz gleicher Geräte
+# verursachen. Die Faltung folgt der HA-Slugifizierung (vgl. HEMS-Residual-Entity).
+_UMLAUT_MAP = str.maketrans({"ä": "a", "ö": "o", "ü": "u", "ß": "ss"})
+
+
+def _slug(value: object) -> str:
+    s = str(value or "").strip().casefold().translate(_UMLAUT_MAP)
+    return "".join(ch for ch in s if ch.isalnum())
 
 
 def _is_number(value: object) -> bool:
@@ -66,13 +75,15 @@ def _in_window(valid_from: object, valid_until: object, now: datetime) -> bool |
 
 
 def _match_hems_device(label: str, name: str, hems_devices: list) -> dict | None:
-    """Findet das HEMS-Statusgerät zum EP-Gerät: primär über Label, sonst über id==Name."""
-    tgt_label, tgt_name = _norm(label), _norm(name)
+    """Findet das HEMS-Statusgerät zum EP-Gerät über Label oder Name/id (slug-tolerant).
+
+    Beide EP-Achsen (Label, Name) werden gegen beide HEMS-Achsen (Label, id)
+    geprüft – jeweils slug-gefaltet, damit ein Umlaut-/Trenner-/Groß-Klein-Unterschied
+    (z.B. EP-Label „Heizlüfter 1" ↔ HEMS-id „heizlufter_1") nicht zu „nicht gefunden" führt.
+    """
+    keys = {_slug(label), _slug(name)} - {""}
     for hd in hems_devices:
-        if isinstance(hd, dict) and tgt_label and _norm(hd.get("label")) == tgt_label:
-            return hd
-    for hd in hems_devices:
-        if isinstance(hd, dict) and tgt_name and _norm(hd.get("id")) == tgt_name:
+        if isinstance(hd, dict) and ({_slug(hd.get("label")), _slug(hd.get("id"))} & keys):
             return hd
     return None
 

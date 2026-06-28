@@ -6,6 +6,19 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.24] - 2026-06-28
+
+### Behoben
+- **HEMS-Tab: Geräte-Matching slug-tolerant (Umlaut/Trenner/Groß-Klein).** Binäre Geräte
+  (z.B. Heizlüfter 1/2) wurden im HEMS-Tab als „unbekannt – nicht im HEMS gefunden" angezeigt,
+  obwohl in HEMS **und** EP angelegt. Ursache: `plan_feedback._match_hems_device` verglich
+  EP-Label/-Name gegen HEMS-`label`/`id` nur mit `casefold` — ohne Faltung von `ü`↔`u`,
+  `_`↔Leerzeichen. EP entdeckt das Label aus dem Schema-Endpoint (title-case), matcht aber gegen
+  den Status-Endpoint (Rohname) → Divergenz speziell bei Namen mit Underscore/Umlaut. Neuer
+  `_slug()` (casefold + HA-Umlaut-Faltung + nur Alphanumerik); Match prüft jetzt beide EP-Achsen
+  gegen beide HEMS-Achsen slug-gefaltet. Einwortige kleingeschriebene Geräte (Batterie, Heizstab)
+  waren nie betroffen.
+
 ## [0.0.23] - 2026-06-26
 
 ### Hinzugefügt
