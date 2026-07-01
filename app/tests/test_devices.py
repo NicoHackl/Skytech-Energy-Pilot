@@ -13,9 +13,13 @@ from energy_pilot.devices import (
 )
 
 # Repräsentatives HEMS-Schema (analog _ctrl_items_controllable/_ctrl_items_binary).
+# Die Wallbox-Gruppe hat bewusst einen `name` ("wallbox_1"), der vom Entitätspräfix
+# ("wallbox") und vom Anzeige-`label` ("Wallbox") abweicht – damit deckt der Test ab,
+# dass die Geräteidentität am technischen `name` und nicht am Label/Präfix hängt.
 HEMS_SCHEMA = [
     {"label": "Global", "items": [{"entity": "input_boolean.ems_pv_regelung_aktiv"}]},
     {
+        "name": "heizstab",
         "label": "Heizstab",
         "items": [
             {"entity": "input_boolean.ems_heizstab_freigabe"},
@@ -27,6 +31,7 @@ HEMS_SCHEMA = [
         ],
     },
     {
+        "name": "heizluefter_1",
         "label": "Heizlüfter 1",
         "items": [
             {"entity": "input_boolean.ems_heizluefter_1_freigabe"},
@@ -36,6 +41,7 @@ HEMS_SCHEMA = [
         ],
     },
     {
+        "name": "wallbox_1",
         "label": "Wallbox",
         "items": [
             {"entity": "input_boolean.ems_wallbox_technische_freigabe"},
@@ -87,12 +93,32 @@ def test_read_fields_heizstab_special_temperature():
 
 def test_discover_from_hems_schema_classes_and_units():
     devices = {d.name: d for d in discover_from_hems_schema(HEMS_SCHEMA)}
-    assert set(devices) == {"heizstab", "heizluefter_1", "wallbox"}  # "Global" übersprungen
+    assert set(devices) == {"heizstab", "heizluefter_1", "wallbox_1"}  # "Global" übersprungen
     assert devices["heizstab"].device_class == CONTROLLABLE
     assert devices["heizstab"].output_unit == "watt"
     assert devices["heizluefter_1"].device_class == BINARY
-    assert devices["wallbox"].device_class == CONTROLLABLE
-    assert devices["wallbox"].output_unit == "ampere"
+    assert devices["wallbox_1"].device_class == CONTROLLABLE
+    assert devices["wallbox_1"].output_unit == "ampere"
+
+
+def test_discover_from_hems_schema_identity_uses_name_not_label_or_prefix():
+    """Identität = technischer `name`; `label` nur Anzeige, `entity_prefix` fürs Entity-Mapping."""
+    wallbox = {d.name: d for d in discover_from_hems_schema(HEMS_SCHEMA)}["wallbox_1"]
+    assert wallbox.name == "wallbox_1"        # technische ID (deckt sich mit HEMS-`/api/status`-id)
+    assert wallbox.label == "Wallbox"          # reiner Anzeigename
+    assert wallbox.entity_prefix == "wallbox"  # bleibt am Entitätspräfix -> ems_wallbox_*
+    # Ein Label-Rename ändert die Identität NICHT.
+    renamed = dict(HEMS_SCHEMA[3], label="Wallbox Test")
+    wb2 = discover_from_hems_schema([renamed])[0]
+    assert wb2.name == "wallbox_1" and wb2.entity_prefix == "wallbox"
+
+
+def test_discover_from_hems_schema_falls_back_to_prefix_without_name():
+    """Ältere HEMS-Versionen ohne `name` im Schema: Identität = Entitätspräfix."""
+    group = {k: v for k, v in HEMS_SCHEMA[3].items() if k != "name"}
+    dev = discover_from_hems_schema([group])[0]
+    assert dev.name == "wallbox"
+    assert dev.entity_prefix == "wallbox"
 
 
 def test_discover_from_hems_schema_skips_unidentifiable_group():
@@ -134,7 +160,7 @@ class _FakeHEMS:
 async def test_discover_prefers_hems():
     devices, source = await discover(_FakeHEMS(schema=HEMS_SCHEMA), {})
     assert source == "hems"
-    assert {d.name for d in devices} == {"heizstab", "heizluefter_1", "wallbox"}
+    assert {d.name for d in devices} == {"heizstab", "heizluefter_1", "wallbox_1"}
 
 
 @pytest.mark.asyncio

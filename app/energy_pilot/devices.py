@@ -120,6 +120,11 @@ def discover_from_hems_schema(schema: list[dict]) -> list[Device]:
         if not prefix:
             continue
 
+        # Geräteidentität (D-029): stabiler technischer `name` aus dem HEMS-Schema.
+        # `label` ist nur Anzeigename und darf ohne Folgen umbenannt werden. Ältere
+        # HEMS-Versionen liefern kein `name` – dann auf das Entitätspräfix zurückfallen.
+        name = (group.get("name") or "").strip() or prefix
+
         has_min_technisch = any(re.search(r"_min_technisch_[wa]$", e) for e in entities)
         has_leistung = any(e.endswith("_leistung_w") for e in entities)
         if has_min_technisch:
@@ -134,8 +139,8 @@ def discover_from_hems_schema(schema: list[dict]) -> list[Device]:
 
         devices.append(
             Device(
-                name=prefix,
-                label=label or _default_label(prefix),
+                name=name,
+                label=label or _default_label(name),
                 entity_prefix=prefix,
                 device_class=device_class,
                 output_unit=output_unit,

@@ -6,6 +6,23 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.25] - 2026-07-01
+
+### Behoben
+- **Geräte-Identität hängt jetzt am technischen `name`, nicht mehr am Anzeige-`label`.**
+  Wurde in der HEMS-Geräteverwaltung nur das **Label** geändert (z.B. „Wallbox" → „Wallbox
+  Test"), konnte die Zuordnung im HEMS-Tab kippen bzw. das Gerät als „unbekannt – nicht im
+  HEMS gefunden" erscheinen. Ursache: EP kannte den technischen HEMS-`name`/`id` gar nicht –
+  das Kontrollschema (`/api/device_controls_schema`) lieferte nur `label` + Entitäten, sodass
+  EP die Identität aus dem `entity_prefix` rekonstruierte und die HEMS-Korrelation faktisch am
+  Label hing. Die 0.0.24-Slug-Faltung milderte das nur, behob es aber nicht.
+- **Fix:** HEMS liefert im Schema nun zusätzlich das Feld `name` (technischer Bezeichner,
+  deckt sich mit der `id` in `/api/status`). `devices.discover_from_hems_schema` nutzt dieses
+  `name` als Geräte-`name` (Identität), `label` bleibt reiner Anzeigename und `entity_prefix`
+  weiterhin das Entitätspräfix für die `ems_*`-Reads. Fehlt `name` (ältere HEMS-Version), wird
+  wie bisher auf das Präfix zurückgefallen. Ein Label-Rename ändert die Zuordnung damit nicht
+  mehr. Setzt HEMS ≥ 1.0.26 voraus, ist aber abwärtskompatibel.
+
 ## [0.0.24] - 2026-06-28
 
 ### Behoben
