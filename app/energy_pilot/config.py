@@ -34,8 +34,6 @@ DEFAULTS: dict[str, object] = {
     # Plan-/HEMS-Status als sensor.ep_plan_status / sensor.ep_hems_verbindung nach HA
     # schreiben (M3). False => nur in UI/DB, kein HA-Schreibweg (Iron Rule 8 bleibt aktiv).
     "publish_status": True,
-    # Geräteliste als Fallback, falls HEMS nicht erreichbar ist (entity_prefix/class/output_unit).
-    "devices": [],
     # PV-Prognose (D-006/D-018/D-026): je Ausrichtung 4 Sensoren, EP summiert je Wert.
     "pv_forecast": [],
     # Anzeigeeinheit der PV-Prognosewerte (EP konvertiert nicht, summiert nur).

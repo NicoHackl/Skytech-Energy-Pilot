@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.25"
+version: "0.0.26"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -34,8 +34,9 @@ options:
   # false => reiner Beobachten-Modus: Plan bleibt in UI/DB, EP schreibt nichts nach HA.
   publish_suggestions: true
   # HEMS-Anbindung (D-036): Basis-URL des HEMS-Addons – genutzt für die Geräte-Discovery
-  # UND die Status-Rückkopplung (M3). Leer => keine HEMS-Anbindung (nur Config-Fallback unten).
-  # Beispiel (Addon-Hostname, Port 8099): http://local_skytech_hems:8099
+  # UND die Status-Rückkopplung (M3). Leer => keine HEMS-Anbindung (dann keine Geräte-
+  # Discovery, EP kennt keine Geräte). Beispiel (Addon-Hostname, Port 8099):
+  # http://local_skytech_hems:8099
   hems_base_url: ""
   # HEMS-Status-Rückkopplung (M3): Intervall (s), in dem EP /api/status pollt, die beobachtete
   # Plan-Übereinstimmung (Vorschlag vs. Ist) ableitet und nach HA spiegelt.
@@ -43,8 +44,6 @@ options:
   # Plan-/HEMS-Status als sensor.ep_plan_status / sensor.ep_hems_verbindung nach HA schreiben (M3).
   # false => nur in UI/DB sichtbar, kein HA-Schreibweg.
   publish_status: true
-  # Fallback-Geräteliste, falls HEMS nicht erreichbar ist (sonst via HEMS-Schema erkannt).
-  devices: []
   # PV-Prognose: je Ausrichtung 4 Sensoren (Energie akt. Stunde / nächste Stunde / Rest heute / morgen).
   # EP summiert je Wert über alle Ausrichtungen. Jeder Wert liegt im State eines eigenen Sensors.
   pv_forecast: []
@@ -129,11 +128,6 @@ schema:
   hems_base_url: str?
   hems_status_interval_s: int(10,3600)?
   publish_status: bool?
-  devices:
-    - name: str
-      entity_prefix: str?
-      class: list(controllable|binary)
-      output_unit: list(watt|ampere)?
   pv_forecast:
     - label: str?
       current_hour: str?

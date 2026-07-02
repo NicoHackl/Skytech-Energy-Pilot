@@ -32,6 +32,13 @@ from energy_pilot.settings import (
 
 TEMPLATES = Path(__file__).parent / "templates"
 
+# Auto-Retry der Geräte-Discovery (D-046): HA garantiert keine Addon-Startreihenfolge,
+# daher kann das HEMS beim EP-Start noch nicht erreichbar sein. Ohne Config-Fallback liefe
+# EP sonst dauerhaft ohne Geräte. Darum bis zu N Wiederholungen im Abstand von M Sekunden,
+# Abbruch beim ersten Erfolg; danach hilft der manuelle HEMS-Sync-Button im HEMS-Tab.
+DISCOVERY_RETRY_ATTEMPTS = 5
+DISCOVERY_RETRY_DELAY_S = 30
+
 
 def create_app(
     config: AddonConfig,
@@ -84,6 +91,7 @@ def create_app(
             web.get("/api/weather/test", weather_test),
             web.get("/api/hems/status", hems_status_get),
             web.get("/api/hems/test", hems_test),
+            web.post("/api/hems/rediscover", hems_rediscover),
             web.get("/api/allowlist", allowlist_get),
             web.get("/api/constraints", constraints_get),
             web.get("/api/objectives", objectives_get),
@@ -102,6 +110,7 @@ def create_app(
     if device_collector is not None:
         app.on_startup.append(_discover_devices)
         app.on_cleanup.append(_close_hems_client)
+        app.on_cleanup.append(_stop_discovery_retry)
     if planner is not None:
         app.on_cleanup.append(_close_planner)
     if weather_collector is not None:
@@ -112,24 +121,25 @@ def create_app(
     return app
 
 
-async def _discover_devices(app: web.Application) -> None:
-    """Erkennt die Geräte beim Start (HEMS-Schema primär, Config-Fallback, D-036).
+async def rediscover_devices(app: web.Application) -> tuple[list, str]:
+    """Führt die Geräte-Discovery (HEMS-Schema, D-036) aus und übernimmt das Ergebnis.
 
-    Nach der Discovery sind alle drei Allowlist-Quellen vollständig: die Geräte-
-    Entitäten werden registriert und das komplette Register einmal persistiert
-    und auditiert (Soft-Guard, D-038).
+    Gemeinsame Logik für Start-Discovery, Auto-Retry und den manuellen HEMS-Sync (Button
+    im HEMS-Tab, D-046): erkennt die Geräte, aktualisiert den DeviceCollector und baut die
+    Allowlist neu auf – so fallen die `ems_*`-Leichen umbenannter/entfernter Geräte raus
+    (Soft-Guard, D-038). Liefert (devices, source) mit source ∈ {"hems", "none"}.
     """
     from energy_pilot.allowlist import collect_entity_ids
     from energy_pilot.devices import discover
 
     device_collector = app["device_collector"]
     logger = app["logger"]
-    devices, source = await discover(app.get("hems_client"), app["config"].values, logger)
+    devices, source = await discover(app.get("hems_client"), logger)
     device_collector.set_devices(devices, source)
 
     allowlist = app.get("allowlist")
     if allowlist is not None:
-        allowlist.register_all(collect_entity_ids(devices=devices))
+        allowlist.rebuild(collect_entity_ids(devices=devices))
         allowlist.persist(app["db"])
 
     if logger is not None:
@@ -138,6 +148,51 @@ async def _discover_devices(app: web.Application) -> None:
             context={"quelle": source, "anzahl": len(devices),
                      "geraete": [d.name for d in devices]},
         )
+    return devices, source
+
+
+async def _discover_devices(app: web.Application) -> None:
+    """Start-Hook: erkennt die Geräte über das HEMS-Schema (D-036).
+
+    Ist das HEMS beim Start noch nicht erreichbar (Addon-Startreihenfolge, D-046), wird die
+    Discovery im Hintergrund begrenzt wiederholt (siehe _discovery_retry).
+    """
+    _, source = await rediscover_devices(app)
+    if source != "hems":
+        app["_discovery_retry_task"] = asyncio.create_task(_discovery_retry(app))
+
+
+async def _discovery_retry(app: web.Application) -> None:
+    """Wiederholt die Discovery, bis das HEMS Geräte liefert (begrenzt, D-046).
+
+    Bis zu DISCOVERY_RETRY_ATTEMPTS Versuche im Abstand von DISCOVERY_RETRY_DELAY_S s,
+    Abbruch beim ersten Erfolg. Danach bleibt es bei „keine Geräte", bis der User im
+    HEMS-Tab den Sync-Button drückt.
+    """
+    logger = app["logger"]
+    for attempt in range(1, DISCOVERY_RETRY_ATTEMPTS + 1):
+        await asyncio.sleep(DISCOVERY_RETRY_DELAY_S)
+        _, source = await rediscover_devices(app)
+        if source == "hems":
+            if logger is not None:
+                log(logger, "info", "HEMS-Geräte nach Wiederholung erkannt",
+                    context={"versuch": attempt})
+            return
+    if logger is not None:
+        log(logger, "warning",
+            "HEMS nach mehreren Versuchen ohne Geräte – manuellen HEMS-Sync nutzen",
+            context={"versuche": DISCOVERY_RETRY_ATTEMPTS})
+
+
+async def _stop_discovery_retry(app: web.Application) -> None:
+    """Bricht den laufenden Auto-Retry-Task beim Herunterfahren sauber ab."""
+    task = app.get("_discovery_retry_task")
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 async def _close_hems_client(app: web.Application) -> None:
@@ -317,7 +372,7 @@ async def entities_get(request: web.Request) -> web.Response:
 async def devices_get(request: web.Request) -> web.Response:
     """Liefert die erkannten Geräte samt gelesener `ems_*`-Werte (read-only).
 
-    Discovery: HEMS-Schema primär, Addon-Config als Fallback (D-036). Die Quelle
+    Discovery ausschließlich über das HEMS-Schema (D-036); die Quelle ("hems"|"none")
     steht zusätzlich in der Diagnose.
     """
     device_collector = request.app.get("device_collector")
@@ -387,6 +442,28 @@ async def hems_test(request: web.Request) -> web.Response:
     status = 200 if result.get("ok") else 502
     return web.json_response(
         {"connected": result.get("ok", False), "result": result}, status=status
+    )
+
+
+async def hems_rediscover(request: web.Request) -> web.Response:
+    """Manueller HEMS-Sync (Button im HEMS-Tab, D-046): erkennt die Geräte neu.
+
+    Zieht die aktuelle HEMS-Geräteliste (D-036) und baut die Allowlist neu auf. Meldet
+    Quelle und erkannte Geräte zurück; bei source "none" ist das HEMS nicht erreichbar
+    oder liefert keine Geräte.
+    """
+    device_collector = request.app.get("device_collector")
+    if device_collector is None:
+        return web.json_response(
+            {"source": "none", "device_count": 0, "devices": []}, status=503
+        )
+    devices, source = await rediscover_devices(request.app)
+    return web.json_response(
+        {
+            "source": source,
+            "device_count": len(devices),
+            "devices": [d.name for d in devices],
+        }
     )
 
 

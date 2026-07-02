@@ -45,7 +45,7 @@ class DeviceCollector:
         self.last_collect_ts: float | None = None
         self.last_error: str | None = None
 
-    def set_devices(self, devices: list[Device], source: str = "config") -> None:
+    def set_devices(self, devices: list[Device], source: str = "none") -> None:
         self.devices = devices
         self.discovery_source = source
 

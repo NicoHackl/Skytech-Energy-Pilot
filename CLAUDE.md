@@ -67,7 +67,7 @@ User will aus dem internen Netz über ein **iOS-Backend (Java auf Linux-Server)*
 - HEMS bietet bereits `/api/status`, `/api/controls`, `/api/set`, `/api/device_controls_schema` + post-cycle-script.
 
 ## Daten von HA → EP
-- Grenzwerte/Geräteinfos: über HA-(Helfer-)Entitäten nach Namensschema; **Fallback in Addon-UI** konfigurierbar.
+- Grenzwerte/Geräteinfos: über HA-(Helfer-)Entitäten nach Namensschema; Geräte werden **ausschließlich vom HEMS** gezogen (`/api/device_controls_schema`, D-036/D-046) — **kein** Config-Fallback (Auto-Retry + manueller HEMS-Sync im HEMS-Tab).
 - Fremddaten (Strompreis EPEX, PV, Wetter): freie Entitätsnamen, in Addon-Config pflegbar (kein Namensschema, da Drittanbieter).
 
 ## Anfangs-Geräte (Phase 1) — präzisiert (D-016/D-017/D-018)

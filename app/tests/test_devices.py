@@ -6,7 +6,6 @@ from energy_pilot.devices import (
     BINARY,
     CONTROLLABLE,
     Device,
-    devices_from_config,
     discover,
     discover_from_hems_schema,
     read_fields,
@@ -126,25 +125,6 @@ def test_discover_from_hems_schema_skips_unidentifiable_group():
     assert discover_from_hems_schema(schema) == []
 
 
-def test_devices_from_config_parses_and_validates():
-    values = {
-        "devices": [
-            {"name": "heizstab", "class": "controllable"},
-            {
-                "name": "wallbox", "entity_prefix": "wb",
-                "class": "controllable", "output_unit": "ampere",
-            },
-            {"name": "kaputt", "class": "unsinn"},  # ungültige Klasse -> übersprungen
-            {"class": "binary"},  # ohne name -> übersprungen
-        ]
-    }
-    devices = {d.name: d for d in devices_from_config(values)}
-    assert set(devices) == {"heizstab", "wallbox"}
-    assert devices["heizstab"].entity_prefix == "heizstab"
-    assert devices["wallbox"].entity_prefix == "wb"
-    assert devices["wallbox"].output_unit == "ampere"
-
-
 class _FakeHEMS:
     def __init__(self, schema=None, error=False):
         self._schema = schema
@@ -157,29 +137,30 @@ class _FakeHEMS:
 
 
 @pytest.mark.asyncio
-async def test_discover_prefers_hems():
-    devices, source = await discover(_FakeHEMS(schema=HEMS_SCHEMA), {})
+async def test_discover_uses_hems_schema():
+    devices, source = await discover(_FakeHEMS(schema=HEMS_SCHEMA))
     assert source == "hems"
     assert {d.name for d in devices} == {"heizstab", "heizluefter_1", "wallbox_1"}
 
 
 @pytest.mark.asyncio
-async def test_discover_falls_back_to_config_when_hems_down():
-    values = {"devices": [{"name": "heizstab", "class": "controllable"}]}
-    devices, source = await discover(_FakeHEMS(error=True), values)
-    assert source == "config"
-    assert [d.name for d in devices] == ["heizstab"]
+async def test_discover_none_when_hems_errors():
+    # Kein Config-Fallback mehr (D-046): HEMS-Fehler => keine Geräte.
+    devices, source = await discover(_FakeHEMS(error=True))
+    assert source == "none"
+    assert devices == []
 
 
 @pytest.mark.asyncio
-async def test_discover_without_hems_uses_config():
-    values = {"devices": [{"name": "heizstab", "class": "controllable"}]}
-    devices, source = await discover(None, values)
-    assert source == "config"
+async def test_discover_none_when_hems_schema_has_no_devices():
+    schema = [{"label": "Global", "items": [{"entity": "input_boolean.ems_pv_regelung_aktiv"}]}]
+    devices, source = await discover(_FakeHEMS(schema=schema))
+    assert source == "none"
+    assert devices == []
 
 
 @pytest.mark.asyncio
-async def test_discover_none_when_nothing_available():
-    devices, source = await discover(None, {})
+async def test_discover_none_without_hems():
+    devices, source = await discover(None)
     assert source == "none"
     assert devices == []

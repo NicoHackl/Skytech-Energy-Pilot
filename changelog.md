@@ -6,6 +6,29 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.26] - 2026-07-02
+
+### Geändert
+- **Geräte-Discovery ausschließlich über das HEMS** (D-046). Sind HEMS und Energy Pilot
+  verbunden und im HEMS Geräte eingerichtet, zieht EP die komplette Geräteliste vom HEMS
+  (`/api/device_controls_schema`) – die Namenskonvention (`name`/`entity_prefix`) wird 1:1
+  übernommen, EP-eigene Entitäten bleiben `ep_*`. Der bisherige Geräte-Fallback in der
+  Addon-Config brachte bei HEMS-Ausfall ohnehin nichts, weil das HEMS die EP-Vorschläge bei
+  eigener Nichtverfügbarkeit gar nicht verarbeiten kann (Leitsatz „EP ohne HEMS sinnlos").
+
+### Hinzugefügt
+- **Auto-Retry der Geräte-Discovery beim Start** (D-046): Ist das HEMS zum EP-Start noch nicht
+  erreichbar (Home Assistant garantiert keine Addon-Startreihenfolge), wiederholt EP die
+  Discovery **bis zu 5×** im Abstand von **30 s** und erholt sich ohne Neustart, sobald das
+  HEMS oben ist.
+- **Manueller „Geräte von HEMS neu laden"-Button** im HEMS-Tab der EP-Oberfläche: synchronisiert
+  die Geräteliste jederzeit neu vom HEMS (Endpoint `POST /api/hems/rediscover`) und baut dabei
+  die Lese-Allowlist neu auf, sodass Entitäten umbenannter/entfernter Geräte verschwinden.
+
+### Entfernt
+- Addon-Config-Option `devices` (Fallback-Geräteliste) inkl. `config.yaml`-Schema – ersatzlos,
+  da die Geräte nun vollständig vom HEMS kommen.
+
 ## [0.0.25] - 2026-07-01
 
 ### Behoben

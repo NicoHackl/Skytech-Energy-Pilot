@@ -74,6 +74,19 @@ class EntityAllowlist:
             if entity_id:
                 self._entities.setdefault(entity_id, source)
 
+    def rebuild(self, entities: dict[str, str]) -> None:
+        """Ersetzt das Register vollständig durch `entities` (für Re-Discovery/HEMS-Sync).
+
+        Anders als `register_all` (additiv) entfernt `rebuild` Einträge, die in der neuen
+        Ableitung fehlen – so verschwinden die `ems_*`-Entitäten umbenannter oder aus dem
+        HEMS entfernter Geräte beim manuellen HEMS-Sync (D-046), statt als Leichen im
+        Register zu bleiben. Bereits gemeldete Verstöße werden zurückgesetzt, damit eine
+        nun freigegebene Entität nicht fälschlich als Verstoß gedrosselt bleibt.
+        """
+        self._entities = {}
+        self._reported_violations.clear()
+        self.register_all(entities)
+
     def is_allowed(self, entity_id: str) -> bool:
         """Reiner Check ohne Seiteneffekt."""
         return entity_id in self._entities

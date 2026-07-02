@@ -133,6 +133,7 @@
     <div class="toolbar">
       <button id="refresh-hems">Aktualisieren</button>
       <button id="test-hems">Jetzt prüfen</button>
+      <button id="sync-hems-devices">Geräte von HEMS neu laden</button>
       <span id="hems-status"></span>
     </div>
     <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Status-Rückkopplung (M3): EP liest den
@@ -242,7 +243,7 @@
 
     async function loadDevices() {
       const data = await (await fetch("api/devices")).json();
-      const srcLabel = { hems: "HEMS-Schema", config: "Addon-Config", none: "keine" }[data.source] || data.source;
+      const srcLabel = { hems: "HEMS-Schema", none: "keine (HEMS nicht verbunden)" }[data.source] || data.source;
       document.getElementById("device-source").textContent = " Quelle: " + srcLabel;
       const html = (data.devices || [])
         .map((d) => {
@@ -261,7 +262,7 @@
         })
         .join("");
       document.getElementById("device-list").innerHTML =
-        html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config setzen oder Geräteliste pflegen.</p>";
+        html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen und die Geräte im HEMS anlegen – dann im HEMS-Tab „Geräte von HEMS neu laden“.</p>";
     }
 
     async function loadForecast() {
@@ -456,7 +457,7 @@
         })
         .join("");
       document.getElementById("constraints-list").innerHTML =
-        html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config setzen oder Geräteliste pflegen.</p>";
+        html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen und die Geräte im HEMS anlegen – dann im HEMS-Tab „Geräte von HEMS neu laden“.</p>";
     }
 
     async function loadObjectives() {
@@ -723,6 +724,25 @@
       loadHems();
     }
 
+    async function syncHemsDevices() {
+      const status = document.getElementById("hems-status");
+      const btn = document.getElementById("sync-hems-devices");
+      status.textContent = " … lade Geräte vom HEMS …";
+      btn.disabled = true;
+      try {
+        const res = await fetch("api/hems/rediscover", { method: "POST" });
+        const data = await res.json();
+        status.textContent = data.source === "hems"
+          ? ` ✅ ${data.device_count} Gerät(e) vom HEMS übernommen`
+          : " ❌ HEMS nicht erreichbar / keine Geräte";
+      } catch (e) {
+        status.textContent = " ❌ " + e;
+      } finally {
+        btn.disabled = false;
+      }
+      loadDevices();
+    }
+
     async function loadLogs() {
       const rows = await (await fetch("api/logs?limit=200")).json();
       document.getElementById("log-rows").innerHTML = rows
@@ -742,6 +762,7 @@
     document.getElementById("test-ai").addEventListener("click", testAI);
     document.getElementById("refresh-hems").addEventListener("click", loadHems);
     document.getElementById("test-hems").addEventListener("click", testHems);
+    document.getElementById("sync-hems-devices").addEventListener("click", syncHemsDevices);
     document.getElementById("save-prompt").addEventListener("click", () => savePrompt(document.getElementById("prompt-text").value));
     document.getElementById("reset-prompt").addEventListener("click", async () => {
       document.getElementById("prompt-text").value = promptDefault;

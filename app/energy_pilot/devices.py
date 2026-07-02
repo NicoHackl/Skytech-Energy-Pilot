@@ -1,9 +1,12 @@
 """Gerätemodell und -Discovery des Energy Pilot.
 
 EP liest pro Gerät die vom User gepflegten technischen `ems_*`-Werte (Decision
-D-029/D-031). Die konkreten Entity-IDs werden primär aus dem HEMS-Schema
-(`/api/device_controls_schema`, D-036) erkannt; ist das HEMS nicht erreichbar,
-greift eine in der Addon-Config gepflegte Geräteliste (Fallback).
+D-029/D-031). Die konkreten Entity-IDs werden **ausschließlich** aus dem HEMS-Schema
+(`/api/device_controls_schema`, D-036) erkannt – die Geräte werden vollständig vom
+HEMS gezogen. Einen Geräte-Fallback in der Addon-Config gibt es nicht mehr (D-046):
+ist das HEMS beim Start nicht erreichbar, kennt EP keine Geräte. Der Webserver
+wiederholt die Discovery dann automatisch (begrenzt) und stellt einen manuellen
+HEMS-Sync (Button im HEMS-Tab) bereit.
 
 Das Read-Schema ist gegen den HEMS-Quellcode verifiziert
 (SkytechHEMS app/main.py `_ctrl_items_controllable`/`_ctrl_items_binary`).
@@ -149,32 +152,17 @@ def discover_from_hems_schema(schema: list[dict]) -> list[Device]:
     return devices
 
 
-def devices_from_config(values: dict) -> list[Device]:
-    """Fallback-Geräteliste aus den Addon-Optionen (`devices`)."""
-    raw = values.get("devices") or []
-    devices: list[Device] = []
-    for cfg in raw:
-        if not isinstance(cfg, dict):
-            continue
-        name = (cfg.get("name") or "").strip()
-        device_class = (cfg.get("class") or "").strip()
-        if not name or device_class not in (CONTROLLABLE, BINARY):
-            continue
-        prefix = (cfg.get("entity_prefix") or "").strip() or name
-        output_unit = (cfg.get("output_unit") or "watt").strip()
-        label = (cfg.get("label") or "").strip() or _default_label(name)
-        devices.append(Device(name, label, prefix, device_class, output_unit))
-    return devices
-
-
 async def discover(
     hems_client: HEMSClient | None,
-    values: dict,
     logger: logging.Logger | None = None,
 ) -> tuple[list[Device], str]:
-    """Erkennt die Geräte: HEMS-Schema primär, Addon-Config als Fallback.
+    """Erkennt die Geräte ausschließlich über das HEMS-Kontrollschema (D-036).
 
-    Liefert die Geräteliste und die Quelle ("hems" | "config" | "none").
+    Liefert die Geräteliste und die Quelle ("hems" | "none"). Ist das HEMS nicht
+    erreichbar oder liefert es keine Geräte, ist die Liste leer (Quelle "none") –
+    einen Addon-Config-Fallback gibt es nicht mehr (D-046); die Geräte werden
+    vollständig vom HEMS gezogen. Der Aufrufer wiederholt die Discovery bei "none"
+    (Auto-Retry) bzw. stößt sie manuell über den HEMS-Sync neu an.
     """
     if hems_client is not None:
         try:
@@ -186,9 +174,7 @@ async def discover(
             if logger:
                 log(
                     logger, "warning",
-                    "HEMS-Geräteschema nicht abrufbar – nutze Config-Fallback",
+                    "HEMS-Geräteschema nicht abrufbar – keine Geräte erkannt",
                     context={"error": str(exc)},
                 )
-
-    devices = devices_from_config(values)
-    return (devices, "config") if devices else ([], "none")
+    return [], "none"

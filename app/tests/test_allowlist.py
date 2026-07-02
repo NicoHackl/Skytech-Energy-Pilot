@@ -36,6 +36,22 @@ def test_collect_entity_ids_skips_mapping_without_entity():
     assert collect_entity_ids(mapping=mapping) == {}
 
 
+def test_rebuild_replaces_register_and_drops_stale_device_ids():
+    # HEMS-Sync (D-046): rebuild ersetzt vollständig; ein umbenanntes Gerät verliert
+    # seine alten ems_*-Entitäten, die neuen kommen rein (anders als das additive register_all).
+    allow = EntityAllowlist()
+    allow.register_all(
+        collect_entity_ids(devices=[Device("heizstab", "Heizstab", "heizstab", "controllable")])
+    )
+    assert allow.is_allowed("input_boolean.ems_heizstab_technische_freigabe")
+
+    allow.rebuild(
+        collect_entity_ids(devices=[Device("heizstab", "Heizstab", "warmwasser", "controllable")])
+    )
+    assert not allow.is_allowed("input_boolean.ems_heizstab_technische_freigabe")
+    assert allow.is_allowed("input_boolean.ems_warmwasser_technische_freigabe")
+
+
 def test_is_allowed_after_register():
     allow = EntityAllowlist()
     allow.register_all({"sensor.pv": SOURCE_MEASUREMENT})
