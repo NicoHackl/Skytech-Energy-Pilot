@@ -112,6 +112,30 @@ def test_device_extra_object_id_strips_domain_and_ep_prefix():
     assert ex.display_label == "Min Soc Auto"
 
 
+def test_device_extra_kind_and_capture_attrs_per_domain():
+    # Datentyp + mitgelesene Attribute folgen der HA-Domäne (D-048).
+    cases = {
+        "input_number.x": ("number", ("min", "max", "step", "unit_of_measurement")),
+        "input_boolean.x": ("bool", ()),
+        "input_datetime.x": ("datetime", ("has_date", "has_time")),
+        "input_text.x": ("text", ()),
+        "sensor.x": ("auto", ("unit_of_measurement", "device_class")),
+    }
+    for entity, (kind, attrs) in cases.items():
+        ex = DeviceExtra(read_entity_id=entity)
+        assert ex.domain == entity.split(".")[0]
+        assert ex.kind == kind
+        assert ex.capture_attrs == attrs
+
+
+def test_read_fields_extra_kind_follows_domain():
+    ex_bool = DeviceExtra(read_entity_id="input_boolean.eco_modus", ai_suggestion=True)
+    dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, extras=(ex_bool,))
+    field = {f.key: f for f in read_fields(dev)}["extra_eco_modus"]
+    assert field.kind == "bool"
+    assert field.capture_attrs == ()
+
+
 def test_discover_from_hems_schema_classes_and_units():
     devices = {d.name: d for d in discover_from_hems_schema(HEMS_SCHEMA)}
     assert set(devices) == {"heizstab", "heizluefter_1", "wallbox_1"}  # "Global" übersprungen

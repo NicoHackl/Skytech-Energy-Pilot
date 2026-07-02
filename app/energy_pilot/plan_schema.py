@@ -152,10 +152,11 @@ PLAN_JSON_SCHEMA: dict = {
                 "type": "object",
                 "required": ["name"],
                 "additionalProperties": False,
-                # Dynamische Zusatz-Vorschläge (D-047): beliebig viele `extra_<obj>_vorschlag`
-                # als Zahl erlaubt; der Validator erzwingt je Gerät den konkreten Schreibvertrag.
+                # Zusatz-Vorschläge (D-047/D-048): beliebig viele `extra_<obj>_vorschlag`.
+                # Typ je nach Domäne der Quell-Entität (Zahl/Bool/Text/Datum-als-String); den
+                # konkreten Schreibvertrag je Gerät erzwingt der Validator (suggestion_keys).
                 "patternProperties": {
-                    r"^extra_[a-z0-9_]+_vorschlag$": {"type": "number"},
+                    r"^extra_[a-z0-9_]+_vorschlag$": {"type": ["number", "boolean", "string"]},
                 },
                 "properties": {
                     "name": {"type": "string", "minLength": 1},

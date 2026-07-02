@@ -28,18 +28,39 @@ BINARY = "binary"
 _PREFIX_RE = re.compile(r"\.ems_(?P<prefix>.+)_technische_freigabe$")
 
 
+# Datentyp je HA-Domäne (D-048): steuert Lesen, KI-Antwort-Schema und Vorschlags-Sensor.
+# Nicht gelistete Domänen (v.a. `sensor`) => "auto": Zahl bei numerischem Zustand, sonst Text.
+_DOMAIN_KIND: dict[str, str] = {
+    "input_number": "number",
+    "number": "number",
+    "input_boolean": "bool",
+    "switch": "bool",
+    "binary_sensor": "bool",
+    "light": "bool",
+    "input_datetime": "datetime",
+    "input_text": "text",
+    "text": "text",
+}
+
+
 @dataclass(frozen=True)
 class DeviceExtra:
-    """Eine user-gepflegte Zusatz-Entität eines Geräts (D-047, generalisiert D-035).
+    """Eine user-gepflegte Zusatz-Entität eines Geräts (D-047/D-048, generalisiert D-035).
 
     Zusätzlich zu den vom HEMS gezogenen `ems_*`-Werten kann der User im Geräte-Tab je
-    Gerät weitere Entitäten hinterlegen, die EP liest und (optional) für die KI zu einem
-    Vorschlagswert werden lässt. Beispiel: `input_number.min_soc_auto` → EP liest den
+    Gerät weitere Entitäten **beliebiger Domäne** hinterlegen (sensor, input_number,
+    input_boolean, input_datetime, input_text, …), die EP liest und (optional) für die KI zu
+    einem Vorschlagswert werden lässt. Beispiel: `input_number.min_soc_auto` → EP liest den
     Wert; bei `ai_suggestion=True` erzeugt die KI zusätzlich `sensor.ep_min_soc_auto_vorschlag`.
 
+    Der Datentyp (`kind`) folgt der Domäne (D-048): Zahl/Bool/Datum/Text; `sensor` u.a. sind
+    "auto" (Zahl, wenn der Zustand numerisch ist, sonst Text). Je nach Domäne liest EP zusätzlich
+    Attribute (input_number: `min`/`max` als Ober-/Untergrenze für die KI; input_datetime:
+    `has_date`/`has_time` für das erwartete Format).
+
     Diese Vorschläge sind rein **advisorisch** (nur HA-Sensor, D-047): sie werden NICHT an
-    das HEMS übergeben (das HEMS kennt sie nicht) und unterliegen keiner harten Grenze –
-    der Freitext (`ai_hint`) erklärt der KI Bedeutung und Verwendung des Werts.
+    das HEMS übergeben (das HEMS kennt sie nicht); der Freitext (`ai_hint`) erklärt der KI
+    Bedeutung und Verwendung des Werts.
     """
 
     read_entity_id: str  # z.B. "input_number.min_soc_auto" (die von EP gelesene Quelle)
@@ -47,6 +68,27 @@ class DeviceExtra:
     ai_hint: str = ""  # Freitext für die KI: was der Wert bedeutet / wie zu verwenden
     label: str = ""  # Anzeigename (leer => aus der object_id abgeleitet)
     unit: str = ""  # optionale Einheit für Anzeige/HA-Sensor (z.B. "°C", "%")
+
+    @property
+    def domain(self) -> str:
+        """HA-Domäne der Quell-Entität (Teil vor dem ersten Punkt), z.B. `input_number`."""
+        return self.read_entity_id.split(".", 1)[0].strip()
+
+    @property
+    def kind(self) -> str:
+        """Datentyp nach Domäne (D-048): number | bool | datetime | text | auto."""
+        return _DOMAIN_KIND.get(self.domain, "auto")
+
+    @property
+    def capture_attrs(self) -> tuple[str, ...]:
+        """Zusätzlich zu lesende HA-Attribute je Typ (Grenzen/Format für die KI, D-048)."""
+        if self.kind == "number":
+            return ("min", "max", "step", "unit_of_measurement")
+        if self.kind == "datetime":
+            return ("has_date", "has_time")
+        if self.kind == "auto":  # sensor u.ä.: Einheit/Klasse mitnehmen, wenn vorhanden
+            return ("unit_of_measurement", "device_class")
+        return ()
 
     @property
     def object_id(self) -> str:
@@ -98,9 +140,10 @@ class ReadField:
 
     key: str
     label: str
-    kind: str  # "bool" | "number"
+    kind: str  # "bool" | "number" | "datetime" | "text" | "auto" (Zusatz-Entitäten, D-048)
     entity_id: str
     unit: str = ""
+    capture_attrs: tuple[str, ...] = ()  # zusätzlich zu lesende HA-Attribute (D-048)
 
 
 def _unit_suffix(output_unit: str) -> str:
@@ -141,11 +184,16 @@ def read_fields(device: Device) -> list[ReadField]:
         ]
 
     # User-gepflegte Zusatz-Entitäten (D-047, ersetzt den früheren Heizstab-Hardcode D-035).
-    # Diese Werte liest EP zusätzlich zu den `ems_*`-Feldern; sie werden numerisch geführt.
+    # Typ (`kind`) und mitgelesene Attribute folgen der Domäne der Quell-Entität (D-048).
     for extra in device.extras:
         fields.append(
             ReadField(
-                extra.read_key, extra.display_label, "number", extra.read_entity_id, extra.unit
+                extra.read_key,
+                extra.display_label,
+                extra.kind,
+                extra.read_entity_id,
+                extra.unit,
+                capture_attrs=extra.capture_attrs,
             )
         )
     return fields

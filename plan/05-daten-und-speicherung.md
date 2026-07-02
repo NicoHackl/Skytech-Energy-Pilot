@@ -27,7 +27,7 @@ Spätere Option: externe DB (PostgreSQL).
 ```
 config(key, value, updated_at)
 entity_map(role, ha_entity_id, fallback_value, averaging_window_s, is_averaged)
-device_extras(device_name, read_entity_id, ai_suggestion, ai_hint, label, unit, sort_order)  -- Zusatz-Entitäten je Gerät (D-047), Migration 6
+device_extras(device_name, read_entity_id, ai_suggestion, ai_hint, label, unit, sort_order)  -- Zusatz-Entitäten je Gerät (D-047), Migration 6; Typ/Attribute (min/max, has_date/has_time) folgen zur Laufzeit der Domäne (D-048)
 device_constraints(device, key, value_num, value_text, source, updated_at)
 objectives(name, weight, is_hard, updated_at)
 samples_raw(ts, entity_id, value)               -- kurzer Ringpuffer

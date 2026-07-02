@@ -41,6 +41,47 @@ def test_extras_carry_current_read_value():
     assert len(constraint.extras) == 1
     assert constraint.extras[0].extra.read_entity_id == "input_number.ep_heizstab_max_temperatur"
     assert constraint.extras[0].value == 65.0
+    assert constraint.extras[0].kind == "number"
+
+
+def test_extra_input_number_min_max_from_attributes():
+    # input_number: min/max-Attribute werden als Grenzen mitgeführt (D-048).
+    ex = DeviceExtra(read_entity_id="input_number.min_soc", ai_suggestion=True)
+    readings = {"wallbox": {"extra_min_soc": {"value": 20.0, "attrs": {"min": 0, "max": 100}}}}
+    ce = build_constraints([_dev("wallbox", extras=(ex,))], readings)[0].extras[0]
+    assert ce.kind == "number"
+    assert ce.min == 0.0 and ce.max == 100.0
+
+
+def test_extra_input_datetime_has_date_time_from_attributes():
+    ex = DeviceExtra(read_entity_id="input_datetime.abfahrt", ai_suggestion=True)
+    readings = {
+        "wallbox": {
+            "extra_abfahrt": {
+                "value": "2026-07-02 08:00:00",
+                "attrs": {"has_date": True, "has_time": False},
+            }
+        }
+    }
+    ce = build_constraints([_dev("wallbox", extras=(ex,))], readings)[0].extras[0]
+    assert ce.kind == "datetime"
+    assert ce.value == "2026-07-02 08:00:00"
+    assert ce.has_date is True and ce.has_time is False
+
+
+def test_extra_sensor_auto_resolves_number_or_text():
+    ex_num = DeviceExtra(read_entity_id="sensor.auto_soc")
+    ex_txt = DeviceExtra(read_entity_id="sensor.status")
+    readings = {
+        "wallbox": {
+            "extra_auto_soc": {"value": 42.0},
+            "extra_status": {"value": "laden"},
+        }
+    }
+    cons = build_constraints([_dev("wallbox", extras=(ex_num, ex_txt))], readings)[0]
+    by_field = {ce.extra.plan_field: ce for ce in cons.extras}
+    assert by_field["extra_auto_soc_vorschlag"].kind == "number"
+    assert by_field["extra_status_vorschlag"].kind == "text"
 
 
 def test_battery_is_always_prio1_and_freigegeben():

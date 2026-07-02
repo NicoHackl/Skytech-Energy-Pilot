@@ -2,7 +2,7 @@
 
 import pytest
 
-from energy_pilot.device_collector import DeviceCollector, parse_bool
+from energy_pilot.device_collector import DeviceCollector, parse_bool, parse_by_kind, parse_text
 from energy_pilot.devices import CONTROLLABLE, Device, DeviceExtra
 
 
@@ -14,6 +14,18 @@ class _FakeHAClient:
         if entity_id not in self._states:
             raise RuntimeError("not found")
         return {"state": self._states[entity_id]}
+
+
+class _FakeHAClientAttrs:
+    """Fake-HA-Client, der je Entität Zustand UND Attribute liefert (für D-048-Tests)."""
+
+    def __init__(self, states):  # states: entity -> {"state":..., "attributes":{...}}
+        self._states = states
+
+    async def get_state(self, entity_id):
+        if entity_id not in self._states:
+            raise RuntimeError("not found")
+        return self._states[entity_id]
 
 
 HEIZSTAB = Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE)
@@ -87,3 +99,53 @@ async def test_without_ha_client_all_none():
 
 def test_snapshot_empty_without_devices():
     assert DeviceCollector(None).snapshot() == []
+
+
+# -- Typgerechtes Lesen aller Domänen + Attribut-Erfassung (D-048) ----------
+
+
+def test_parse_by_kind_variants():
+    assert parse_by_kind("bool", "on") is True
+    assert parse_by_kind("number", "3.5") == 3.5
+    assert parse_by_kind("text", "Hallo") == "Hallo"
+    assert parse_by_kind("datetime", "2026-07-02 08:00:00") == "2026-07-02 08:00:00"
+    assert parse_by_kind("number", "keinezahl") is None
+    # auto: Zahl wenn möglich, sonst Text
+    assert parse_by_kind("auto", "42") == 42.0
+    assert parse_by_kind("auto", "eco") == "eco"
+    assert parse_text("unavailable") is None
+
+
+@pytest.mark.asyncio
+async def test_collect_reads_all_domains_with_attributes():
+    ha = _FakeHAClientAttrs({
+        "input_boolean.eco": {"state": "on", "attributes": {}},
+        "input_text.hinweis": {"state": "Bitte sparen", "attributes": {}},
+        "sensor.auto_soc": {"state": "42.0", "attributes": {"unit_of_measurement": "%"}},
+        "input_number.min_soc": {"state": "20",
+                                 "attributes": {"min": 0, "max": 100, "unit_of_measurement": "%"}},
+        "input_datetime.abfahrt": {"state": "2026-07-02 08:00:00",
+                                   "attributes": {"has_date": True, "has_time": True}},
+    })
+    extras = (
+        DeviceExtra(read_entity_id="input_boolean.eco"),
+        DeviceExtra(read_entity_id="input_text.hinweis"),
+        DeviceExtra(read_entity_id="sensor.auto_soc"),
+        DeviceExtra(read_entity_id="input_number.min_soc"),
+        DeviceExtra(read_entity_id="input_datetime.abfahrt"),
+    )
+    dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, extras=extras)
+    collector = DeviceCollector(ha)
+    collector.set_devices([dev], source="hems")
+    await collector.collect_once(now=1.0)
+    vals = collector.last_values["wallbox"]
+
+    assert vals["extra_eco"]["value"] is True
+    assert vals["extra_hinweis"]["value"] == "Bitte sparen"
+    assert vals["extra_auto_soc"]["value"] == 42.0  # auto -> Zahl
+    assert vals["extra_min_soc"]["value"] == 20.0
+    # input_number: min/max als Attribute erfasst (Grenzen für die KI, D-048)
+    assert vals["extra_min_soc"]["attrs"] == {"min": 0, "max": 100, "unit_of_measurement": "%"}
+    # input_datetime: has_date/has_time erfasst
+    assert vals["extra_abfahrt"]["value"] == "2026-07-02 08:00:00"
+    assert vals["extra_abfahrt"]["attrs"] == {"has_date": True, "has_time": True}

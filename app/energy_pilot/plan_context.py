@@ -17,6 +17,14 @@ from energy_pilot.devices import BINARY
 from energy_pilot.objectives import Objective
 from energy_pilot.plan_schema import suggestion_keys
 
+# Zusatz-Entität-Typ (D-048) -> Gemini-Antwort-Schema-Typ (OpenAPI-Subset, Großschreibung).
+_KIND_TO_GEMINI: dict[str, str] = {
+    "number": "NUMBER",
+    "bool": "BOOLEAN",
+    "datetime": "STRING",
+    "text": "STRING",
+}
+
 
 def _condense_state(state: dict) -> list[dict]:
     """Verdichtet den State-Snapshot je Rolle auf das Nötigste (Werte + Mittel)."""
@@ -149,6 +157,40 @@ def _condense_weather(weather: dict, *, horizon_h: int, detail: str) -> dict:
     }
 
 
+def _datetime_format(has_date: bool | None, has_time: bool | None) -> str:
+    """Erwartetes String-Format eines input_datetime-Vorschlags aus has_date/has_time (D-048)."""
+    if has_date and has_time:
+        return "YYYY-MM-DD HH:MM:SS (Datum und Uhrzeit)"
+    if has_time and not has_date:
+        return "HH:MM:SS (nur Uhrzeit)"
+    if has_date and not has_time:
+        return "YYYY-MM-DD (nur Datum)"
+    return "YYYY-MM-DD HH:MM:SS"
+
+
+def _condense_extra(ce) -> dict:
+    """Verdichtet eine Zusatz-Entität für den KI-Kontext (Wert + Typ + Grenzen/Format, D-048)."""
+    ex = ce.extra
+    item: dict[str, object] = {
+        "entity": ex.read_entity_id,
+        "label": ex.display_label,
+        "typ": ce.kind,
+        "wert": ce.value,
+        "einheit": ex.unit or None,
+        "hinweis": ex.ai_hint or None,
+        "suggest": ex.ai_suggestion,
+        "vorschlagsfeld": ex.plan_field if ex.ai_suggestion else None,
+    }
+    # input_number: min/max als Ober-/Untergrenze für die KI (D-048).
+    if ce.kind == "number" and (ce.min is not None or ce.max is not None):
+        item["untergrenze"] = ce.min
+        item["obergrenze"] = ce.max
+    # input_datetime: erwartetes String-Format aus has_date/has_time (D-048).
+    if ce.kind == "datetime":
+        item["format"] = _datetime_format(ce.has_date, ce.has_time)
+    return item
+
+
 def _condense_constraint(constraint: DeviceConstraint) -> dict:
     """Beschreibt ein Gerät für die KI: harte Grenzen + erlaubte Vorschlagsfelder + Zusatzwerte."""
     entry: dict[str, object] = {
@@ -168,21 +210,10 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
         entry["min_leistung"] = constraint.min_power
         entry["max_leistung"] = constraint.max_power
 
-    # User-gepflegte Zusatz-Entitäten (D-047): aktueller Wert + Freitext-Erklärung für die KI.
-    # `suggest`/`vorschlagsfeld` sagen der KI, ob und unter welchem Feld sie einen Wert liefert.
+    # User-gepflegte Zusatz-Entitäten (D-047/D-048): Wert + Typ + Grenzen/Format + Freitext.
+    # `suggest`/`vorschlagsfeld` sagen der KI, ob/unter welchem Feld sie einen Wert liefert.
     if constraint.extras:
-        entry["zusatzwerte"] = [
-            {
-                "entity": ce.extra.read_entity_id,
-                "label": ce.extra.display_label,
-                "wert": ce.value,
-                "einheit": ce.extra.unit or None,
-                "hinweis": ce.extra.ai_hint or None,
-                "suggest": ce.extra.ai_suggestion,
-                "vorschlagsfeld": ce.extra.plan_field if ce.extra.ai_suggestion else None,
-            }
-            for ce in constraint.extras
-        ]
+        entry["zusatzwerte"] = [_condense_extra(ce) for ce in constraint.extras]
     return entry
 
 
@@ -274,15 +305,24 @@ def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
         "geschutzte_mindestleistung_w_vorschlag": {"type": "NUMBER"},
         "geschutzte_mindestleistung_a_vorschlag": {"type": "NUMBER"},
     }
-    # Dynamische Zusatz-Vorschlagsfelder (D-047): Vereinigung über alle Geräte; der Freitext
-    # (`ai_hint`) wird als Feldbeschreibung mitgegeben, damit die KI Bedeutung/Verwendung kennt.
+    # Dynamische Zusatz-Vorschlagsfelder (D-047/D-048): Vereinigung über alle Geräte. Typ folgt
+    # der Domäne der Quell-Entität; Freitext + Grenzen/Format gehen als Feldbeschreibung mit.
     for constraint in constraints:
         for ce in constraint.extras:
             if not ce.extra.ai_suggestion:
                 continue
-            prop: dict[str, object] = {"type": "NUMBER"}
+            prop: dict[str, object] = {"type": _KIND_TO_GEMINI.get(ce.kind, "STRING")}
+            desc: list[str] = []
             if ce.extra.ai_hint:
-                prop["description"] = ce.extra.ai_hint
+                desc.append(ce.extra.ai_hint)
+            if ce.kind == "number" and (ce.min is not None or ce.max is not None):
+                lo = "-unendlich" if ce.min is None else ce.min
+                hi = "unendlich" if ce.max is None else ce.max
+                desc.append(f"Wertebereich {lo} bis {hi}.")
+            elif ce.kind == "datetime":
+                desc.append(f"Format {_datetime_format(ce.has_date, ce.has_time)}.")
+            if desc:
+                prop["description"] = " ".join(str(p) for p in desc)
             device_properties.setdefault(ce.extra.plan_field, prop)
     return {
         "type": "OBJECT",

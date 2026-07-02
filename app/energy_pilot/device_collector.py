@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import time
 
-from energy_pilot.conversion import safe_float
+from energy_pilot.conversion import INVALID_STATES, safe_float
 from energy_pilot.devices import Device, ReadField, read_fields
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import log
@@ -30,6 +30,28 @@ def parse_bool(value: object) -> bool | None:
     if text in _FALSE_STATES:
         return False
     return None
+
+
+def parse_text(value: object) -> str | None:
+    """Liefert den bereinigten Textzustand (für datetime/text/auto); None bei Ungültig-Zuständen."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in INVALID_STATES:
+        return None
+    return text
+
+
+def parse_by_kind(kind: str, raw: object) -> object | None:
+    """Interpretiert einen HA-Rohzustand gemäß Zusatz-Entität-Typ (D-048)."""
+    if kind == "bool":
+        return parse_bool(raw)
+    if kind == "number":
+        return safe_float(raw)
+    if kind == "auto":  # sensor u.ä.: Zahl wenn möglich, sonst Text
+        num = safe_float(raw)
+        return num if num is not None else parse_text(raw)
+    return parse_text(raw)  # datetime | text
 
 
 class DeviceCollector:
@@ -55,20 +77,25 @@ class DeviceCollector:
         for device in self.devices:
             field_values: dict[str, dict] = {}
             for field in read_fields(device):
-                value, source = await self._read_field(field)
-                field_values[field.key] = {"value": value, "source": source}
+                value, source, attrs = await self._read_field(field)
+                field_values[field.key] = {"value": value, "source": source, "attrs": attrs}
             self.last_values[device.name] = field_values
         self.last_collect_ts = now
 
-    async def _read_field(self, field: ReadField) -> tuple[object | None, str]:
+    async def _read_field(self, field: ReadField) -> tuple[object | None, str, dict]:
+        """Liest Zustand (typgerecht, D-048) + die je Typ relevanten HA-Attribute."""
         if self.ha_client is None:
-            return None, "none"
+            return None, "none", {}
         try:
             state = await self.ha_client.get_state(field.entity_id)
-            raw = state.get("state")
-            value = parse_bool(raw) if field.kind == "bool" else safe_float(raw)
+            value = parse_by_kind(field.kind, state.get("state"))
+            attrs = {}
+            if field.capture_attrs:
+                raw_attrs = state.get("attributes") or {}
+                attrs = {k: raw_attrs[k] for k in field.capture_attrs if k in raw_attrs}
             if value is not None:
-                return value, "live"
+                return value, "live", attrs
+            return None, "none", attrs
         except Exception as exc:
             self.last_error = f"{field.entity_id}: {exc}"
             if self.logger:
@@ -76,7 +103,7 @@ class DeviceCollector:
                     self.logger, "warning", "Gerätewert konnte nicht gelesen werden",
                     context={"entity": field.entity_id, "error": str(exc)},
                 )
-        return None, "none"
+        return None, "none", {}
 
     def snapshot(self) -> list[dict]:
         """Aktuelle Werte je Gerät für UI/API (read-only).

@@ -30,10 +30,15 @@ DEFAULT_BINARY_POWER_W = 1500.0
 
 @dataclass(frozen=True)
 class ConstraintExtra:
-    """Eine Zusatz-Entität eines Geräts samt aktuellem Lesewert (D-047)."""
+    """Eine Zusatz-Entität eines Geräts samt aktuellem Lesewert + Typ/Grenzen (D-047/D-048)."""
 
     extra: DeviceExtra
-    value: float | None  # aktueller Lesewert aus den Readings (None = nicht gelesen)
+    value: object | None  # aktueller Lesewert (Zahl/Bool/Text je Typ; None = nicht gelesen)
+    kind: str = "auto"  # aufgelöster Datentyp: number | bool | datetime | text
+    min: float | None = None  # input_number-Attribut `min` (Untergrenze für die KI, D-048)
+    max: float | None = None  # input_number-Attribut `max` (Obergrenze für die KI, D-048)
+    has_date: bool | None = None  # input_datetime-Attribut `has_date` (D-048)
+    has_time: bool | None = None  # input_datetime-Attribut `has_time` (D-048)
 
 
 @dataclass(frozen=True)
@@ -60,6 +65,19 @@ def _entry(readings: dict, name: str, key: str) -> object:
     if isinstance(value, dict):
         return value.get("value")
     return value
+
+
+def _extra_record(readings: dict, name: str, key: str) -> tuple[object, dict]:
+    """Liefert (Wert, Attribute) einer Zusatz-Entität aus den Readings (Collector-Form, D-048)."""
+    rec = (readings.get(name) or {}).get(key)
+    if isinstance(rec, dict):
+        return rec.get("value"), (rec.get("attrs") or {})
+    return rec, {}
+
+
+def _as_opt_bool(value: object) -> bool | None:
+    """Übernimmt ein HA-Attribut nur, wenn es wirklich ein Bool ist (z.B. has_date/has_time)."""
+    return value if isinstance(value, bool) else None
 
 
 def _as_float(value: object) -> float | None:
@@ -95,13 +113,27 @@ def build_constraints(devices: list[Device], readings: dict) -> list[DeviceConst
             min_power = _as_float(_entry(readings, device.name, "min_technisch"))
             max_power = _as_float(_entry(readings, device.name, "max_technisch"))
 
-        # Zusatz-Entitäten (D-047) mit aktuellem Lesewert mitführen (für KI-Kontext + Vertrag).
-        extras = tuple(
-            ConstraintExtra(
-                extra=ex, value=_as_float(_entry(readings, device.name, ex.read_key))
+        # Zusatz-Entitäten (D-047/D-048): Lesewert + Typ + Attribut-Grenzen/Format mitführen.
+        extras_list: list[ConstraintExtra] = []
+        for ex in device.extras:
+            raw_value, attrs = _extra_record(readings, device.name, ex.read_key)
+            kind = ex.kind
+            if kind == "auto":  # sensor u.ä.: nach aktuellem Wert auf number/text festlegen
+                is_num = isinstance(raw_value, int | float) and not isinstance(raw_value, bool)
+                kind = "number" if is_num else "text"
+            value = _as_float(raw_value) if kind == "number" else raw_value
+            extras_list.append(
+                ConstraintExtra(
+                    extra=ex,
+                    value=value,
+                    kind=kind,
+                    min=_as_float(attrs.get("min")),
+                    max=_as_float(attrs.get("max")),
+                    has_date=_as_opt_bool(attrs.get("has_date")),
+                    has_time=_as_opt_bool(attrs.get("has_time")),
+                )
             )
-            for ex in device.extras
-        )
+        extras = tuple(extras_list)
 
         result.append(
             DeviceConstraint(

@@ -189,9 +189,11 @@ async def test_device_extra_post_creates_and_lists(aiohttp_client, tmp_path):
     assert body["suggestion_entity_id"] == "sensor.ep_min_soc_auto_vorschlag"
 
     data = await (await client.get("/api/devices")).json()
-    extras = {e["read_entity_id"] for e in data["devices"][0]["extras"]}
+    extras = {e["read_entity_id"]: e for e in data["devices"][0]["extras"]}
     assert "input_number.min_soc_auto" in extras  # neu
     assert "input_number.ep_heizstab_max_temperatur" in extras  # Seed bleibt
+    # Typinfo (D-048) steht je Eintrag zur Verfügung.
+    assert extras["input_number.min_soc_auto"]["kind"] == "number"
 
 
 async def test_device_extra_delete_removes(aiohttp_client, tmp_path):

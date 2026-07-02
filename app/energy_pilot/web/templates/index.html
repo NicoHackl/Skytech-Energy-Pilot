@@ -66,9 +66,12 @@
       <span id="device-source"></span>
     </div>
     <p style="font-size:.8rem;color:#888;margin:.4rem 0;">Geräte kommen ausschließlich vom HEMS.
-      Über <b>Zusatz-Entitäten</b> kannst du je Gerät weitere Werte hinterlegen, die EP liest –
-      optional liefert die KI dafür einen Vorschlag als <code>sensor.ep_&lt;entität&gt;_vorschlag</code>
-      (nur HA-Sensor, nicht ans HEMS). Der Freitext erklärt der KI, was der Wert bedeutet.</p>
+      Über <b>Zusatz-Entitäten</b> kannst du je Gerät weitere Werte <b>beliebiger Domäne</b>
+      hinterlegen (<code>sensor</code>, <code>input_number</code>, <code>input_boolean</code>,
+      <code>input_datetime</code>, <code>input_text</code> …), die EP liest – optional liefert die KI
+      dafür einen typgerechten Vorschlag als <code>sensor.ep_&lt;entität&gt;_vorschlag</code> (nur
+      HA-Sensor, nicht ans HEMS). Bei <code>input_number</code> gehen min/max als Grenzen an die KI,
+      bei <code>input_datetime</code> das Datum/Zeit-Format. Der Freitext erklärt der KI den Wert.</p>
     <div id="device-list"></div>
   </section>
 
@@ -272,19 +275,47 @@
         html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen und die Geräte im HEMS anlegen – dann im HEMS-Tab „Geräte von HEMS neu laden“.</p>";
     }
 
-    // Zusatz-Entitäten-Editor je Gerät (D-047): lesen + optional KI-Vorschlag (sensor.ep_*_vorschlag).
+    // Zusatz-Entität-Wert typgerecht anzeigen (Zahl/Bool/Text/Datum, D-048).
+    function fmtExtraValue(x) {
+      if (x.value === null || x.value === undefined) return "–";
+      const u = x.unit ? " " + esc(x.unit) : "";
+      if (typeof x.value === "boolean") return x.value ? "Ja" : "Nein";
+      if (typeof x.value === "number") return fmt(x.value) + u;
+      return esc(String(x.value)) + u; // string / datetime
+    }
+
+    // Typ + gelesene Grenzen/Format je Zusatz-Entität (D-048).
+    function extraTypeInfo(x) {
+      const a = x.attrs || {};
+      if (x.kind === "number") {
+        return (a.min != null || a.max != null)
+          ? `Zahl (${a.min ?? "?"}–${a.max ?? "?"}${a.unit_of_measurement ? " " + esc(a.unit_of_measurement) : ""})`
+          : "Zahl";
+      }
+      if (x.kind === "bool") return "Ja/Nein";
+      if (x.kind === "datetime") {
+        const p = [];
+        if (a.has_date) p.push("Datum");
+        if (a.has_time) p.push("Uhrzeit");
+        return "Datum/Zeit" + (p.length ? " (" + p.join("+") + ")" : "");
+      }
+      if (x.kind === "text") return "Text";
+      return "auto";
+    }
+
+    // Zusatz-Entitäten-Editor je Gerät (D-047/D-048): lesen (alle Domänen) + optional KI-Vorschlag.
     function renderExtras(d) {
       const rows = (d.extras || [])
         .map((x) => {
-          const val = x.value === null || x.value === undefined ? "–" : fmt(x.value) + (x.unit ? " " + esc(x.unit) : "");
           const sug = x.ai_suggestion ? `<code>${esc(x.suggestion_entity_id)}</code>` : "<span style='color:#888;'>–</span>";
           const hint = x.ai_hint ? esc(x.ai_hint) : "";
           return `<tr>
               <td><code>${esc(x.read_entity_id)}</code>${x.label ? " <small style='color:#888;'>(" + esc(x.label) + ")</small>" : ""}</td>
+              <td style="font-size:.75rem;color:#888;">${extraTypeInfo(x)}</td>
               <td>${x.ai_suggestion ? "Ja" : "Nein"}</td>
               <td>${sug}</td>
-              <td class="num src-${x.source}">${val}</td>
-              <td style="font-size:.72rem;color:#888;max-width:18rem;">${hint}</td>
+              <td class="num src-${x.source}">${fmtExtraValue(x)}</td>
+              <td style="font-size:.72rem;color:#888;max-width:16rem;">${hint}</td>
               <td style="white-space:nowrap;">
                 <button class="extra-edit" data-entity="${esc(x.read_entity_id)}" data-suggest="${x.ai_suggestion ? 1 : 0}" data-hint="${esc(x.ai_hint)}" data-label="${esc(x.label)}" data-unit="${esc(x.unit)}">Bearbeiten</button>
                 <button class="extra-del" data-entity="${esc(x.read_entity_id)}">Löschen</button>
@@ -293,13 +324,13 @@
         })
         .join("");
       const table = (d.extras || []).length
-        ? `<table><thead><tr><th>Entität (gelesen)</th><th>KI-Vorschlag</th><th>Vorschlags-Sensor</th><th class="num">Wert</th><th>Hinweis für KI</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        ? `<table><thead><tr><th>Entität (gelesen)</th><th>Typ</th><th>KI-Vorschlag</th><th>Vorschlags-Sensor</th><th class="num">Wert</th><th>Hinweis für KI</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : "<p style='font-size:.8rem;color:#888;'>Noch keine Zusatz-Entitäten. Unten hinzufügen.</p>";
       return `<div class="extras" data-device="${esc(d.name)}">
           <h3 style="font-size:.85rem;margin:.6rem 0 .2rem;">Zusatz-Entitäten <small style="font-weight:normal;color:#888;">(zusätzlich zu den HEMS-Werten)</small></h3>
           ${table}
           <div class="extra-form" style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem;margin:.4rem 0 .8rem;max-width:44rem;">
-            <input class="ex-entity" placeholder="z. B. input_number.min_soc_auto" style="grid-column:1/3;" />
+            <input class="ex-entity" placeholder="Entität, z. B. sensor.…, input_number.…, input_boolean.…, input_datetime.…" style="grid-column:1/3;" />
             <input class="ex-label" placeholder="Anzeigename (optional)" />
             <input class="ex-unit" placeholder="Einheit, z. B. % oder °C (optional)" />
             <label style="grid-column:1/3;font-size:.82rem;"><input type="checkbox" class="ex-suggest" /> KI liefert Vorschlagswert (<code>sensor.ep_&lt;entität&gt;_vorschlag</code>)</label>
@@ -491,12 +522,16 @@
             add("Min. Leistung", d.min_power == null ? "–" : fmt(d.min_power) + unit);
             add(d.is_battery ? "Max. Ladeleistung" : "Max. Leistung", d.max_power == null ? "–" : fmt(d.max_power) + unit);
           }
-          // Zusatz-Entitäten (D-047): aktueller Lesewert je Eintrag.
+          // Zusatz-Entitäten (D-047/D-048): aktueller Lesewert je Eintrag (typgerecht).
           (d.extras || []).forEach((x) => {
             const u = x.extra.unit ? " " + esc(x.extra.unit) : "";
             const lbl = (x.extra.label && x.extra.label.trim()) || x.extra.read_entity_id;
-            add("Zusatz: " + esc(lbl) + (x.extra.ai_suggestion ? " (KI-Vorschlag)" : ""),
-                x.value == null ? "–" : fmt(x.value) + u);
+            let v;
+            if (x.value == null) v = "–";
+            else if (typeof x.value === "boolean") v = x.value ? "Ja" : "Nein";
+            else if (typeof x.value === "number") v = fmt(x.value) + u;
+            else v = esc(String(x.value)) + u;
+            add("Zusatz: " + esc(lbl) + (x.extra.ai_suggestion ? " (KI-Vorschlag)" : ""), v);
           });
           if (d.forced_prio != null) add("Feste Priorität", d.forced_prio);
           const cls = d.class === "controllable" ? "regelbar" : "binär";
@@ -564,7 +599,8 @@
           const rows = Object.entries(d)
             .filter(([k]) => k !== "name")
             .map(([k, val]) => {
-              const show = typeof val === "boolean" ? (val ? "Ja" : "Nein") : fmt(val);
+              const show = typeof val === "boolean" ? (val ? "Ja" : "Nein")
+                : (typeof val === "number" ? fmt(val) : esc(String(val)));
               return `<tr><td>${planFieldLabel(k)}</td><td class="num">${show}</td></tr>`;
             })
             .join("");

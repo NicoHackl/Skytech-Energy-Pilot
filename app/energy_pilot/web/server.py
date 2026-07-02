@@ -419,7 +419,7 @@ def _extras_payload(device_collector: object, device_name: str) -> list[dict]:
     values = last_values.get(device_name, {})
     payload = []
     for ex in device.extras:
-        current = values.get(ex.read_key, {"value": None, "source": "none"})
+        current = values.get(ex.read_key, {"value": None, "source": "none", "attrs": {}})
         payload.append(
             {
                 "read_entity_id": ex.read_entity_id,
@@ -428,10 +428,14 @@ def _extras_payload(device_collector: object, device_name: str) -> list[dict]:
                 "label": ex.label,
                 "unit": ex.unit,
                 "display_label": ex.display_label,
+                "domain": ex.domain,
+                "kind": ex.kind,
                 "plan_field": ex.plan_field,
                 "suggestion_entity_id": ex.suggestion_entity_id if ex.ai_suggestion else None,
                 "value": current.get("value"),
                 "source": current.get("source", "none"),
+                # Gelesene HA-Attribute (D-048): input_number min/max, input_datetime has_date/time.
+                "attrs": current.get("attrs", {}),
             }
         )
     return payload

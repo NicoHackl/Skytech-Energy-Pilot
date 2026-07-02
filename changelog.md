@@ -6,6 +6,23 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.29] - 2026-07-02
+
+### Geändert
+- **Zusatz-Entitäten unterstützen jetzt alle HA-Domänen, nicht nur `input_number` (D-048).**
+  Als Quell-Entität sind beliebige Domänen erlaubt (v.a. `sensor`, `input_number`,
+  `input_boolean`, `input_datetime`, `input_text`). EP liest den Wert **typgerecht** und die KI
+  liefert einen **typgerechten** Vorschlag (`sensor.ep_<obj>_vorschlag`):
+  - `input_number` → Zahl; die **`min`/`max`-Attribute** der Quelle gehen als Ober-/Untergrenze
+    an die KI und klemmen den Vorschlag.
+  - `input_boolean` (+ switch/binary_sensor) → Ja/Nein.
+  - `input_datetime` → Datum/Uhrzeit als String; die **`has_date`/`has_time`-Attribute** bestimmen
+    das erwartete Format (`YYYY-MM-DD HH:MM:SS` / nur Datum / nur Uhrzeit), das der KI mitgegeben wird.
+  - `input_text` → Text.
+  - `sensor` u.a. → **auto**: Zahl, wenn der Zustand numerisch ist, sonst Text.
+  Der Geräte-Tab zeigt je Zusatz-Entität den erkannten Typ samt Grenzen/Format; das Antwort-Schema
+  der KI bekommt den passenden Typ (NUMBER/BOOLEAN/STRING).
+
 ## [0.0.28] - 2026-07-02
 
 ### Hinzugefügt

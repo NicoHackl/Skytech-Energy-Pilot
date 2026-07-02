@@ -113,8 +113,12 @@ def _check_device(
         if key in allowed:
             _clamp_field(entry, key, constraint.min_power, constraint.max_power, clamped, name)
 
-    # Zusatz-Vorschläge (D-047, `extra_<obj>_vorschlag`) sind advisorisch (nur HA-Sensor) und
-    # unterliegen keiner harten Grenze; sie werden über `allowed` (suggestion_keys) durchgelassen.
+    # Zusatz-Vorschläge (D-047/D-048) sind advisorisch (nur HA-Sensor). input_number-Zusätze
+    # werden auf den `min`/`max`-Bereich der Quell-Entität geklemmt (D-048); andere Typen
+    # (bool/datetime/text) laufen ungeprüft durch (über `allowed`/suggestion_keys erlaubt).
+    for ce in constraint.extras:
+        if ce.extra.ai_suggestion and ce.kind == "number":
+            _clamp_field(entry, ce.extra.plan_field, ce.min, ce.max, clamped, name)
 
 
 def _normalize_priorities(

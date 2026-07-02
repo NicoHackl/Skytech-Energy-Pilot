@@ -98,6 +98,34 @@ def test_extra_suggestion_passes_through_unclamped():
     assert not any("max_temperatur" in c for c in result.clamped)
 
 
+def test_input_number_extra_clamped_to_attr_bounds():
+    # input_number-Zusatz (D-048): Vorschlag wird auf den min/max-Bereich der Quelle geklemmt.
+    ex = DeviceExtra(read_entity_id="input_number.min_soc", ai_suggestion=True)
+    dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, "ampere", extras=(ex,))
+    readings = {"wallbox": {"extra_min_soc": {"value": 20.0, "attrs": {"min": 0, "max": 100}}}}
+    cons = build_constraints([dev], readings)
+    plan = _plan([{"name": "wallbox", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+                   "extra_min_soc_vorschlag": 150.0}])
+    result = validate(plan, cons, now=NOW)
+    assert result.ok
+    assert result.normalized_plan["devices"][0]["extra_min_soc_vorschlag"] == 100.0
+    assert any("extra_min_soc_vorschlag" in c for c in result.clamped)
+
+
+def test_datetime_extra_string_passes_through():
+    # input_datetime-Zusatz: String-Vorschlag wird unverändert durchgereicht (kein Klemmen).
+    ex = DeviceExtra(read_entity_id="input_datetime.abfahrt", ai_suggestion=True)
+    dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, "ampere", extras=(ex,))
+    readings = {"wallbox": {"extra_abfahrt": {"value": "2026-07-02 07:00:00",
+                                              "attrs": {"has_date": True, "has_time": True}}}}
+    cons = build_constraints([dev], readings)
+    plan = _plan([{"name": "wallbox", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+                   "extra_abfahrt_vorschlag": "2026-07-02 08:30:00"}])
+    result = validate(plan, cons, now=NOW)
+    assert result.ok
+    assert result.normalized_plan["devices"][0]["extra_abfahrt_vorschlag"] == "2026-07-02 08:30:00"
+
+
 def test_unknown_extra_field_rejected_by_write_contract():
     # Ein `extra_*_vorschlag` ohne aktivierte Zusatz-Entität ist nicht im Schreibvertrag.
     plan = _plan(

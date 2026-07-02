@@ -1,7 +1,7 @@
 """Tests für den KI-Kontext-, Prompt- und Antwort-Schema-Aufbau (Datenminimum)."""
 
 from energy_pilot.constraints import build_constraints
-from energy_pilot.devices import BINARY, CONTROLLABLE, Device
+from energy_pilot.devices import BINARY, CONTROLLABLE, Device, DeviceExtra
 from energy_pilot.objectives import objectives_from_config
 from energy_pilot.plan_context import (
     DEFAULT_PLANNING_PROMPT,
@@ -64,6 +64,47 @@ def test_build_response_schema_is_gemini_compatible():
     assert "$schema" not in schema
     assert "additionalProperties" not in schema
     assert schema["properties"]["devices"]["items"]["properties"]["name"]["type"] == "STRING"
+
+
+def _typed_extra_constraints():
+    # Ein Gerät mit vier Zusatz-Entitäten unterschiedlicher Domäne (D-048).
+    extras = (
+        DeviceExtra(read_entity_id="input_number.min_soc", ai_suggestion=True, ai_hint="Min-SOC"),
+        DeviceExtra(read_entity_id="input_boolean.eco", ai_suggestion=True),
+        DeviceExtra(read_entity_id="input_datetime.abfahrt", ai_suggestion=True),
+        DeviceExtra(read_entity_id="input_text.notiz", ai_suggestion=True),
+    )
+    dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, "ampere", extras=extras)
+    readings = {"wallbox": {
+        "extra_min_soc": {"value": 20.0, "attrs": {"min": 0, "max": 100}},
+        "extra_abfahrt": {"value": "2026-07-02 08:00:00",
+                          "attrs": {"has_date": True, "has_time": True}},
+    }}
+    return build_constraints([dev], readings)
+
+
+def test_response_schema_types_follow_extra_domain():
+    props = build_response_schema(_typed_extra_constraints())["properties"]["devices"]["items"][
+        "properties"
+    ]
+    assert props["extra_min_soc_vorschlag"]["type"] == "NUMBER"
+    assert props["extra_eco_vorschlag"]["type"] == "BOOLEAN"
+    assert props["extra_abfahrt_vorschlag"]["type"] == "STRING"
+    assert props["extra_notiz_vorschlag"]["type"] == "STRING"
+    # min/max und Format landen in der Feldbeschreibung.
+    assert "0 bis 100" in props["extra_min_soc_vorschlag"]["description"]
+    assert "Datum und Uhrzeit" in props["extra_abfahrt_vorschlag"]["description"]
+
+
+def test_context_zusatzwerte_carry_type_bounds_and_format():
+    from energy_pilot.plan_context import _condense_constraint
+
+    entry = _condense_constraint(_typed_extra_constraints()[0])
+    by_field = {z["vorschlagsfeld"]: z for z in entry["zusatzwerte"]}
+    num = by_field["extra_min_soc_vorschlag"]
+    assert num["typ"] == "number" and num["untergrenze"] == 0.0 and num["obergrenze"] == 100.0
+    dt = by_field["extra_abfahrt_vorschlag"]
+    assert dt["typ"] == "datetime" and "Datum und Uhrzeit" in dt["format"]
 
 
 def test_build_context_is_data_minimum():
