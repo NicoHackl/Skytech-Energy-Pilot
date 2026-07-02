@@ -188,6 +188,9 @@ def _condense_extra(ce) -> dict:
     # input_datetime: erwartetes String-Format aus has_date/has_time (D-048).
     if ce.kind == "datetime":
         item["format"] = _datetime_format(ce.has_date, ce.has_time)
+    # input_select: der Auswahlpool ist die erlaubte Wertemenge für den Vorschlag (D-049).
+    if ce.kind == "select" and ce.options:
+        item["optionen"] = list(ce.options)
     return item
 
 
@@ -321,6 +324,10 @@ def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
                 desc.append(f"Wertebereich {lo} bis {hi}.")
             elif ce.kind == "datetime":
                 desc.append(f"Format {_datetime_format(ce.has_date, ce.has_time)}.")
+            elif ce.kind == "select" and ce.options:
+                # Auswahlpool als Enum erzwingen (D-049): die KI MUSS genau eine Option wählen.
+                prop["enum"] = list(ce.options)
+                desc.append("Wähle genau einen dieser Werte: " + ", ".join(ce.options) + ".")
             if desc:
                 prop["description"] = " ".join(str(p) for p in desc)
             device_properties.setdefault(ce.extra.plan_field, prop)

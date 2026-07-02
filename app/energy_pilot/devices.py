@@ -40,6 +40,8 @@ _DOMAIN_KIND: dict[str, str] = {
     "input_datetime": "datetime",
     "input_text": "text",
     "text": "text",
+    "input_select": "select",
+    "select": "select",
 }
 
 
@@ -81,11 +83,13 @@ class DeviceExtra:
 
     @property
     def capture_attrs(self) -> tuple[str, ...]:
-        """Zusätzlich zu lesende HA-Attribute je Typ (Grenzen/Format für die KI, D-048)."""
+        """Zusätzlich zu lesende HA-Attribute je Typ (Grenzen/Format/Auswahl, D-048/D-049)."""
         if self.kind == "number":
             return ("min", "max", "step", "unit_of_measurement")
         if self.kind == "datetime":
             return ("has_date", "has_time")
+        if self.kind == "select":  # input_select/select: Auswahlpool (D-049)
+            return ("options",)
         if self.kind == "auto":  # sensor u.ä.: Einheit/Klasse mitnehmen, wenn vorhanden
             return ("unit_of_measurement", "device_class")
         return ()

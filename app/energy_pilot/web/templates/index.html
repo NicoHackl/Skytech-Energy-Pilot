@@ -68,10 +68,12 @@
     <p style="font-size:.8rem;color:#888;margin:.4rem 0;">Geräte kommen ausschließlich vom HEMS.
       Über <b>Zusatz-Entitäten</b> kannst du je Gerät weitere Werte <b>beliebiger Domäne</b>
       hinterlegen (<code>sensor</code>, <code>input_number</code>, <code>input_boolean</code>,
-      <code>input_datetime</code>, <code>input_text</code> …), die EP liest – optional liefert die KI
-      dafür einen typgerechten Vorschlag als <code>sensor.ep_&lt;entität&gt;_vorschlag</code> (nur
-      HA-Sensor, nicht ans HEMS). Bei <code>input_number</code> gehen min/max als Grenzen an die KI,
-      bei <code>input_datetime</code> das Datum/Zeit-Format. Der Freitext erklärt der KI den Wert.</p>
+      <code>input_datetime</code>, <code>input_text</code>, <code>input_select</code> …), die EP liest –
+      optional liefert die KI dafür einen typgerechten Vorschlag als
+      <code>sensor.ep_&lt;entität&gt;_vorschlag</code> (nur HA-Sensor, nicht ans HEMS). Bei
+      <code>input_number</code> gehen min/max als Grenzen an die KI, bei <code>input_datetime</code>
+      das Datum/Zeit-Format, bei <code>input_select</code> die Auswahlmöglichkeiten als Wertepool
+      (die KI wählt genau eine). Der Freitext erklärt der KI den Wert.</p>
     <div id="device-list"></div>
   </section>
 
@@ -299,6 +301,10 @@
         if (a.has_time) p.push("Uhrzeit");
         return "Datum/Zeit" + (p.length ? " (" + p.join("+") + ")" : "");
       }
+      if (x.kind === "select") {
+        const opts = Array.isArray(a.options) ? a.options : [];
+        return "Auswahl" + (opts.length ? " (" + opts.map(esc).join(", ") + ")" : "");
+      }
       if (x.kind === "text") return "Text";
       return "auto";
     }
@@ -330,7 +336,7 @@
           <h3 style="font-size:.85rem;margin:.6rem 0 .2rem;">Zusatz-Entitäten <small style="font-weight:normal;color:#888;">(zusätzlich zu den HEMS-Werten)</small></h3>
           ${table}
           <div class="extra-form" style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem;margin:.4rem 0 .8rem;max-width:44rem;">
-            <input class="ex-entity" placeholder="Entität, z. B. sensor.…, input_number.…, input_boolean.…, input_datetime.…" style="grid-column:1/3;" />
+            <input class="ex-entity" placeholder="Entität, z. B. sensor.…, input_number.…, input_boolean.…, input_datetime.…, input_select.…" style="grid-column:1/3;" />
             <input class="ex-label" placeholder="Anzeigename (optional)" />
             <input class="ex-unit" placeholder="Einheit, z. B. % oder °C (optional)" />
             <label style="grid-column:1/3;font-size:.82rem;"><input type="checkbox" class="ex-suggest" /> KI liefert Vorschlagswert (<code>sensor.ep_&lt;entität&gt;_vorschlag</code>)</label>

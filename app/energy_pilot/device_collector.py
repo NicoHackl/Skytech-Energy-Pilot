@@ -51,7 +51,7 @@ def parse_by_kind(kind: str, raw: object) -> object | None:
     if kind == "auto":  # sensor u.ä.: Zahl wenn möglich, sonst Text
         num = safe_float(raw)
         return num if num is not None else parse_text(raw)
-    return parse_text(raw)  # datetime | text
+    return parse_text(raw)  # datetime | text | select (Zustand ist die gewählte Option)
 
 
 class DeviceCollector:

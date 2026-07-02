@@ -126,6 +126,33 @@ def test_datetime_extra_string_passes_through():
     assert result.normalized_plan["devices"][0]["extra_abfahrt_vorschlag"] == "2026-07-02 08:30:00"
 
 
+def _select_constraints():
+    ex = DeviceExtra(read_entity_id="input_select.lademodus", ai_suggestion=True)
+    dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, "ampere", extras=(ex,))
+    readings = {"wallbox": {"extra_lademodus": {
+        "value": "Aus", "attrs": {"options": ["Aus", "PV-Überschuss", "Schnell"]}}}}
+    return build_constraints([dev], readings)
+
+
+def test_input_select_valid_option_passes():
+    plan = _plan([{"name": "wallbox", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+                   "extra_lademodus_vorschlag": "Schnell"}])
+    result = validate(plan, _select_constraints(), now=NOW)
+    assert result.ok
+    assert result.normalized_plan["devices"][0]["extra_lademodus_vorschlag"] == "Schnell"
+    assert result.clamped == []
+
+
+def test_input_select_out_of_pool_value_dropped():
+    # Wert außerhalb des Auswahlpools (D-049): wird verworfen, Plan bleibt gültig (advisorisch).
+    plan = _plan([{"name": "wallbox", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+                   "extra_lademodus_vorschlag": "Turbo"}])
+    result = validate(plan, _select_constraints(), now=NOW)
+    assert result.ok
+    assert "extra_lademodus_vorschlag" not in result.normalized_plan["devices"][0]
+    assert any("Wertepool" in c for c in result.clamped)
+
+
 def test_unknown_extra_field_rejected_by_write_contract():
     # Ein `extra_*_vorschlag` ohne aktivierte Zusatz-Entität ist nicht im Schreibvertrag.
     plan = _plan(

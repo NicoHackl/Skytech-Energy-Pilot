@@ -107,6 +107,35 @@ def test_context_zusatzwerte_carry_type_bounds_and_format():
     assert dt["typ"] == "datetime" and "Datum und Uhrzeit" in dt["format"]
 
 
+def _select_constraints():
+    ex = DeviceExtra(read_entity_id="input_select.lademodus", ai_suggestion=True, ai_hint="Modus")
+    dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, "ampere", extras=(ex,))
+    readings = {"wallbox": {"extra_lademodus": {
+        "value": "PV-Überschuss", "attrs": {"options": ["Aus", "PV-Überschuss", "Schnell"]},
+    }}}
+    return build_constraints([dev], readings)
+
+
+def test_response_schema_select_uses_enum_pool():
+    # input_select (D-049): Antwort-Schema erzwingt genau eine Option (Enum).
+    props = build_response_schema(_select_constraints())["properties"]["devices"]["items"][
+        "properties"
+    ]
+    field = props["extra_lademodus_vorschlag"]
+    assert field["type"] == "STRING"
+    assert field["enum"] == ["Aus", "PV-Überschuss", "Schnell"]
+    assert "PV-Überschuss" in field["description"]
+
+
+def test_context_select_carries_option_pool():
+    from energy_pilot.plan_context import _condense_constraint
+
+    entry = _condense_constraint(_select_constraints()[0])
+    z = entry["zusatzwerte"][0]
+    assert z["typ"] == "select"
+    assert z["optionen"] == ["Aus", "PV-Überschuss", "Schnell"]
+
+
 def test_build_context_is_data_minimum():
     state = {
         "pv_power": {

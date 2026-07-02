@@ -6,6 +6,16 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.30] - 2026-07-02
+
+### Hinzugefügt
+- **Zusatz-Entitäten unterstützen jetzt auch `input_select`/`select` (D-049).** Die im Select
+  verfügbaren Optionen (`options`-Attribut) werden der KI als **Wertepool** übergeben. Ist für die
+  Entität ein Vorschlagswert gefordert, **muss** die KI **genau eine** dieser Optionen wählen: das
+  Antwort-Schema erzwingt das per `enum`, und der lokale Validator verwirft einen Vorschlag
+  außerhalb des Pools (advisorisch → der Sensor wird dann nicht geschrieben, der Plan bleibt gültig).
+  Der Geräte-Tab zeigt die verfügbaren Optionen je Select-Zusatzentität an.
+
 ## [0.0.29] - 2026-07-02
 
 ### Geändert

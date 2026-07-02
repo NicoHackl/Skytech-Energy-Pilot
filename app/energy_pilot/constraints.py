@@ -34,11 +34,12 @@ class ConstraintExtra:
 
     extra: DeviceExtra
     value: object | None  # aktueller Lesewert (Zahl/Bool/Text je Typ; None = nicht gelesen)
-    kind: str = "auto"  # aufgelöster Datentyp: number | bool | datetime | text
+    kind: str = "auto"  # aufgelöster Datentyp: number | bool | datetime | text | select
     min: float | None = None  # input_number-Attribut `min` (Untergrenze für die KI, D-048)
     max: float | None = None  # input_number-Attribut `max` (Obergrenze für die KI, D-048)
     has_date: bool | None = None  # input_datetime-Attribut `has_date` (D-048)
     has_time: bool | None = None  # input_datetime-Attribut `has_time` (D-048)
+    options: tuple[str, ...] | None = None  # input_select-Auswahlpool `options` (D-049)
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,14 @@ def _extra_record(readings: dict, name: str, key: str) -> tuple[object, dict]:
 def _as_opt_bool(value: object) -> bool | None:
     """Übernimmt ein HA-Attribut nur, wenn es wirklich ein Bool ist (z.B. has_date/has_time)."""
     return value if isinstance(value, bool) else None
+
+
+def _as_options(value: object) -> tuple[str, ...] | None:
+    """Wandelt das `options`-Attribut eines input_select in einen Wertepool (D-049)."""
+    if isinstance(value, list | tuple):
+        opts = tuple(str(v) for v in value)
+        return opts or None
+    return None
 
 
 def _as_float(value: object) -> float | None:
@@ -131,6 +140,7 @@ def build_constraints(devices: list[Device], readings: dict) -> list[DeviceConst
                     max=_as_float(attrs.get("max")),
                     has_date=_as_opt_bool(attrs.get("has_date")),
                     has_time=_as_opt_bool(attrs.get("has_time")),
+                    options=_as_options(attrs.get("options")),
                 )
             )
         extras = tuple(extras_list)

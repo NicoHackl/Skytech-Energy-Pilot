@@ -69,6 +69,23 @@ def test_extra_input_datetime_has_date_time_from_attributes():
     assert ce.has_date is True and ce.has_time is False
 
 
+def test_extra_input_select_carries_options_pool():
+    # input_select (D-049): `options`-Attribut wird als Wertepool am Constraint mitgeführt.
+    ex = DeviceExtra(read_entity_id="input_select.lademodus", ai_suggestion=True)
+    readings = {
+        "wallbox": {
+            "extra_lademodus": {
+                "value": "PV-Überschuss",
+                "attrs": {"options": ["Aus", "PV-Überschuss", "Schnell"]},
+            }
+        }
+    }
+    ce = build_constraints([_dev("wallbox", extras=(ex,))], readings)[0].extras[0]
+    assert ce.kind == "select"
+    assert ce.value == "PV-Überschuss"
+    assert ce.options == ("Aus", "PV-Überschuss", "Schnell")
+
+
 def test_extra_sensor_auto_resolves_number_or_text():
     ex_num = DeviceExtra(read_entity_id="sensor.auto_soc")
     ex_txt = DeviceExtra(read_entity_id="sensor.status")

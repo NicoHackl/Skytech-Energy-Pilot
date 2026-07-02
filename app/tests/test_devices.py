@@ -119,6 +119,8 @@ def test_device_extra_kind_and_capture_attrs_per_domain():
         "input_boolean.x": ("bool", ()),
         "input_datetime.x": ("datetime", ("has_date", "has_time")),
         "input_text.x": ("text", ()),
+        "input_select.x": ("select", ("options",)),
+        "select.x": ("select", ("options",)),
         "sensor.x": ("auto", ("unit_of_measurement", "device_class")),
     }
     for entity, (kind, attrs) in cases.items():

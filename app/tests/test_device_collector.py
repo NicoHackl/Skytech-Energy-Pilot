@@ -149,3 +149,22 @@ async def test_collect_reads_all_domains_with_attributes():
     # input_datetime: has_date/has_time erfasst
     assert vals["extra_abfahrt"]["value"] == "2026-07-02 08:00:00"
     assert vals["extra_abfahrt"]["attrs"] == {"has_date": True, "has_time": True}
+
+
+@pytest.mark.asyncio
+async def test_collect_input_select_reads_value_and_options():
+    # input_select (D-049): Zustand = gewählte Option; `options` als Auswahlpool erfasst.
+    ha = _FakeHAClientAttrs({
+        "input_select.lademodus": {
+            "state": "PV-Überschuss",
+            "attributes": {"options": ["Aus", "PV-Überschuss", "Schnell"]},
+        },
+    })
+    ex = DeviceExtra(read_entity_id="input_select.lademodus", ai_suggestion=True)
+    dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, extras=(ex,))
+    collector = DeviceCollector(ha)
+    collector.set_devices([dev], source="hems")
+    await collector.collect_once(now=1.0)
+    rec = collector.last_values["wallbox"]["extra_lademodus"]
+    assert rec["value"] == "PV-Überschuss"
+    assert rec["attrs"]["options"] == ["Aus", "PV-Überschuss", "Schnell"]
