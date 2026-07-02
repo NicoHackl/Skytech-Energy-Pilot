@@ -76,6 +76,38 @@ def test_conform_when_priority_and_schutz_match():
     assert statuses["geschutzte_mindestleistung_w_vorschlag"] == "match"
 
 
+def test_conform_when_ampere_schutz_matches():
+    # Regression: Ampere-Geräte (Wallbox) vergleichen geschutzte_mindestleistung_a_vorschlag
+    # gegen den HEMS-schutz_a – früher fiel das auf „unbekannt" (nur _w wurde behandelt).
+    devices = [Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, "ampere")]
+    latest = _latest([{"name": "wallbox", "geschutzte_mindestleistung_a_vorschlag": 6.0}])
+    hems = _hems(
+        [{"type": "controllable", "id": "wallbox", "label": "Wallbox",
+          "priority": 5, "eligible": True, "output_unit": "ampere",
+          "schutz_w": 1380.0, "schutz_a": 6.03}]
+    )
+    fb = derive_plan_feedback(latest, devices, hems, now=NOW)
+    dev = fb["devices"][0]
+    assert dev["matched"] is True
+    statuses = {f["feld"]: f["status"] for f in dev["fields"]}
+    assert statuses["geschutzte_mindestleistung_a_vorschlag"] == "match"  # |6.0-6.03| <= 0.1 A
+    assert fb["overall"] == KONFORM
+
+
+def test_ampere_schutz_divergent_beyond_tolerance():
+    devices = [Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, "ampere")]
+    latest = _latest([{"name": "wallbox", "geschutzte_mindestleistung_a_vorschlag": 6.0}])
+    hems = _hems(
+        [{"type": "controllable", "id": "wallbox", "label": "Wallbox",
+          "priority": 5, "eligible": True, "output_unit": "ampere",
+          "schutz_w": 2300.0, "schutz_a": 10.0}]
+    )
+    fb = derive_plan_feedback(latest, devices, hems, now=NOW)
+    statuses = {f["feld"]: f["status"] for f in fb["devices"][0]["fields"]}
+    assert statuses["geschutzte_mindestleistung_a_vorschlag"] == "abweichend"  # |10.0-6.0| > 0.1 A
+    assert fb["overall"] == ABWEICHEND
+
+
 def test_divergent_priority():
     latest = _latest([{"name": "heizstab", "prio_vorschlag": 10}])
     hems = _hems(

@@ -6,6 +6,18 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.27] - 2026-07-02
+
+### Behoben
+- **Plan-Rückkopplung: geschützte Mindestleistung wird jetzt auch für Ampere-Geräte (Wallbox)
+  gegen den HEMS-Ist-Wert verglichen.** Bisher behandelte `plan_feedback._compare` nur die
+  Watt-Variante (`geschutzte_mindestleistung_w_vorschlag` ↔ HEMS `schutz_w`); der Ampere-Vorschlag
+  (`geschutzte_mindestleistung_a_vorschlag`) fiel auf „kein HEMS-Pendant" → Status „unbekannt",
+  Ist „–". Watt-Geräte zeigten den Vergleich, Ampere-Geräte (Wallbox) nicht. **Fix:** EP
+  vergleicht den Ampere-Vorschlag gegen das neue HEMS-Statusfeld `schutz_a` (HEMS rechnet
+  `schutz_w` über Phasen × Spannung nach Ampere um) mit eigener Ampere-Toleranz (±0.1 A). Setzt
+  HEMS mit `schutz_a` im `/api/status` voraus.
+
 ## [0.0.26] - 2026-07-02
 
 ### Geändert

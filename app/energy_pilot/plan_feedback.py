@@ -14,9 +14,11 @@ wiederverwenden kann.
 Feld-Mapping (EP-Vorschlag ↔ HEMS-`to_status_dict`):
 - `prio_vorschlag` ↔ `priority` (Gleichheit),
 - `geschutzte_mindestleistung_w_vorschlag` ↔ `schutz_w` (Toleranz ±1 W),
+- `geschutzte_mindestleistung_a_vorschlag` ↔ `schutz_a` (Ampere-Schutz, Toleranz ±0.1 A;
+  HEMS rechnet `schutz_w` über Phasen×Spannung nach Ampere um und liefert `schutz_a`),
 - `freigabe_vorschlag` ↔ `eligible` (weich: HEMS-`eligible` umfasst zusätzlich
   technische Freigabe + Modus, daher „Vorschlag frei, HEMS nicht eligible" = unbekannt).
-Felder ohne HEMS-Pendant (`_a`-Schutz, Heizstab-`max_temperatur` D-035) sind nur
+Felder ohne HEMS-Pendant (Heizstab-`max_temperatur` D-035) sind nur
 informativ (Status `unbekannt`).
 """
 
@@ -35,6 +37,9 @@ ABWEICHEND = "beobachtet_abweichend"
 
 # Toleranz beim Leistungsvergleich (Rundung/Float-Drift).
 POWER_TOLERANCE_W = 1.0
+# Ampere-Pendant: die HEMS-seitige W→A-Umrechnung (Phasen × gemessene Spannung) bringt mehr
+# Drift als der reine Watt-Vergleich, daher gröber. 0.1 A ≈ 23 W bei 230 V.
+AMP_TOLERANCE_A = 0.1
 
 
 # Vergleichs-Slug für das Geräte-Matching: casefold + HA-Umlaut-Faltung
@@ -96,10 +101,15 @@ def _compare(field: str, suggested: object, hd: dict) -> tuple[str, object]:
             return "match", ist
         return ("abweichend", ist) if ist is not None else ("unbekannt", None)
 
-    if field == "geschutzte_mindestleistung_w_vorschlag":
-        ist = hd.get("schutz_w")
+    if field.startswith("geschutzte_mindestleistung"):
+        # HEMS liefert den effektiven Schutz je Einheit: schutz_w (Watt) bzw. schutz_a
+        # (Ampere, HEMS-seitig aus schutz_w über Phasen×Spannung umgerechnet). Ohne den
+        # Ampere-Zweig blieb der Wallbox-Schutz früher fälschlich „unbekannt".
+        is_ampere = field.endswith("_a_vorschlag")
+        ist = hd.get("schutz_a") if is_ampere else hd.get("schutz_w")
+        tolerance = AMP_TOLERANCE_A if is_ampere else POWER_TOLERANCE_W
         if _is_number(ist):
-            if abs(float(ist) - float(suggested)) <= POWER_TOLERANCE_W:
+            if abs(float(ist) - float(suggested)) <= tolerance:
                 return "match", ist
             return "abweichend", ist
         return "unbekannt", None
@@ -116,7 +126,7 @@ def _compare(field: str, suggested: object, hd: dict) -> tuple[str, object]:
             return "abweichend", ist
         return "unbekannt", None
 
-    # Kein HEMS-Pendant (z.B. `_a`-Schutz, Heizstab-Temperatur D-035): nur informativ.
+    # Kein HEMS-Pendant (z.B. Heizstab-Temperatur D-035): nur informativ.
     return "unbekannt", None
 
 
