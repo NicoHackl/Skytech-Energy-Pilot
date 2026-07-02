@@ -150,7 +150,7 @@ def _condense_weather(weather: dict, *, horizon_h: int, detail: str) -> dict:
 
 
 def _condense_constraint(constraint: DeviceConstraint) -> dict:
-    """Beschreibt ein Gerät für die KI: harte Grenzen + erlaubte Vorschlagsfelder."""
+    """Beschreibt ein Gerät für die KI: harte Grenzen + erlaubte Vorschlagsfelder + Zusatzwerte."""
     entry: dict[str, object] = {
         "name": constraint.name,
         "label": constraint.label,
@@ -167,8 +167,22 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
     else:
         entry["min_leistung"] = constraint.min_power
         entry["max_leistung"] = constraint.max_power
-        if constraint.is_heizstab:
-            entry["max_wassertemperatur"] = constraint.max_water_temp
+
+    # User-gepflegte Zusatz-Entitäten (D-047): aktueller Wert + Freitext-Erklärung für die KI.
+    # `suggest`/`vorschlagsfeld` sagen der KI, ob und unter welchem Feld sie einen Wert liefert.
+    if constraint.extras:
+        entry["zusatzwerte"] = [
+            {
+                "entity": ce.extra.read_entity_id,
+                "label": ce.extra.display_label,
+                "wert": ce.value,
+                "einheit": ce.extra.unit or None,
+                "hinweis": ce.extra.ai_hint or None,
+                "suggest": ce.extra.ai_suggestion,
+                "vorschlagsfeld": ce.extra.plan_field if ce.extra.ai_suggestion else None,
+            }
+            for ce in constraint.extras
+        ]
     return entry
 
 
@@ -221,7 +235,10 @@ DEFAULT_PLANNING_PROMPT = (
     "- Gewichte die weichen Ziele gemäß `objectives` (0–100 %).\n"
     "- Beziehe die Wetterprognose (`weather`) in die Planung ein: hohe Bewölkung "
     "(`clouds`) und Regenwahrscheinlichkeit (`pop`) senken die erwartete PV-Erzeugung, "
-    "niedrige Temperaturen erhöhen tendenziell den Heizbedarf.\n\n"
+    "niedrige Temperaturen erhöhen tendenziell den Heizbedarf.\n"
+    "- Beachte `zusatzwerte` je Gerät: der aktuelle Wert und der `hinweis` erklären dir "
+    "dessen Bedeutung. Hat ein Zusatzwert `suggest=true`, liefere deinen Vorschlag exakt "
+    "unter dem Feldnamen aus `vorschlagsfeld` (nur diese Felder sind in `allowed_fields`).\n\n"
     "Gib zusätzlich `confidence` (0–100), eine kurze deutsche `reasoning`-Begründung "
     "und optionale `warnings` aus. Antworte ausschließlich als JSON gemäß dem "
     "vorgegebenen Schema."
@@ -256,8 +273,17 @@ def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
         "freigabe_vorschlag": {"type": "BOOLEAN"},
         "geschutzte_mindestleistung_w_vorschlag": {"type": "NUMBER"},
         "geschutzte_mindestleistung_a_vorschlag": {"type": "NUMBER"},
-        "max_temperatur_vorschlag": {"type": "NUMBER"},
     }
+    # Dynamische Zusatz-Vorschlagsfelder (D-047): Vereinigung über alle Geräte; der Freitext
+    # (`ai_hint`) wird als Feldbeschreibung mitgegeben, damit die KI Bedeutung/Verwendung kennt.
+    for constraint in constraints:
+        for ce in constraint.extras:
+            if not ce.extra.ai_suggestion:
+                continue
+            prop: dict[str, object] = {"type": "NUMBER"}
+            if ce.extra.ai_hint:
+                prop["description"] = ce.extra.ai_hint
+            device_properties.setdefault(ce.extra.plan_field, prop)
     return {
         "type": "OBJECT",
         "properties": {

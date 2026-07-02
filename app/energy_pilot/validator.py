@@ -113,11 +113,8 @@ def _check_device(
         if key in allowed:
             _clamp_field(entry, key, constraint.min_power, constraint.max_power, clamped, name)
 
-    # Heizstab-Wassertemperatur <= harte Obergrenze klemmen (D-035).
-    if "max_temperatur_vorschlag" in allowed:
-        _clamp_field(
-            entry, "max_temperatur_vorschlag", 0.0, constraint.max_water_temp, clamped, name
-        )
+    # Zusatz-Vorschläge (D-047, `extra_<obj>_vorschlag`) sind advisorisch (nur HA-Sensor) und
+    # unterliegen keiner harten Grenze; sie werden über `allowed` (suggestion_keys) durchgelassen.
 
 
 def _normalize_priorities(

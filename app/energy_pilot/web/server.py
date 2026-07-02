@@ -17,6 +17,16 @@ from aiohttp import web
 from energy_pilot.collector import StateCollector, run_poller
 from energy_pilot.config import AddonConfig
 from energy_pilot.constraints import build_constraints
+from energy_pilot.device_extras import (
+    apply_extras,
+    delete_extra,
+    is_valid_entity_id,
+    load_extras,
+    seed_defaults,
+    suggestion_conflict,
+    upsert_extra,
+)
+from energy_pilot.devices import DeviceExtra
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import RingBufferHandler, log
 from energy_pilot.objectives import objectives_from_config
@@ -86,6 +96,8 @@ def create_app(
             web.get("/api/state", state),
             web.get("/api/entities", entities_get),
             web.get("/api/devices", devices_get),
+            web.post("/api/devices/extras", device_extra_post),
+            web.delete("/api/devices/extras", device_extra_delete),
             web.get("/api/forecast", forecast_get),
             web.get("/api/weather", weather_get),
             web.get("/api/weather/test", weather_test),
@@ -134,13 +146,19 @@ async def rediscover_devices(app: web.Application) -> tuple[list, str]:
 
     device_collector = app["device_collector"]
     logger = app["logger"]
+    db = app.get("db")
     devices, source = await discover(app.get("hems_client"), logger)
+
+    # Zusatz-Entitäten (D-047) an die erkannten Geräte mergen: einmalig den Heizstab-Default
+    # anlegen (ersetzt Hardcode D-035), dann die user-gepflegte Konfiguration aus der DB anhängen.
+    seed_defaults(db, devices)
+    devices = apply_extras(devices, load_extras(db))
     device_collector.set_devices(devices, source)
 
     allowlist = app.get("allowlist")
     if allowlist is not None:
         allowlist.rebuild(collect_entity_ids(devices=devices))
-        allowlist.persist(app["db"])
+        allowlist.persist(db)
 
     if logger is not None:
         log(
@@ -149,6 +167,28 @@ async def rediscover_devices(app: web.Application) -> tuple[list, str]:
                      "geraete": [d.name for d in devices]},
         )
     return devices, source
+
+
+def reapply_device_extras(app: web.Application) -> None:
+    """Übernimmt geänderte Zusatz-Entitäten (D-047) ohne erneute HEMS-Discovery.
+
+    Lädt die Zusatz-Konfiguration neu aus der DB, hängt sie an die aktuell bekannten Geräte an
+    und baut die Allowlist neu auf (die neuen Lese-Entitäten werden so freigegeben). Wird nach
+    jeder CRUD-Änderung im Geräte-Tab aufgerufen – die HEMS-Geräteliste bleibt unangetastet.
+    """
+    from energy_pilot.allowlist import collect_entity_ids
+
+    device_collector = app.get("device_collector")
+    if device_collector is None:
+        return
+    db = app.get("db")
+    devices = apply_extras(list(device_collector.devices), load_extras(db))
+    device_collector.set_devices(devices, device_collector.discovery_source)
+
+    allowlist = app.get("allowlist")
+    if allowlist is not None:
+        allowlist.rebuild(collect_entity_ids(devices=devices))
+        allowlist.persist(db)
 
 
 async def _discover_devices(app: web.Application) -> None:
@@ -369,21 +409,152 @@ async def entities_get(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
+def _extras_payload(device_collector: object, device_name: str) -> list[dict]:
+    """Baut die Zusatz-Entitäten-Konfiguration (D-047) eines Geräts inkl. aktuellem Lesewert."""
+    devices = getattr(device_collector, "devices", [])
+    last_values = getattr(device_collector, "last_values", {})
+    device = next((d for d in devices if d.name == device_name), None)
+    if device is None:
+        return []
+    values = last_values.get(device_name, {})
+    payload = []
+    for ex in device.extras:
+        current = values.get(ex.read_key, {"value": None, "source": "none"})
+        payload.append(
+            {
+                "read_entity_id": ex.read_entity_id,
+                "ai_suggestion": ex.ai_suggestion,
+                "ai_hint": ex.ai_hint,
+                "label": ex.label,
+                "unit": ex.unit,
+                "display_label": ex.display_label,
+                "plan_field": ex.plan_field,
+                "suggestion_entity_id": ex.suggestion_entity_id if ex.ai_suggestion else None,
+                "value": current.get("value"),
+                "source": current.get("source", "none"),
+            }
+        )
+    return payload
+
+
 async def devices_get(request: web.Request) -> web.Response:
-    """Liefert die erkannten Geräte samt gelesener `ems_*`-Werte (read-only).
+    """Liefert die erkannten Geräte samt gelesener `ems_*`-Werte und Zusatz-Entitäten (read-only).
 
     Discovery ausschließlich über das HEMS-Schema (D-036); die Quelle ("hems"|"none")
-    steht zusätzlich in der Diagnose.
+    steht zusätzlich in der Diagnose. Je Gerät liefert `extras` die im Geräte-Tab gepflegten
+    Zusatz-Entitäten (D-047) inkl. aktuellem Lesewert.
     """
     device_collector = request.app.get("device_collector")
     if device_collector is None:
         return web.json_response({"source": "none", "devices": []})
+    devices = device_collector.snapshot()
+    for dev in devices:
+        dev["extras"] = _extras_payload(device_collector, dev["name"])
     return web.json_response(
         {
             "source": getattr(device_collector, "discovery_source", "none"),
-            "devices": device_collector.snapshot(),
+            "devices": devices,
         }
     )
+
+
+async def device_extra_post(request: web.Request) -> web.Response:
+    """Legt eine Zusatz-Entität (D-047) an oder aktualisiert sie (Geräte-Tab).
+
+    Body: `{device_name, read_entity_id, ai_suggestion, ai_hint?, label?, unit?}`. Validiert
+    Gerät, Entity-ID-Format und Vorschlags-Sensor-Kollision; übernimmt die Änderung sofort
+    (kein HEMS-Reload nötig). Liefert den abgeleiteten Vorschlags-Sensor zurück.
+    """
+    db = request.app.get("db")
+    device_collector = request.app.get("device_collector")
+    if db is None or device_collector is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank/Geräte"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+
+    device_name = str(body.get("device_name") or "").strip()
+    read_entity_id = str(body.get("read_entity_id") or "").strip()
+    ai_suggestion = bool(body.get("ai_suggestion"))
+    ai_hint = str(body.get("ai_hint") or "").strip()
+    label = str(body.get("label") or "").strip()
+    unit = str(body.get("unit") or "").strip()
+
+    known = {d.name for d in getattr(device_collector, "devices", [])}
+    if device_name not in known:
+        return web.json_response(
+            {"ok": False, "reason": f"unbekanntes Gerät: {device_name or '(leer)'}"}, status=400
+        )
+    if not is_valid_entity_id(read_entity_id):
+        return web.json_response(
+            {"ok": False, "reason": "ungültige Entity-ID (Format: <domain>.<object_id>)"},
+            status=400,
+        )
+    if ai_suggestion:
+        clash = suggestion_conflict(
+            load_extras(db), device_name=device_name, read_entity_id=read_entity_id
+        )
+        if clash is not None:
+            entity = DeviceExtra(read_entity_id=read_entity_id).suggestion_entity_id
+            return web.json_response(
+                {"ok": False, "reason": f"Vorschlags-Sensor {entity} kollidiert mit {clash}"},
+                status=409,
+            )
+
+    upsert_extra(
+        db,
+        device_name=device_name,
+        read_entity_id=read_entity_id,
+        ai_suggestion=ai_suggestion,
+        ai_hint=ai_hint,
+        label=label,
+        unit=unit,
+    )
+    reapply_device_extras(request.app)
+    _audit_extra(db, "device_extra_upserted", device_name, read_entity_id)
+    extra = DeviceExtra(read_entity_id=read_entity_id, ai_suggestion=ai_suggestion)
+    return web.json_response(
+        {
+            "ok": True,
+            "device_name": device_name,
+            "read_entity_id": read_entity_id,
+            "suggestion_entity_id": extra.suggestion_entity_id if ai_suggestion else None,
+        }
+    )
+
+
+async def device_extra_delete(request: web.Request) -> web.Response:
+    """Entfernt eine Zusatz-Entität (D-047). Body: `{device_name, read_entity_id}`."""
+    db = request.app.get("db")
+    if db is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+    device_name = str(body.get("device_name") or "").strip()
+    read_entity_id = str(body.get("read_entity_id") or "").strip()
+    if not device_name or not read_entity_id:
+        return web.json_response(
+            {"ok": False, "reason": "device_name und read_entity_id erforderlich"}, status=400
+        )
+    delete_extra(db, device_name=device_name, read_entity_id=read_entity_id)
+    reapply_device_extras(request.app)
+    _audit_extra(db, "device_extra_deleted", device_name, read_entity_id)
+    return web.json_response({"ok": True})
+
+
+def _audit_extra(db: sqlite3.Connection, action: str, device_name: str, entity_id: str) -> None:
+    """Protokolliert eine Zusatz-Entität-Änderung (Geräte-Tab); blockiert nie."""
+    try:
+        db.execute(
+            "INSERT INTO audit (actor, action, subject, detail_json) VALUES (?, ?, ?, ?)",
+            ("user", action, device_name, f'{{"entity_id": "{entity_id}"}}'),
+        )
+        db.commit()
+    except sqlite3.Error:  # pragma: no cover - Audit darf den Vorgang nie stören
+        pass
 
 
 async def forecast_get(request: web.Request) -> web.Response:

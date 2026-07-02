@@ -65,6 +65,10 @@
       <button id="refresh-devices">Aktualisieren</button>
       <span id="device-source"></span>
     </div>
+    <p style="font-size:.8rem;color:#888;margin:.4rem 0;">Geräte kommen ausschließlich vom HEMS.
+      Über <b>Zusatz-Entitäten</b> kannst du je Gerät weitere Werte hinterlegen, die EP liest –
+      optional liefert die KI dafür einen Vorschlag als <code>sensor.ep_&lt;entität&gt;_vorschlag</code>
+      (nur HA-Sensor, nicht ans HEMS). Der Freitext erklärt der KI, was der Wert bedeutet.</p>
     <div id="device-list"></div>
   </section>
 
@@ -179,6 +183,8 @@
     document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
     const fmt = (v) => (v === null || v === undefined ? "–" : Number(v).toLocaleString("de-DE", { maximumFractionDigits: 1 }));
+    // Escaped user-eingegebene Texte (Entity-IDs, Hinweise, Labels), bevor sie ins HTML gehen.
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
     async function loadHealth() {
       const data = await (await fetch("api/health")).json();
@@ -253,16 +259,54 @@
               if (f.value === null || f.value === undefined) val = "–";
               else if (f.kind === "bool") val = f.value ? "Ja" : "Nein";
               else val = fmt(f.value) + (f.unit ? " " + f.unit : "");
-              return `<tr><td>${f.label}</td><td class="num">${val}</td><td><code>${f.entity_id}</code></td><td class="src-${f.source}">${f.source}</td></tr>`;
+              return `<tr><td>${esc(f.label)}</td><td class="num">${val}</td><td><code>${esc(f.entity_id)}</code></td><td class="src-${f.source}">${f.source}</td></tr>`;
             })
             .join("");
           const cls = d.class === "controllable" ? "regelbar" : "binär";
-          return `<h2 style="font-size:1rem;margin-top:1rem;">${d.label} <small style="font-weight:normal;color:#888;">(${cls})</small></h2>
-            <table><thead><tr><th>Größe</th><th class="num">Wert</th><th>Entität</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table>`;
+          return `<h2 style="font-size:1rem;margin-top:1rem;">${esc(d.label)} <small style="font-weight:normal;color:#888;">(${cls})</small></h2>
+            <table><thead><tr><th>Größe</th><th class="num">Wert</th><th>Entität</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table>
+            ${renderExtras(d)}`;
         })
         .join("");
       document.getElementById("device-list").innerHTML =
         html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen und die Geräte im HEMS anlegen – dann im HEMS-Tab „Geräte von HEMS neu laden“.</p>";
+    }
+
+    // Zusatz-Entitäten-Editor je Gerät (D-047): lesen + optional KI-Vorschlag (sensor.ep_*_vorschlag).
+    function renderExtras(d) {
+      const rows = (d.extras || [])
+        .map((x) => {
+          const val = x.value === null || x.value === undefined ? "–" : fmt(x.value) + (x.unit ? " " + esc(x.unit) : "");
+          const sug = x.ai_suggestion ? `<code>${esc(x.suggestion_entity_id)}</code>` : "<span style='color:#888;'>–</span>";
+          const hint = x.ai_hint ? esc(x.ai_hint) : "";
+          return `<tr>
+              <td><code>${esc(x.read_entity_id)}</code>${x.label ? " <small style='color:#888;'>(" + esc(x.label) + ")</small>" : ""}</td>
+              <td>${x.ai_suggestion ? "Ja" : "Nein"}</td>
+              <td>${sug}</td>
+              <td class="num src-${x.source}">${val}</td>
+              <td style="font-size:.72rem;color:#888;max-width:18rem;">${hint}</td>
+              <td style="white-space:nowrap;">
+                <button class="extra-edit" data-entity="${esc(x.read_entity_id)}" data-suggest="${x.ai_suggestion ? 1 : 0}" data-hint="${esc(x.ai_hint)}" data-label="${esc(x.label)}" data-unit="${esc(x.unit)}">Bearbeiten</button>
+                <button class="extra-del" data-entity="${esc(x.read_entity_id)}">Löschen</button>
+              </td>
+            </tr>`;
+        })
+        .join("");
+      const table = (d.extras || []).length
+        ? `<table><thead><tr><th>Entität (gelesen)</th><th>KI-Vorschlag</th><th>Vorschlags-Sensor</th><th class="num">Wert</th><th>Hinweis für KI</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : "<p style='font-size:.8rem;color:#888;'>Noch keine Zusatz-Entitäten. Unten hinzufügen.</p>";
+      return `<div class="extras" data-device="${esc(d.name)}">
+          <h3 style="font-size:.85rem;margin:.6rem 0 .2rem;">Zusatz-Entitäten <small style="font-weight:normal;color:#888;">(zusätzlich zu den HEMS-Werten)</small></h3>
+          ${table}
+          <div class="extra-form" style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem;margin:.4rem 0 .8rem;max-width:44rem;">
+            <input class="ex-entity" placeholder="z. B. input_number.min_soc_auto" style="grid-column:1/3;" />
+            <input class="ex-label" placeholder="Anzeigename (optional)" />
+            <input class="ex-unit" placeholder="Einheit, z. B. % oder °C (optional)" />
+            <label style="grid-column:1/3;font-size:.82rem;"><input type="checkbox" class="ex-suggest" /> KI liefert Vorschlagswert (<code>sensor.ep_&lt;entität&gt;_vorschlag</code>)</label>
+            <textarea class="ex-hint" placeholder="Freitext für die KI: was der Wert bedeutet und wie sie ihn verwenden/interpretieren soll." style="grid-column:1/3;min-height:3rem;"></textarea>
+            <div style="grid-column:1/3;"><button class="extra-add">Speichern</button> <span class="extra-msg" style="font-size:.8rem;"></span></div>
+          </div>
+        </div>`;
     }
 
     async function loadForecast() {
@@ -447,7 +491,13 @@
             add("Min. Leistung", d.min_power == null ? "–" : fmt(d.min_power) + unit);
             add(d.is_battery ? "Max. Ladeleistung" : "Max. Leistung", d.max_power == null ? "–" : fmt(d.max_power) + unit);
           }
-          if (d.is_heizstab) add("Max. Wassertemperatur", d.max_water_temp == null ? "–" : fmt(d.max_water_temp) + " °C");
+          // Zusatz-Entitäten (D-047): aktueller Lesewert je Eintrag.
+          (d.extras || []).forEach((x) => {
+            const u = x.extra.unit ? " " + esc(x.extra.unit) : "";
+            const lbl = (x.extra.label && x.extra.label.trim()) || x.extra.read_entity_id;
+            add("Zusatz: " + esc(lbl) + (x.extra.ai_suggestion ? " (KI-Vorschlag)" : ""),
+                x.value == null ? "–" : fmt(x.value) + u);
+          });
           if (d.forced_prio != null) add("Feste Priorität", d.forced_prio);
           const cls = d.class === "controllable" ? "regelbar" : "binär";
           const writable = (d.suggestion_keys || []).map((k) => `<code>${k}</code>`).join(", ") || "–";
@@ -472,8 +522,15 @@
       freigabe_vorschlag: "Freigabe",
       geschutzte_mindestleistung_w_vorschlag: "Geschützte Mindestleistung (W)",
       geschutzte_mindestleistung_a_vorschlag: "Geschützte Mindestleistung (A)",
-      max_temperatur_vorschlag: "Max. Wassertemperatur (°C)",
     };
+
+    // Feldbeschriftung im Plan; dynamische Zusatz-Felder (D-047) `extra_<obj>_vorschlag` lesbar machen.
+    function planFieldLabel(k) {
+      if (PLAN_FIELD_LABELS[k]) return PLAN_FIELD_LABELS[k];
+      const m = /^extra_(.+)_vorschlag$/.exec(k);
+      if (m) return "Zusatz: " + m[1].replace(/_/g, " ");
+      return k;
+    }
 
     function renderPlan(data) {
       const box = document.getElementById("plan-result");
@@ -508,7 +565,7 @@
             .filter(([k]) => k !== "name")
             .map(([k, val]) => {
               const show = typeof val === "boolean" ? (val ? "Ja" : "Nein") : fmt(val);
-              return `<tr><td>${PLAN_FIELD_LABELS[k] || k}</td><td class="num">${show}</td></tr>`;
+              return `<tr><td>${planFieldLabel(k)}</td><td class="num">${show}</td></tr>`;
             })
             .join("");
           return `<h3 style="font-size:.95rem;margin:.75rem 0 .25rem;">${d.name}</h3>
@@ -753,6 +810,57 @@
 
     document.getElementById("refresh-state").addEventListener("click", loadState);
     document.getElementById("refresh-devices").addEventListener("click", loadDevices);
+
+    // True, solange der User im Zusatz-Entitäten-Formular tippt – verhindert, dass die
+    // 10s-Auto-Aktualisierung die Eingabe überschreibt.
+    function isEditingExtras() {
+      const el = document.activeElement;
+      return !!(el && el.closest && el.closest("#geraete .extra-form"));
+    }
+
+    // Add/Bearbeiten/Löschen der Zusatz-Entitäten (D-047), delegiert über die Geräteliste.
+    document.getElementById("device-list").addEventListener("click", async (e) => {
+      const box = e.target.closest(".extras");
+      if (!box) return;
+      const device = box.dataset.device;
+      if (e.target.classList.contains("extra-del")) {
+        const entity = e.target.dataset.entity;
+        if (!confirm(`Zusatz-Entität ${entity} entfernen?`)) return;
+        await fetch("api/devices/extras", {
+          method: "DELETE", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device_name: device, read_entity_id: entity }),
+        });
+        loadDevices();
+      } else if (e.target.classList.contains("extra-edit")) {
+        box.querySelector(".ex-entity").value = e.target.dataset.entity;
+        box.querySelector(".ex-suggest").checked = e.target.dataset.suggest === "1";
+        box.querySelector(".ex-hint").value = e.target.dataset.hint || "";
+        box.querySelector(".ex-label").value = e.target.dataset.label || "";
+        box.querySelector(".ex-unit").value = e.target.dataset.unit || "";
+        box.querySelector(".ex-entity").focus();
+      } else if (e.target.classList.contains("extra-add")) {
+        const msg = box.querySelector(".extra-msg");
+        const payload = {
+          device_name: device,
+          read_entity_id: box.querySelector(".ex-entity").value.trim(),
+          ai_suggestion: box.querySelector(".ex-suggest").checked,
+          ai_hint: box.querySelector(".ex-hint").value,
+          label: box.querySelector(".ex-label").value,
+          unit: box.querySelector(".ex-unit").value,
+        };
+        if (!payload.read_entity_id) { msg.textContent = "❌ Entität erforderlich"; return; }
+        msg.textContent = " … speichern …";
+        try {
+          const res = await fetch("api/devices/extras", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (data.ok) { msg.textContent = "✅ gespeichert"; loadDevices(); }
+          else { msg.textContent = "❌ " + (data.reason || res.status); }
+        } catch (err) { msg.textContent = "❌ " + err; }
+      }
+    });
     document.getElementById("refresh-forecast").addEventListener("click", () => { loadForecast(); loadWeather(); });
     document.getElementById("test-weather").addEventListener("click", testWeather);
     document.getElementById("refresh-grenzen").addEventListener("click", () => { loadConstraints(); loadObjectives(); });
@@ -787,7 +895,7 @@
     // Daten-, Geräte-, Prognose-, Grenzen- und Diagnoseansicht regelmäßig aktualisieren
     setInterval(() => {
       if (document.getElementById("daten").classList.contains("active")) loadState();
-      if (document.getElementById("geraete").classList.contains("active")) loadDevices();
+      if (document.getElementById("geraete").classList.contains("active") && !isEditingExtras()) loadDevices();
       if (document.getElementById("prognose").classList.contains("active")) { loadForecast(); loadWeather(); }
       if (document.getElementById("grenzen").classList.contains("active")) loadConstraints();
       if (document.getElementById("hems").classList.contains("active")) loadHems();

@@ -79,12 +79,21 @@ class DeviceCollector:
         return None, "none"
 
     def snapshot(self) -> list[dict]:
-        """Aktuelle Werte je Gerät für UI/API (read-only)."""
+        """Aktuelle Werte je Gerät für UI/API (read-only).
+
+        `fields` enthält nur die Standard-`ems_*`-Lesewerte; user-gepflegte Zusatz-Entitäten
+        (D-047) werden separat (`/api/devices` → `extras`) geführt, damit sie im UI nicht doppelt
+        (Standard-Tabelle **und** Zusatz-Editor) erscheinen. Gelesen werden sie dennoch (siehe
+        `collect_once`).
+        """
         result: list[dict] = []
         for device in self.devices:
             values = self.last_values.get(device.name, {})
+            extra_keys = {ex.read_key for ex in device.extras}
             fields_out = []
             for field in read_fields(device):
+                if field.key in extra_keys:
+                    continue
                 current = values.get(field.key, {"value": None, "source": "none"})
                 fields_out.append(
                     {

@@ -27,20 +27,19 @@ if TYPE_CHECKING:
     from energy_pilot.devices import Device
     from energy_pilot.ha_client import HAClient
 
-# Anzeigename je Vorschlagsfeld (Watt/Ampere teilen sich den Begriff, Einheit unten).
+# Anzeigename je festem Vorschlagsfeld (Watt/Ampere teilen sich den Begriff, Einheit unten).
+# Zusatz-Vorschläge (D-047) tragen Label/Einheit aus der jeweiligen Zusatz-Entität (Device.extras).
 _FIELD_LABEL: dict[str, str] = {
     "prio_vorschlag": "Priorität",
     "freigabe_vorschlag": "Freigabe",
     "geschutzte_mindestleistung_w_vorschlag": "Geschützte Mindestleistung",
     "geschutzte_mindestleistung_a_vorschlag": "Geschützte Mindestleistung",
-    "max_temperatur_vorschlag": "Max. Wassertemperatur",
 }
 
 # Einheit (HA `unit_of_measurement`) je Feld; Prio/Freigabe sind einheitenlos.
 _FIELD_UNIT: dict[str, str] = {
     "geschutzte_mindestleistung_w_vorschlag": "W",
     "geschutzte_mindestleistung_a_vorschlag": "A",
-    "max_temperatur_vorschlag": "°C",
 }
 
 
@@ -89,14 +88,28 @@ def _format_state(value: object) -> str:
 def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[SuggestionEntity]:
     """Leitet aus einem validierten Plan die zu schreibenden HA-Entitäten ab.
 
-    Entity-ID-Schema: `sensor.ep_<entity_prefix>_<feld>` (das Feld endet bereits auf
-    `_vorschlag`). `entity_prefix`/`label` stammen aus dem `Device` (nicht aus dem
-    Plan-Dict, das nur den Gerätenamen trägt); fehlt das Gerät, dient der Name als
-    Fallback-Prefix.
+    Feste Felder: `sensor.ep_<entity_prefix>_<feld>` (das Feld endet auf `_vorschlag`).
+    Zusatz-Vorschläge (D-047): `sensor.ep_<obj>_vorschlag` gemäß dem Namensschema der
+    Zusatz-Entität (`DeviceExtra.suggestion_entity_id`), mit deren Label/Einheit. Diese
+    Werte sind advisorisch (nur HA-Sensor, nie an das HEMS übergeben). `entity_prefix`/`label`
+    stammen aus dem `Device`; fehlt das Gerät, dient der Name als Fallback-Prefix.
     """
     by_name = {device.name: device for device in devices}
     plan_id = plan.get("plan_id")
     valid_until = plan.get("valid_until")
+
+    def _attrs(friendly: str, unit: str | None) -> dict:
+        attributes: dict = {
+            "friendly_name": friendly,
+            "source": "Skytech Energy Pilot",
+        }
+        if unit:
+            attributes["unit_of_measurement"] = unit
+        if plan_id:
+            attributes["plan_id"] = plan_id
+        if valid_until:
+            attributes["valid_until"] = valid_until
+        return attributes
 
     entities: list[SuggestionEntity] = []
     for entry in plan.get("devices", []):
@@ -109,29 +122,40 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
         prefix = device.entity_prefix if device is not None else name
         label = device.label if device is not None else name
 
+        # Feste Vorschlagsfelder (Prio/Freigabe/Mindestleistung).
         for field_name in SUGGESTION_FIELDS:
             value = entry.get(field_name)
             if value is None:
                 continue
             field_label = _FIELD_LABEL.get(field_name, field_name)
-            attributes: dict = {
-                "friendly_name": f"{label} – {field_label} (Vorschlag)",
-                "source": "Skytech Energy Pilot",
-            }
-            unit = _FIELD_UNIT.get(field_name)
-            if unit:
-                attributes["unit_of_measurement"] = unit
-            if plan_id:
-                attributes["plan_id"] = plan_id
-            if valid_until:
-                attributes["valid_until"] = valid_until
             entities.append(
                 SuggestionEntity(
                     entity_id=f"sensor.ep_{prefix}_{field_name}",
                     state=_format_state(value),
-                    attributes=attributes,
+                    attributes=_attrs(
+                        f"{label} – {field_label} (Vorschlag)", _FIELD_UNIT.get(field_name)
+                    ),
                     device=name,
                     field_name=field_name,
+                )
+            )
+
+        # Dynamische Zusatz-Vorschläge (D-047): Sensorname/Label/Einheit aus der Zusatz-Entität.
+        for extra in getattr(device, "extras", ()):
+            if not extra.ai_suggestion:
+                continue
+            value = entry.get(extra.plan_field)
+            if value is None:
+                continue
+            entities.append(
+                SuggestionEntity(
+                    entity_id=extra.suggestion_entity_id,
+                    state=_format_state(value),
+                    attributes=_attrs(
+                        f"{label} – {extra.display_label} (Vorschlag)", extra.unit or None
+                    ),
+                    device=name,
+                    field_name=extra.plan_field,
                 )
             )
     return entities

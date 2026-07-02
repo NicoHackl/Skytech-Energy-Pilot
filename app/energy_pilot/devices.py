@@ -29,6 +29,57 @@ _PREFIX_RE = re.compile(r"\.ems_(?P<prefix>.+)_technische_freigabe$")
 
 
 @dataclass(frozen=True)
+class DeviceExtra:
+    """Eine user-gepflegte Zusatz-Entität eines Geräts (D-047, generalisiert D-035).
+
+    Zusätzlich zu den vom HEMS gezogenen `ems_*`-Werten kann der User im Geräte-Tab je
+    Gerät weitere Entitäten hinterlegen, die EP liest und (optional) für die KI zu einem
+    Vorschlagswert werden lässt. Beispiel: `input_number.min_soc_auto` → EP liest den
+    Wert; bei `ai_suggestion=True` erzeugt die KI zusätzlich `sensor.ep_min_soc_auto_vorschlag`.
+
+    Diese Vorschläge sind rein **advisorisch** (nur HA-Sensor, D-047): sie werden NICHT an
+    das HEMS übergeben (das HEMS kennt sie nicht) und unterliegen keiner harten Grenze –
+    der Freitext (`ai_hint`) erklärt der KI Bedeutung und Verwendung des Werts.
+    """
+
+    read_entity_id: str  # z.B. "input_number.min_soc_auto" (die von EP gelesene Quelle)
+    ai_suggestion: bool = False  # KI liefert einen Vorschlagswert (als sensor.ep_*_vorschlag)
+    ai_hint: str = ""  # Freitext für die KI: was der Wert bedeutet / wie zu verwenden
+    label: str = ""  # Anzeigename (leer => aus der object_id abgeleitet)
+    unit: str = ""  # optionale Einheit für Anzeige/HA-Sensor (z.B. "°C", "%")
+
+    @property
+    def object_id(self) -> str:
+        """Stabile Kennung: object_id der Quell-Entität ohne führendes `ep_`.
+
+        `input_number.min_soc_auto` → `min_soc_auto`;
+        `input_number.ep_heizstab_max_temperatur` → `heizstab_max_temperatur` (kein `ep_ep_`).
+        """
+        raw = self.read_entity_id.split(".", 1)[-1].strip()
+        return raw[3:] if raw.startswith("ep_") else raw
+
+    @property
+    def read_key(self) -> str:
+        """Feldschlüssel im DeviceCollector/Readings (kollisionsfrei zu den `ems_*`-Feldern)."""
+        return f"extra_{self.object_id}"
+
+    @property
+    def plan_field(self) -> str:
+        """Vorschlagsfeld im Plan-/Antwort-Schema (Muster `extra_<obj>_vorschlag`)."""
+        return f"extra_{self.object_id}_vorschlag"
+
+    @property
+    def suggestion_entity_id(self) -> str:
+        """Zielsensor des KI-Vorschlags (`sensor.ep_<obj>_vorschlag`, D-047-Namensschema)."""
+        return f"sensor.ep_{self.object_id}_vorschlag"
+
+    @property
+    def display_label(self) -> str:
+        """Anzeigename: user-gepflegt oder aus der object_id abgeleitet."""
+        return self.label.strip() or self.object_id.replace("_", " ").title()
+
+
+@dataclass(frozen=True)
 class Device:
     """Ein vom HEMS geregeltes Gerät aus EP-Sicht."""
 
@@ -37,6 +88,8 @@ class Device:
     entity_prefix: str
     device_class: str  # CONTROLLABLE | BINARY
     output_unit: str = "watt"  # "watt" | "ampere"
+    # User-gepflegte Zusatz-Entitäten (D-047); nach der HEMS-Discovery aus der DB gemergt.
+    extras: tuple[DeviceExtra, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,12 +140,12 @@ def read_fields(device: Device) -> list[ReadField]:
             ),
         ]
 
-    # Heizstab-Sonderfall (D-035): EP-eigener Grenzwert-Helfer, den EP liest.
-    if device.entity_prefix == "heizstab":
+    # User-gepflegte Zusatz-Entitäten (D-047, ersetzt den früheren Heizstab-Hardcode D-035).
+    # Diese Werte liest EP zusätzlich zu den `ems_*`-Feldern; sie werden numerisch geführt.
+    for extra in device.extras:
         fields.append(
             ReadField(
-                "ep_max_temperatur", "EP max. Wassertemperatur (Grenzwert)", "number",
-                "input_number.ep_heizstab_max_temperatur", "°C",
+                extra.read_key, extra.display_label, "number", extra.read_entity_id, extra.unit
             )
         )
     return fields

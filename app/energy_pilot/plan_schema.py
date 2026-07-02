@@ -6,15 +6,18 @@ Punkt in [08-validierung-sicherheit.md]). Hier liegt nur die Struktur-/Typprüfu
 (JSON-Schema). Die **fachliche** Grenzprüfung gegen die harten Grenzen
 (constraints.py) macht der Validator (validator.py).
 
-V1-Schreibvertrag je Gerät (D-030/D-034/D-037/D-035):
+V1-Schreibvertrag je Gerät (D-030/D-034/D-037/D-047):
 - regelbar/binär: `prio_vorschlag`, `freigabe_vorschlag`
 - regelbar zusätzlich: `geschutzte_mindestleistung_{w|a}_vorschlag`
 - **Batterie:** nur `geschutzte_mindestleistung_w_vorschlag` (D-037)
-- **Heizstab:** zusätzlich `max_temperatur_vorschlag` (D-035)
+- **Zusatz-Entitäten (D-047):** je aktivierter Zusatz-Entität ein dynamisches Feld
+  `extra_<obj>_vorschlag` (löst den früheren Heizstab-Hardcode `max_temperatur_vorschlag`
+  D-035 ab). Diese Felder sind advisorisch (nur HA-Sensor), unterliegen keiner harten Grenze.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 import jsonschema
@@ -25,26 +28,37 @@ from energy_pilot.devices import BINARY
 # Versionierung des Plan-Schemas (mit HEMS gemeinsam zu pflegen).
 SCHEMA_VERSION = "1.0"
 
-# Alle möglichen Vorschlagsfelder eines Geräts (Reihenfolge = Serialisierungsreihenfolge).
+# Feste Vorschlagsfelder eines Geräts (Reihenfolge = Serialisierungsreihenfolge). Zusatz-
+# Entitäten (D-047) kommen als dynamische `extra_<obj>_vorschlag`-Felder hinzu (siehe unten).
 SUGGESTION_FIELDS: tuple[str, ...] = (
     "prio_vorschlag",
     "freigabe_vorschlag",
     "geschutzte_mindestleistung_w_vorschlag",
     "geschutzte_mindestleistung_a_vorschlag",
-    "max_temperatur_vorschlag",
 )
+
+# Muster der dynamischen Zusatz-Vorschlagsfelder (D-047), z.B. `extra_min_soc_auto_vorschlag`.
+EXTRA_FIELD_RE = re.compile(r"^extra_[a-z0-9_]+_vorschlag$")
+
+
+def is_extra_field(key: str) -> bool:
+    """True, wenn `key` ein dynamisches Zusatz-Vorschlagsfeld ist (D-047)."""
+    return bool(EXTRA_FIELD_RE.match(key))
 
 
 @dataclass
 class DeviceSuggestion:
-    """Vorschlagswerte für genau ein Gerät (nicht gesetzte Felder bleiben None)."""
+    """Vorschlagswerte für genau ein Gerät (nicht gesetzte Felder bleiben None).
+
+    `extras` hält die dynamischen Zusatz-Vorschläge (D-047) als `{extra_<obj>_vorschlag: wert}`.
+    """
 
     name: str
     prio_vorschlag: int | None = None
     freigabe_vorschlag: bool | None = None
     geschutzte_mindestleistung_w_vorschlag: float | None = None
     geschutzte_mindestleistung_a_vorschlag: float | None = None
-    max_temperatur_vorschlag: float | None = None
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -63,21 +77,29 @@ class CandidatePlan:
     schema_version: str = SCHEMA_VERSION
 
 
+def extra_suggestion_keys(constraint: DeviceConstraint) -> list[str]:
+    """Dynamische Zusatz-Vorschlagsfelder eines Geräts (D-047): nur aktivierte Zusatz-Entitäten."""
+    return [ce.extra.plan_field for ce in constraint.extras if ce.extra.ai_suggestion]
+
+
 def suggestion_keys(constraint: DeviceConstraint) -> list[str]:
-    """Liefert die je Gerät **erlaubten** Vorschlagsfelder (Schreibvertrag, D-030 ff.)."""
+    """Liefert die je Gerät **erlaubten** Vorschlagsfelder (Schreibvertrag, D-030 ff./D-047).
+
+    Fixe Felder nach Geräteklasse plus die dynamischen `extra_<obj>_vorschlag`-Felder der
+    aktivierten Zusatz-Entitäten (D-047).
+    """
     if constraint.is_battery:
-        return ["geschutzte_mindestleistung_w_vorschlag"]  # D-037
-    if constraint.device_class == BINARY:
-        return ["prio_vorschlag", "freigabe_vorschlag"]
-    suffix = "a" if constraint.output_unit == "ampere" else "w"
-    keys = [
-        "prio_vorschlag",
-        "freigabe_vorschlag",
-        f"geschutzte_mindestleistung_{suffix}_vorschlag",
-    ]
-    if constraint.is_heizstab:
-        keys.append("max_temperatur_vorschlag")  # D-035
-    return keys
+        keys = ["geschutzte_mindestleistung_w_vorschlag"]  # D-037
+    elif constraint.device_class == BINARY:
+        keys = ["prio_vorschlag", "freigabe_vorschlag"]
+    else:
+        suffix = "a" if constraint.output_unit == "ampere" else "w"
+        keys = [
+            "prio_vorschlag",
+            "freigabe_vorschlag",
+            f"geschutzte_mindestleistung_{suffix}_vorschlag",
+        ]
+    return keys + extra_suggestion_keys(constraint)
 
 
 def plan_to_dict(plan: CandidatePlan) -> dict:
@@ -87,6 +109,10 @@ def plan_to_dict(plan: CandidatePlan) -> dict:
         entry: dict[str, object] = {"name": suggestion.name}
         for key in SUGGESTION_FIELDS:
             value = getattr(suggestion, key)
+            if value is not None:
+                entry[key] = value
+        # Dynamische Zusatz-Vorschläge (D-047) flach in den Geräteeintrag übernehmen.
+        for key, value in suggestion.extras.items():
             if value is not None:
                 entry[key] = value
         devices.append(entry)
@@ -126,6 +152,11 @@ PLAN_JSON_SCHEMA: dict = {
                 "type": "object",
                 "required": ["name"],
                 "additionalProperties": False,
+                # Dynamische Zusatz-Vorschläge (D-047): beliebig viele `extra_<obj>_vorschlag`
+                # als Zahl erlaubt; der Validator erzwingt je Gerät den konkreten Schreibvertrag.
+                "patternProperties": {
+                    r"^extra_[a-z0-9_]+_vorschlag$": {"type": "number"},
+                },
                 "properties": {
                     "name": {"type": "string", "minLength": 1},
                     # Prio hier bewusst nur strukturell (integer): die eindeutige
@@ -136,7 +167,6 @@ PLAN_JSON_SCHEMA: dict = {
                     "freigabe_vorschlag": {"type": "boolean"},
                     "geschutzte_mindestleistung_w_vorschlag": {"type": "number", "minimum": 0},
                     "geschutzte_mindestleistung_a_vorschlag": {"type": "number", "minimum": 0},
-                    "max_temperatur_vorschlag": {"type": "number"},
                 },
             },
         },

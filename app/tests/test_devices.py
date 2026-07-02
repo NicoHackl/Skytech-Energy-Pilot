@@ -6,6 +6,7 @@ from energy_pilot.devices import (
     BINARY,
     CONTROLLABLE,
     Device,
+    DeviceExtra,
     discover,
     discover_from_hems_schema,
     read_fields,
@@ -72,8 +73,8 @@ def test_read_fields_controllable_watt():
     assert fields["min_technisch"].entity_id == "input_number.ems_batterie_min_technisch_w"
     assert fields["max_technisch"].entity_id == "input_number.ems_batterie_max_technisch_w"
     assert fields["max_technisch"].unit == "W"
-    # Nur der Heizstab hat den Temperatur-Sonderfall.
-    assert "ep_max_temperatur" not in fields
+    # Ohne konfigurierte Zusatz-Entitäten (D-047) gibt es keine `extra_*`-Lesefelder.
+    assert not any(k.startswith("extra_") for k in fields)
 
 
 def test_read_fields_controllable_ampere():
@@ -83,11 +84,32 @@ def test_read_fields_controllable_ampere():
     assert fields["max_technisch"].unit == "A"
 
 
-def test_read_fields_heizstab_special_temperature():
-    dev = Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE)
+def test_read_fields_include_configured_extras():
+    # Zusatz-Entitäten (D-047, generalisiert D-035) erzeugen zusätzliche `extra_*`-Lesefelder.
+    extra = DeviceExtra(
+        read_entity_id="input_number.ep_heizstab_max_temperatur",
+        ai_suggestion=True, label="Max. Wassertemperatur", unit="°C",
+    )
+    dev = Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE, extras=(extra,))
     fields = _fields_by_key(dev)
-    assert fields["ep_max_temperatur"].entity_id == "input_number.ep_heizstab_max_temperatur"
-    assert fields["ep_max_temperatur"].unit == "°C"
+    # Feldschlüssel = read_key (führendes `ep_` der object_id entfällt, kein `ep_ep_`).
+    assert extra.read_key == "extra_heizstab_max_temperatur"
+    assert fields["extra_heizstab_max_temperatur"].entity_id == (
+        "input_number.ep_heizstab_max_temperatur"
+    )
+    assert fields["extra_heizstab_max_temperatur"].unit == "°C"
+    # Namensschema der abgeleiteten Vorschlags-Sensorik bleibt zum Alt-Verhalten kompatibel.
+    assert extra.plan_field == "extra_heizstab_max_temperatur_vorschlag"
+    assert extra.suggestion_entity_id == "sensor.ep_heizstab_max_temperatur_vorschlag"
+
+
+def test_device_extra_object_id_strips_domain_and_ep_prefix():
+    # `input_number.min_soc_auto` -> object_id `min_soc_auto` -> sensor.ep_min_soc_auto_vorschlag
+    ex = DeviceExtra(read_entity_id="input_number.min_soc_auto", ai_suggestion=True)
+    assert ex.object_id == "min_soc_auto"
+    assert ex.suggestion_entity_id == "sensor.ep_min_soc_auto_vorschlag"
+    assert ex.plan_field == "extra_min_soc_auto_vorschlag"
+    assert ex.display_label == "Min Soc Auto"
 
 
 def test_discover_from_hems_schema_classes_and_units():

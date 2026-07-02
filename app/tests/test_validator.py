@@ -3,16 +3,22 @@
 from datetime import UTC, datetime
 
 from energy_pilot.constraints import build_constraints
-from energy_pilot.devices import BINARY, CONTROLLABLE, Device
+from energy_pilot.devices import BINARY, CONTROLLABLE, Device, DeviceExtra
 from energy_pilot.validator import validate
 
 NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
+
+# Heizstab mit aktivierter Zusatz-Entität (D-047) – erzeugt das Feld
+# `extra_heizstab_max_temperatur_vorschlag` im Schreibvertrag (ersetzt den Hardcode D-035).
+_HEIZSTAB_EXTRA = DeviceExtra(
+    read_entity_id="input_number.ep_heizstab_max_temperatur", ai_suggestion=True, unit="°C"
+)
 
 
 def _constraints():
     devices = [
         Device("batterie", "Batterie", "batterie", CONTROLLABLE, "watt"),
-        Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE, "watt"),
+        Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE, "watt", extras=(_HEIZSTAB_EXTRA,)),
         Device("heizluefter_1", "Heizlüfter 1", "heizluefter_1", BINARY, "watt"),
     ]
     readings = {
@@ -25,7 +31,7 @@ def _constraints():
             "technische_freigabe": {"value": True},
             "min_technisch": {"value": 500.0},
             "max_technisch": {"value": 3000.0},
-            "ep_max_temperatur": {"value": 60.0},
+            "extra_heizstab_max_temperatur": {"value": 60.0},
         },
         "heizluefter_1": {"technische_freigabe": {"value": False}, "leistung_w": {"value": 1500.0}},
     }
@@ -57,7 +63,7 @@ def test_happy_path_ok_without_clamps():
                 "prio_vorschlag": 10,  # einziges Prio-Gerät -> Rang 1, bleibt unverändert
                 "freigabe_vorschlag": True,
                 "geschutzte_mindestleistung_w_vorschlag": 800.0,
-                "max_temperatur_vorschlag": 55.0,
+                "extra_heizstab_max_temperatur_vorschlag": 55.0,
             },
             {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
         ]
@@ -79,14 +85,28 @@ def test_protected_min_power_is_clamped_not_rejected():
     assert result.clamped
 
 
-def test_heizstab_temperature_is_clamped():
+def test_extra_suggestion_passes_through_unclamped():
+    # Zusatz-Vorschläge (D-047) sind advisorisch (nur HA-Sensor) und werden NICHT geklemmt.
     plan = _plan(
         [{"name": "heizstab", "prio_vorschlag": 1, "freigabe_vorschlag": True,
-          "geschutzte_mindestleistung_w_vorschlag": 600.0, "max_temperatur_vorschlag": 99.0}]
+          "geschutzte_mindestleistung_w_vorschlag": 600.0,
+          "extra_heizstab_max_temperatur_vorschlag": 99.0}]
     )
     result = validate(plan, _constraints(), now=NOW)
     assert result.ok
-    assert result.normalized_plan["devices"][0]["max_temperatur_vorschlag"] == 60.0
+    assert result.normalized_plan["devices"][0]["extra_heizstab_max_temperatur_vorschlag"] == 99.0
+    assert not any("max_temperatur" in c for c in result.clamped)
+
+
+def test_unknown_extra_field_rejected_by_write_contract():
+    # Ein `extra_*_vorschlag` ohne aktivierte Zusatz-Entität ist nicht im Schreibvertrag.
+    plan = _plan(
+        [{"name": "heizstab", "prio_vorschlag": 1, "freigabe_vorschlag": True,
+          "extra_unbekannt_vorschlag": 5.0}]
+    )
+    result = validate(plan, _constraints(), now=NOW)
+    assert not result.ok
+    assert any("Schreibvertrag" in e for e in result.errors)
 
 
 def test_freigabe_override_of_technical_block_rejected():

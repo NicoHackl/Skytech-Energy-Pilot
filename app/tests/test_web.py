@@ -145,9 +145,91 @@ async def test_devices_endpoint_reflects_hems_discovery(aiohttp_client, tmp_path
     data = await (await client.get("/api/devices")).json()
 
     assert data["source"] == "hems"
-    assert data["devices"][0]["name"] == "heizstab"
-    keys = {f["key"] for f in data["devices"][0]["fields"]}
-    assert {"technische_freigabe", "min_technisch", "max_technisch", "ep_max_temperatur"} <= keys
+    heizstab = data["devices"][0]
+    assert heizstab["name"] == "heizstab"
+    keys = {f["key"] for f in heizstab["fields"]}
+    assert {"technische_freigabe", "min_technisch", "max_technisch"} <= keys
+    # Zusatz-Entitäten erscheinen separat (D-047), nicht in den Standard-`fields`.
+    assert not any(k.startswith("extra_") for k in keys)
+    # Der Heizstab-Default (ersetzt Hardcode D-035) wird beim ersten HEMS-Sync geseedet.
+    extras = {e["read_entity_id"]: e for e in heizstab["extras"]}
+    assert "input_number.ep_heizstab_max_temperatur" in extras
+    seeded = extras["input_number.ep_heizstab_max_temperatur"]
+    assert seeded["ai_suggestion"] is True
+    assert seeded["suggestion_entity_id"] == "sensor.ep_heizstab_max_temperatur_vorschlag"
+
+
+async def _discovered_client(aiohttp_client, tmp_path):
+    """Startet die App mit HEMS-Heizstab-Discovery (inkl. Seed) und liefert (client, db)."""
+    options = tmp_path / "options.json"
+    options.write_text("{}")
+    config = AddonConfig.load(options_path=str(options), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    device_collector = DeviceCollector(None, logger)
+    app = create_app(
+        config, db, ring, device_collector=device_collector,
+        hems_client=_FakeHEMSClient(_HEIZSTAB_SCHEMA), version="test",
+    )
+    client = await aiohttp_client(app)  # on_startup: Discovery + Seed
+    return client, db
+
+
+async def test_device_extra_post_creates_and_lists(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "input_number.min_soc_auto",
+        "ai_suggestion": True,
+        "ai_hint": "Minimaler Ladezustand",
+        "unit": "%",
+    })
+    body = await res.json()
+    assert res.status == 200 and body["ok"] is True
+    assert body["suggestion_entity_id"] == "sensor.ep_min_soc_auto_vorschlag"
+
+    data = await (await client.get("/api/devices")).json()
+    extras = {e["read_entity_id"] for e in data["devices"][0]["extras"]}
+    assert "input_number.min_soc_auto" in extras  # neu
+    assert "input_number.ep_heizstab_max_temperatur" in extras  # Seed bleibt
+
+
+async def test_device_extra_delete_removes(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.request("DELETE", "/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "input_number.ep_heizstab_max_temperatur",
+    })
+    assert (await res.json())["ok"] is True
+    data = await (await client.get("/api/devices")).json()
+    assert data["devices"][0]["extras"] == []
+
+
+async def test_device_extra_post_rejects_unknown_device(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/extras", json={
+        "device_name": "spuelmaschine", "read_entity_id": "input_number.x", "ai_suggestion": False,
+    })
+    assert res.status == 400
+
+
+async def test_device_extra_post_rejects_invalid_entity(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/extras", json={
+        "device_name": "heizstab", "read_entity_id": "keine_entity_id", "ai_suggestion": False,
+    })
+    assert res.status == 400
+
+
+async def test_device_extra_post_rejects_suggestion_conflict(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    # Gleiche object_id wie der Seed -> gleicher Vorschlags-Sensor -> Kollision (409).
+    res = await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "sensor.heizstab_max_temperatur",
+        "ai_suggestion": True,
+    })
+    assert res.status == 409
 
 
 async def test_hems_rediscover_endpoint_syncs_devices(aiohttp_client, tmp_path):

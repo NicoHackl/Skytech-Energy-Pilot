@@ -30,6 +30,7 @@ from energy_pilot.plan_schema import (
     SUGGESTION_FIELDS,
     CandidatePlan,
     DeviceSuggestion,
+    is_extra_field,
     plan_to_dict,
 )
 from energy_pilot.settings import PLANNING_PROMPT_KEY, get_setting
@@ -280,7 +281,13 @@ class Planner:
             if not isinstance(name, str) or not name:
                 continue
             fields = {key: entry[key] for key in SUGGESTION_FIELDS if entry.get(key) is not None}
-            suggestions.append(DeviceSuggestion(name=name, **fields))
+            # Dynamische Zusatz-Vorschläge (D-047) mitnehmen – sonst fielen sie hier heraus.
+            extras = {
+                key: value
+                for key, value in entry.items()
+                if key != "name" and is_extra_field(key) and value is not None
+            }
+            suggestions.append(DeviceSuggestion(name=name, extras=extras, **fields))
         plan = CandidatePlan(
             plan_id=plan_id,
             valid_from=valid_from,

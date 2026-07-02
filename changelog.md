@@ -6,6 +6,31 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.28] - 2026-07-02
+
+### Hinzugefügt
+- **Konfigurierbare Zusatz-Entitäten je Gerät (D-047).** Im **Geräte-Tab** kann der User jetzt
+  zu jedem vom HEMS importierten Gerät beliebige weitere Entitäten hinterlegen (z.B.
+  `input_number.min_soc_auto`), die EP **zusätzlich** zu den `ems_*`-Werten liest. Pro Eintrag:
+  - **Checkbox „KI liefert Vorschlagswert"** – ist sie aktiv, erzeugt die KI zusätzlich einen
+    Sensor nach dem Schema `sensor.ep_<entität>_vorschlag` (Beispiel:
+    `input_number.min_soc_auto` → `sensor.ep_min_soc_auto_vorschlag`).
+  - **Freitextfeld** – erklärt der KI Bedeutung und Verwendung/Interpretation des Werts; geht als
+    Feldbeschreibung und als `zusatzwerte`-Hinweis in den KI-Kontext ein.
+  - **Optionaler Anzeigename + Einheit** für den HA-Sensor.
+  Diese Vorschläge sind **advisorisch**: sie werden **nur als HA-Sensor** bereitgestellt und
+  **nicht an das HEMS** übergeben (das HEMS kennt sie nicht). Auch ohne aktivierten KI-Vorschlag
+  wird der Wert gelesen und der KI als Kontext übergeben. Persistenz in der neuen Tabelle
+  `device_extras` (Migration 6); neue Endpunkte `POST`/`DELETE /api/devices/extras`.
+
+### Geändert
+- **Heizstab-Max.-Wassertemperatur ist nicht mehr hardcodiert (löst D-035 durch D-047 ab).** Der
+  frühere Sonderfall (`input_number.ep_heizstab_max_temperatur` → `sensor.ep_heizstab_max_temperatur_vorschlag`)
+  wird beim ersten HEMS-Sync **einmalig als editierbare Zusatz-Entität geseedet** – Namensschema
+  und Verhalten bleiben identisch, sind aber jetzt frei umkonfigurier-/löschbar. Da Zusatz-Vorschläge
+  advisorisch sind, klemmt der Validator die Wassertemperatur nicht mehr gegen eine harte Grenze;
+  der Freitext steuert die KI.
+
 ## [0.0.27] - 2026-07-02
 
 ### Behoben

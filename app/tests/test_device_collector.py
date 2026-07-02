@@ -3,7 +3,7 @@
 import pytest
 
 from energy_pilot.device_collector import DeviceCollector, parse_bool
-from energy_pilot.devices import CONTROLLABLE, Device
+from energy_pilot.devices import CONTROLLABLE, Device, DeviceExtra
 
 
 class _FakeHAClient:
@@ -17,6 +17,13 @@ class _FakeHAClient:
 
 
 HEIZSTAB = Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE)
+# Heizstab mit Zusatz-Entität (D-047): wird gelesen, erscheint aber nicht in `fields`.
+_MAX_TEMP_EXTRA = DeviceExtra(
+    read_entity_id="input_number.ep_heizstab_max_temperatur", ai_suggestion=True, unit="°C"
+)
+HEIZSTAB_WITH_EXTRA = Device(
+    "heizstab", "Heizstab", "heizstab", CONTROLLABLE, extras=(_MAX_TEMP_EXTRA,)
+)
 
 
 @pytest.mark.parametrize(
@@ -38,7 +45,7 @@ async def test_collect_reads_device_values():
         }
     )
     collector = DeviceCollector(ha)
-    collector.set_devices([HEIZSTAB], source="hems")
+    collector.set_devices([HEIZSTAB_WITH_EXTRA], source="hems")
 
     await collector.collect_once(now=1.0)
     snap = collector.snapshot()
@@ -49,7 +56,10 @@ async def test_collect_reads_device_values():
     assert fields["technische_freigabe"]["source"] == "live"
     assert fields["min_technisch"]["value"] == 500.0
     assert fields["max_technisch"]["value"] == 3000.0
-    assert fields["ep_max_temperatur"]["value"] == 60.0
+    # Zusatz-Entität (D-047) wird gelesen (last_values), erscheint aber NICHT in `fields`.
+    assert "extra_heizstab_max_temperatur" not in fields
+    read = collector.last_values["heizstab"]["extra_heizstab_max_temperatur"]
+    assert read["value"] == 60.0 and read["source"] == "live"
     assert collector.discovery_source == "hems"
 
 

@@ -1,12 +1,18 @@
 """Tests für den Vorschlags-Publisher (Entity-Erzeugung + fehlertolerantes Schreiben)."""
 
 from energy_pilot.database import init_db
-from energy_pilot.devices import BINARY, CONTROLLABLE, Device
+from energy_pilot.devices import BINARY, CONTROLLABLE, Device, DeviceExtra
 from energy_pilot.suggestion_publisher import build_suggestion_entities, publish_suggestions
 
+# Heizstab mit aktivierter Zusatz-Entität (D-047): Vorschlags-Sensorname bleibt kompatibel zum
+# früheren Hardcode (`sensor.ep_heizstab_max_temperatur_vorschlag`, ersetzt D-035).
+_HEIZSTAB_EXTRA = DeviceExtra(
+    read_entity_id="input_number.ep_heizstab_max_temperatur",
+    ai_suggestion=True, label="Max. Wassertemperatur", unit="°C",
+)
 DEVICES = [
     Device("batterie", "Batterie", "batterie", CONTROLLABLE, "watt"),
-    Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE, "watt"),
+    Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE, "watt", extras=(_HEIZSTAB_EXTRA,)),
     Device("heizlufter_1", "Heizlüfter 1", "heizlufter_1", BINARY, "watt"),
 ]
 
@@ -40,7 +46,7 @@ def test_build_entities_controllable_all_fields():
                 "prio_vorschlag": 10,
                 "freigabe_vorschlag": True,
                 "geschutzte_mindestleistung_w_vorschlag": 800.0,
-                "max_temperatur_vorschlag": 55.0,
+                "extra_heizstab_max_temperatur_vorschlag": 55.0,
             }
         ]
     )
@@ -50,7 +56,7 @@ def test_build_entities_controllable_all_fields():
         "sensor.ep_heizstab_prio_vorschlag",
         "sensor.ep_heizstab_freigabe_vorschlag",
         "sensor.ep_heizstab_geschutzte_mindestleistung_w_vorschlag",
-        "sensor.ep_heizstab_max_temperatur_vorschlag",
+        "sensor.ep_heizstab_max_temperatur_vorschlag",  # aus der Zusatz-Entität (D-047)
     }
     assert by_id["sensor.ep_heizstab_prio_vorschlag"].state == "10"
     assert by_id["sensor.ep_heizstab_freigabe_vorschlag"].state == "on"
@@ -58,6 +64,10 @@ def test_build_entities_controllable_all_fields():
     assert leistung.state == "800"  # 800.0 -> "800"
     assert leistung.attributes["unit_of_measurement"] == "W"
     assert leistung.attributes["plan_id"] == "abc123"
+    # Der Zusatz-Vorschlag trägt Einheit + Label der Zusatz-Entität.
+    temp = by_id["sensor.ep_heizstab_max_temperatur_vorschlag"]
+    assert temp.state == "55"
+    assert temp.attributes["unit_of_measurement"] == "°C"
     temperatur = by_id["sensor.ep_heizstab_max_temperatur_vorschlag"]
     assert temperatur.attributes["unit_of_measurement"] == "°C"
 

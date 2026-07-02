@@ -1,16 +1,17 @@
-"""Tests für das Device-Constraint-Model (harte Grenzen, D-011/D-016/D-035/D-037)."""
+"""Tests für das Device-Constraint-Model (harte Grenzen, D-011/D-016/D-037/D-047)."""
 
 from energy_pilot.constraints import DEFAULT_BINARY_POWER_W, build_constraints
-from energy_pilot.devices import BINARY, CONTROLLABLE, Device
+from energy_pilot.devices import BINARY, CONTROLLABLE, Device, DeviceExtra
 
 
-def _dev(name, cls=CONTROLLABLE, unit="watt", prefix=None):
+def _dev(name, cls=CONTROLLABLE, unit="watt", prefix=None, extras=()):
     return Device(
         name=name,
         label=name.title(),
         entity_prefix=prefix or name,
         device_class=cls,
         output_unit=unit,
+        extras=extras,
     )
 
 
@@ -20,16 +21,26 @@ def test_controllable_reads_min_max_and_freigabe():
             "technische_freigabe": {"value": True},
             "min_technisch": {"value": 500.0},
             "max_technisch": {"value": 3000.0},
-            "ep_max_temperatur": {"value": 65.0},
         }
     }
     constraint = build_constraints([_dev("heizstab")], readings)[0]
     assert constraint.freigabe is True
     assert constraint.min_power == 500.0
     assert constraint.max_power == 3000.0
-    assert constraint.is_heizstab is True
-    assert constraint.max_water_temp == 65.0
     assert constraint.fixed_power is None
+
+
+def test_extras_carry_current_read_value():
+    # Zusatz-Entitäten (D-047) werden mit ihrem aktuellen Lesewert am Constraint mitgeführt.
+    extra = DeviceExtra(
+        read_entity_id="input_number.ep_heizstab_max_temperatur",
+        ai_suggestion=True, unit="°C",
+    )
+    readings = {"heizstab": {"extra_heizstab_max_temperatur": {"value": 65.0}}}
+    constraint = build_constraints([_dev("heizstab", extras=(extra,))], readings)[0]
+    assert len(constraint.extras) == 1
+    assert constraint.extras[0].extra.read_entity_id == "input_number.ep_heizstab_max_temperatur"
+    assert constraint.extras[0].value == 65.0
 
 
 def test_battery_is_always_prio1_and_freigegeben():
@@ -63,7 +74,7 @@ def test_missing_values_yield_none():
     constraint = build_constraints([_dev("heizstab")], {})[0]
     assert constraint.freigabe is None
     assert constraint.min_power is None
-    assert constraint.max_water_temp is None
+    assert constraint.extras == ()
 
 
 def test_accepts_unwrapped_readings():

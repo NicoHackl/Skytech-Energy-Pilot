@@ -101,6 +101,23 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        6,
+        """
+        CREATE TABLE IF NOT EXISTS device_extras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_name TEXT NOT NULL,
+            read_entity_id TEXT NOT NULL,
+            ai_suggestion INTEGER NOT NULL DEFAULT 0,
+            ai_hint TEXT DEFAULT '',
+            label TEXT DEFAULT '',
+            unit TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(device_name, read_entity_id)
+        );
+        """,
+    ),
 ]
 
 
