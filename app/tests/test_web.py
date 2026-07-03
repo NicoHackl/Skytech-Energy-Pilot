@@ -425,3 +425,45 @@ async def test_forecast_endpoint_returns_totals(aiohttp_client, tmp_path):
     assert data["unit"] == "kWh"
     assert any(v["key"] == "current_hour" for v in data["values"])
     assert data["orientations"][0]["label"] == "Ost"
+
+
+class _BoomPlanner:
+    """Planner-Stub, dessen Lauf/Lesen unerwartet wirft (für die Iron-Rule-8-Regression)."""
+
+    async def run(self):
+        raise AttributeError("kaputt in run()")
+
+    def latest_plan(self):
+        raise ValueError("beschädigtes plan_json")
+
+
+async def test_plan_run_returns_readable_json_on_unexpected_error(aiohttp_client, app):
+    """Iron Rule 8: ein unerwarteter Fehler im Lauf kommt als lesbares JSON, nie als HTTP-500.
+
+    Regression: Vorher entwich der Fehler ungefangen aus `plan_run` → aiohttp lieferte eine
+    HTML-500-Seite → im Frontend brach `response.json()` mit „SyntaxError: The string did not
+    match the expected pattern" (ohne Ursache für den User). Jetzt: HTTP 200 + `ok=false` +
+    lesbarer Fehlertext, den der Plan-Tab anzeigt.
+    """
+    app["planner"] = _BoomPlanner()  # vor dem Start setzen (App noch nicht eingefroren)
+    client = await aiohttp_client(app)
+
+    resp = await client.post("/api/plan/run")
+    assert resp.status == 200
+    data = await resp.json()  # darf NICHT werfen – Beweis: kein HTML, sondern JSON
+    assert data["ok"] is False
+    assert "AttributeError" in data["error"]
+    assert data["validation"]["ok"] is False
+    assert data["validation"]["errors"]
+
+
+async def test_plan_get_returns_null_plan_on_read_error(aiohttp_client, app):
+    """Iron Rule 8: ein Lesefehler beim Öffnen des Plan-Tabs bricht nicht als HTTP-500."""
+    app["planner"] = _BoomPlanner()
+    client = await aiohttp_client(app)
+
+    resp = await client.get("/api/plan")
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["plan"] is None
+    assert "ValueError" in data["error"]

@@ -751,7 +751,32 @@ async def plan_run(request: web.Request) -> web.Response:
         return web.json_response(
             {"ok": False, "error": "KI nicht konfiguriert (api_key fehlt)"}, status=503
         )
-    result = await planner.run()
+    # Iron Rule 8: Ein unerwarteter Fehler im Lauf darf NIE als HTTP-500 (HTML-Fehlerseite)
+    # nach außen dringen – sonst scheitert im Frontend das `response.json()` mit einer
+    # kryptischen „SyntaxError: The string did not match the expected pattern" statt einer
+    # lesbaren Ursache. Jeder Fehler wird daher hier zu einer strukturierten JSON-Antwort
+    # (mit klarem Text, den die UI anzeigt) und einem geloggten Traceback (EP-Logs/Export).
+    try:
+        result = await planner.run()
+    except Exception as exc:  # noqa: BLE001 - bewusst breit (kontrollierte, lesbare Fehler)
+        detail = f"{exc.__class__.__name__}: {exc}".strip()
+        logger = request.app.get("logger")
+        if logger is not None:
+            logger.error(
+                "Planungslauf abgebrochen (unerwarteter Fehler)",
+                exc_info=exc,
+                extra={"context": {"error": detail}},
+            )
+        # status=200: die UI soll die Meldung parsen und anzeigen können (kein erneuter
+        # 500-JSON-Bruch). Konsistent damit, dass der Endpoint auch bei Validierungs-
+        # ablehnungen `ok=false` mit HTTP 200 liefert.
+        return web.json_response(
+            {
+                "ok": False,
+                "error": detail,
+                "validation": {"ok": False, "errors": [detail], "clamped": []},
+            }
+        )
     payload: dict[str, Any] = {
         "ok": result.ok,
         "plan": result.plan,
@@ -781,11 +806,23 @@ async def plan_publish(request: web.Request) -> web.Response:
 
 
 async def plan_get(request: web.Request) -> web.Response:
-    """Liefert den zuletzt erzeugten Plan inkl. Validierungsergebnis (read-only)."""
+    """Liefert den zuletzt erzeugten Plan inkl. Validierungsergebnis (read-only).
+
+    Läuft beim Öffnen des Plan-Tabs. Ein Lesefehler (z.B. beschädigtes `plan_json`
+    in der DB) darf hier nicht als HTTP-500 enden – sonst bricht im Frontend das
+    `response.json()` genauso wie beim Lauf (Iron Rule 8). Fehler ⇒ `{plan: null}`.
+    """
     planner = request.app.get("planner")
     if planner is None:
         return web.json_response({"plan": None})
-    return web.json_response(planner.latest_plan() or {"plan": None})
+    try:
+        latest = planner.latest_plan()
+    except Exception as exc:  # noqa: BLE001 - kontrollierte, lesbare Fehler (Iron Rule 8)
+        logger = request.app.get("logger")
+        if logger is not None:
+            logger.error("Letzten Plan lesen fehlgeschlagen", exc_info=exc)
+        return web.json_response({"plan": None, "error": f"{exc.__class__.__name__}: {exc}"})
+    return web.json_response(latest or {"plan": None})
 
 
 async def ai_test(request: web.Request) -> web.Response:

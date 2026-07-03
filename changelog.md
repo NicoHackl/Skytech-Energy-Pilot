@@ -6,6 +6,25 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.31] - 2026-07-03
+
+### Behoben
+- **„Plan erzeugen" scheiterte mit „SyntaxError: The string did not match the expected
+  pattern" statt einer lesbaren Ursache.** Trat im Lauf (`planner.run()`) ein **unerwarteter**
+  Fehler auf, entwich er ungefangen aus dem Endpunkt `POST /api/plan/run`; aiohttp
+  beantwortete den Request dann mit einer **HTML-500-Seite**. Im Frontend brach daraufhin
+  `response.json()` mit der kryptischen JS-Meldung „SyntaxError: The string did not match the
+  expected pattern" ab — der User sah nie die eigentliche Fehlerursache (Verstoß gegen Iron
+  Rule 8: „die App blockiert nie, kontrollierte lesbare Fehler"). `plan_run` fängt unerwartete
+  Fehler jetzt ab und liefert eine **strukturierte JSON-Antwort** (`ok=false` + Fehlertext, den
+  der Plan-Tab anzeigt) samt geloggtem Traceback (EP-Logs/Fehler-Export). Der bereits
+  vorhandene Lesepfad `GET /api/plan` (Öffnen des Plan-Tabs) wurde gegen denselben
+  Ausfall (z.B. beschädigtes `plan_json` in der DB) abgesichert. **Hinweis:** Der
+  Heizstab-`max_temperatur`-Vorschlag (früherer Hardcode D-035) ist vollständig auf die
+  generischen Zusatz-Entitäten (D-047) migriert und war **nicht** die Ursache.
+- **Paket-Version (`app/energy_pilot/__init__.py`) auf den Stand der Add-on-Version gebracht**
+  (war 0.0.23 → 0.0.31), damit Statusseite/Logs die korrekte Version zeigen.
+
 ## [0.0.30] - 2026-07-02
 
 ### Hinzugefügt
