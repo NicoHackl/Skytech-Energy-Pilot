@@ -1,6 +1,7 @@
 """Tests für den aiohttp-Webserver und die JSON-API."""
 
 import io
+from datetime import datetime
 
 import pytest
 
@@ -467,3 +468,37 @@ async def test_plan_get_returns_null_plan_on_read_error(aiohttp_client, app):
     data = await resp.json()
     assert data["plan"] is None
     assert "ValueError" in data["error"]
+
+
+class _ContextBombResult:
+    """Ergebnis mit einem NICHT JSON-serialisierbaren Wert im Transparenz-`context`."""
+
+    ok = True
+    plan = {"plan_id": "x", "devices": []}
+    validation = {"ok": True, "errors": [], "clamped": []}
+    ai_call = {"provider": "gemini", "ok": True}
+    context = {"generated_at": datetime(2026, 7, 3, 12, 0)}  # datetime → json.dumps wirft
+    published = None
+    error = None
+
+
+class _ContextBombPlanner:
+    async def run(self):
+        return _ContextBombResult()
+
+
+async def test_plan_run_survives_non_serializable_context(aiohttp_client, app):
+    """Regression: der Lauf gelingt, aber die ANTWORT-Serialisierung (`context` mit datetime)
+    sprengte den Endpoint als HTTP-500 (HTML) – im Frontend „SyntaxError: Unexpected token '<'".
+
+    Diese Serialisierung lag außerhalb des ersten Guards (0.0.31), daher blieb der Fehler.
+    Jetzt liegt sie im try und `_safe_dumps` entschärft unbekannte Typen zu ihrem String.
+    """
+    app["planner"] = _ContextBombPlanner()
+    client = await aiohttp_client(app)
+
+    resp = await client.post("/api/plan/run")
+    assert resp.status == 200
+    data = await resp.json()  # darf NICHT werfen – Beweis: gültiges JSON, kein HTML
+    assert data["ok"] is True
+    assert "2026-07-03" in data["context"]["generated_at"]  # datetime → lesbarer String

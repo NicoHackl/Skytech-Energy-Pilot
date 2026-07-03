@@ -6,6 +6,22 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.32] - 2026-07-03
+
+### Behoben
+- **„Plan erzeugen" scheiterte trotz 0.0.31 weiter mit „SyntaxError: Unexpected token '<',
+  \"<html> <h\"... is not valid JSON".** Der Guard aus 0.0.31 umschloss nur den Lauf
+  (`planner.run()`), **nicht** die abschließende JSON-Serialisierung der Antwort. Der zu
+  Transparenzzwecken zurückgegebene `context` enthält beliebige gelesene Werte; ein einziger
+  nicht-JSON-fähiger Wert darin (z.B. ein `datetime`) ließ `web.json_response(payload)`
+  **außerhalb** des try werfen → aiohttp/Ingress lieferte eine **HTML-500-Seite** → im
+  Frontend brach `response.json()` erneut ab. Fix: Der komplette Handler (Lauf **und**
+  Serialisierung) liegt jetzt im try, und ein `_safe_dumps` (JSON mit `default=str`)
+  entschärft unbekannte Typen im Diagnose-`context` zu ihrem String, statt die ganze Antwort
+  zu blockieren (Iron Rule 8). Der Plan selbst besteht aus validierten Primitivwerten und ist
+  unverändert JSON-sicher. Dieselbe Absicherung greift jetzt auch für `POST /api/plan/publish`
+  und `GET /api/plan` (Serialisierung ebenfalls in den Guard gezogen).
+
 ## [0.0.31] - 2026-07-03
 
 ### Behoben

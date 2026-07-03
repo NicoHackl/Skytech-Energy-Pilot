@@ -6,6 +6,7 @@ Für M0/M1 bewusst einfach/funktional gehalten (vanilla SPA, siehe Decision D-01
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 from dataclasses import asdict
@@ -739,6 +740,16 @@ def _audit_prompt(db: sqlite3.Connection, action: str, length: int) -> None:
         pass
 
 
+def _safe_dumps(data: object) -> str:
+    """JSON-Dump, der unbekannte Typen (z.B. ein datetime im Transparenz-`context`) zu ihrem
+    String entschärft, statt den ganzen Endpoint mit einem 500 (HTML-Seite) zu sprengen.
+
+    Nur ein Sicherheitsnetz für Diagnose-/Anzeigewerte (Iron Rule 8): der eigentliche Plan
+    (`plan`) besteht aus validierten Primitivwerten und ist ohnehin JSON-sicher.
+    """
+    return json.dumps(data, ensure_ascii=False, default=str)
+
+
 async def plan_run(request: web.Request) -> web.Response:
     """Stößt einen Planungslauf an (KI-Aufruf → Validierung → Persistenz, D-008/D-041).
 
@@ -751,13 +762,27 @@ async def plan_run(request: web.Request) -> web.Response:
         return web.json_response(
             {"ok": False, "error": "KI nicht konfiguriert (api_key fehlt)"}, status=503
         )
-    # Iron Rule 8: Ein unerwarteter Fehler im Lauf darf NIE als HTTP-500 (HTML-Fehlerseite)
-    # nach außen dringen – sonst scheitert im Frontend das `response.json()` mit einer
-    # kryptischen „SyntaxError: The string did not match the expected pattern" statt einer
-    # lesbaren Ursache. Jeder Fehler wird daher hier zu einer strukturierten JSON-Antwort
-    # (mit klarem Text, den die UI anzeigt) und einem geloggten Traceback (EP-Logs/Export).
+    # Iron Rule 8: NICHTS aus diesem Handler darf als HTTP-500 (HTML-Fehlerseite) nach außen
+    # dringen – sonst scheitert im Frontend `response.json()` mit „SyntaxError: Unexpected
+    # token '<'..." statt einer lesbaren Ursache. Deshalb liegen der Lauf UND die JSON-
+    # Serialisierung der Antwort komplett im try: der Transparenz-`context` enthält beliebige
+    # gelesene Werte, von denen einer (z.B. ein datetime aus einem Wetter-Slot) `json.dumps`
+    # sprengen kann. `_safe_dumps` entschärft solche Typen zusätzlich zu ihrem String, damit
+    # ein Diagnosewert nie die ganze Antwort blockiert; jeder verbleibende Fehler wird zu einer
+    # garantiert serialisierbaren JSON-Antwort (klarer Text für die UI) + geloggtem Traceback.
     try:
         result = await planner.run()
+        payload: dict[str, Any] = {
+            "ok": result.ok,
+            "plan": result.plan,
+            "validation": result.validation,
+            "ai_call": result.ai_call,
+            "context": result.context,
+            "published": result.published,
+        }
+        if result.error:
+            payload["error"] = result.error
+        return web.json_response(payload, dumps=_safe_dumps)
     except Exception as exc:  # noqa: BLE001 - bewusst breit (kontrollierte, lesbare Fehler)
         detail = f"{exc.__class__.__name__}: {exc}".strip()
         logger = request.app.get("logger")
@@ -777,17 +802,6 @@ async def plan_run(request: web.Request) -> web.Response:
                 "validation": {"ok": False, "errors": [detail], "clamped": []},
             }
         )
-    payload: dict[str, Any] = {
-        "ok": result.ok,
-        "plan": result.plan,
-        "validation": result.validation,
-        "ai_call": result.ai_call,
-        "context": result.context,
-        "published": result.published,
-    }
-    if result.error:
-        payload["error"] = result.error
-    return web.json_response(payload)
 
 
 async def plan_publish(request: web.Request) -> web.Response:
@@ -801,8 +815,16 @@ async def plan_publish(request: web.Request) -> web.Response:
         return web.json_response(
             {"ok": False, "reason": "KI nicht konfiguriert (api_key fehlt)"}, status=503
         )
-    result = await planner.publish_latest()
-    return web.json_response(result)
+    try:
+        result = await planner.publish_latest()
+        return web.json_response(result, dumps=_safe_dumps)
+    except Exception as exc:  # noqa: BLE001 - kontrollierte, lesbare Fehler (Iron Rule 8)
+        logger = request.app.get("logger")
+        if logger is not None:
+            logger.error("Plan-Publish fehlgeschlagen", exc_info=exc)
+        return web.json_response(
+            {"ok": False, "reason": f"{exc.__class__.__name__}: {exc}"}
+        )
 
 
 async def plan_get(request: web.Request) -> web.Response:
@@ -817,12 +839,12 @@ async def plan_get(request: web.Request) -> web.Response:
         return web.json_response({"plan": None})
     try:
         latest = planner.latest_plan()
+        return web.json_response(latest or {"plan": None}, dumps=_safe_dumps)
     except Exception as exc:  # noqa: BLE001 - kontrollierte, lesbare Fehler (Iron Rule 8)
         logger = request.app.get("logger")
         if logger is not None:
             logger.error("Letzten Plan lesen fehlgeschlagen", exc_info=exc)
         return web.json_response({"plan": None, "error": f"{exc.__class__.__name__}: {exc}"})
-    return web.json_response(latest or {"plan": None})
 
 
 async def ai_test(request: web.Request) -> web.Response:
