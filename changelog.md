@@ -6,6 +6,29 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.35] - 2026-07-03
+
+### Geändert
+- **Geräte-Tab übersichtlicher: nur noch EIN Gerät auf einmal (Dropdown-Auswahl).** Statt alle
+  Geräte gestapelt anzuzeigen, wählt der User oben ein Gerät aus einem Dropdown; darunter
+  erscheinen genau dessen `ems_*`-Werte, Zusatz-Entitäten und (neu) die KI-Beschreibung. Die
+  Auswahl bleibt über die 10-Sekunden-Auto-Aktualisierung erhalten. Reine Frontend-Änderung
+  (`index.html`); der `/api/devices`-Vertrag ist unverändert (nur um `ai_prompt` je Gerät ergänzt).
+
+### Hinzugefügt
+- **Custom-Prompt je Gerät für die KI (D-051).** Im Geräte-Tab kann pro Gerät ein Freitext
+  hinterlegt werden, der der KI die **Funktion/Besonderheiten** des Geräts erklärt (z. B.
+  „versorgt die Fußbodenheizung, träge, darf bevorzugt mittags laufen“). Der Text ist rein
+  **advisorisch**: er geht als Kontext-Feld `funktion` je Gerät in den Planungs-Prompt ein
+  (nur bei gesetztem Text, Datenminimum Iron Rule 7) und wird **nie** ans HEMS übergeben. Leerer
+  Text löscht die Beschreibung. Persistent über Neustart/Update (neue Tabelle `device_prompts`,
+  Migration 7). Änderungen wirken sofort beim nächsten Plan (kein HEMS-Reload).
+  - Betrifft `database.py` (Migration 7), neues Modul `device_prompts.py`, `devices.py`
+    (`Device.ai_prompt`), `device_extras.py` (`apply_extras` mergt Prompts), `constraints.py`
+    (`DeviceConstraint.ai_prompt`), `plan_context.py` (Kontext-Feld `funktion` + Prompt-Regel),
+    `device_collector.py` (Snapshot-Feld `ai_prompt`), `server.py` (neuer Endpoint
+    `POST /api/devices/prompt`), `index.html`.
+
 ## [0.0.34] - 2026-07-03
 
 ### Behoben

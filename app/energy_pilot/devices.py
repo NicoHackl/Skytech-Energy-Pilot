@@ -136,6 +136,10 @@ class Device:
     output_unit: str = "watt"  # "watt" | "ampere"
     # User-gepflegte Zusatz-Entitäten (D-047); nach der HEMS-Discovery aus der DB gemergt.
     extras: tuple[DeviceExtra, ...] = ()
+    # User-gepflegte Freitext-Beschreibung dieses Geräts für die KI (D-051): erklärt der KI
+    # Funktion/Besonderheiten des Geräts. Rein advisorisch (geht als Kontext-Feld `funktion`
+    # in den Planungs-Prompt, nie an das HEMS); nach der Discovery aus der DB gemergt.
+    ai_prompt: str = ""
 
 
 @dataclass(frozen=True)

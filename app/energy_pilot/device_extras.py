@@ -76,13 +76,18 @@ def load_extras(db: sqlite3.Connection | None) -> dict[str, tuple[DeviceExtra, .
 
 
 def apply_extras(
-    devices: list[Device], extras_map: dict[str, tuple[DeviceExtra, ...]]
+    devices: list[Device],
+    extras_map: dict[str, tuple[DeviceExtra, ...]],
+    prompts: dict[str, str] | None = None,
 ) -> list[Device]:
-    """Hängt die geladenen Zusatz-Entitäten an die (per HEMS erkannten) Geräte an.
+    """Hängt die geladenen Zusatz-Entitäten und Geräte-Prompts an die Geräte an.
 
     Die Zuordnung erfolgt über den stabilen `device.name` (D-029). Geräte ohne Konfiguration
-    behalten eine leere `extras`-Tuple. Liefert neue `Device`-Instanzen (frozen dataclass).
+    behalten eine leere `extras`-Tuple bzw. einen leeren `ai_prompt`. `prompts` ist die
+    user-gepflegte KI-Beschreibung je Gerät (D-051, siehe device_prompts). Liefert neue
+    `Device`-Instanzen (frozen dataclass).
     """
+    prompts = prompts or {}
     result: list[Device] = []
     for device in devices:
         extras = extras_map.get(device.name, ())
@@ -94,6 +99,7 @@ def apply_extras(
                 device_class=device.device_class,
                 output_unit=device.output_unit,
                 extras=extras,
+                ai_prompt=prompts.get(device.name, ""),
             )
         )
     return result

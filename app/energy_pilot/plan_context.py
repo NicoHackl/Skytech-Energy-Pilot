@@ -204,6 +204,10 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
         "technische_freigabe": constraint.freigabe,
         "allowed_fields": suggestion_keys(constraint),
     }
+    # User-gepflegte Freitext-Beschreibung dieses Geräts (D-051): erklärt der KI dessen
+    # Funktion/Besonderheiten. Nur wenn gesetzt, um den Kontext schlank zu halten (Iron Rule 7).
+    if constraint.ai_prompt:
+        entry["funktion"] = constraint.ai_prompt
     if constraint.is_battery:
         entry["max_ladeleistung_w"] = constraint.max_power
         entry["hinweis"] = "immer Prio 1, immer freigegeben (D-016)"
@@ -272,7 +276,9 @@ DEFAULT_PLANNING_PROMPT = (
     "niedrige Temperaturen erhöhen tendenziell den Heizbedarf.\n"
     "- Beachte `zusatzwerte` je Gerät: der aktuelle Wert und der `hinweis` erklären dir "
     "dessen Bedeutung. Hat ein Zusatzwert `suggest=true`, liefere deinen Vorschlag exakt "
-    "unter dem Feldnamen aus `vorschlagsfeld` (nur diese Felder sind in `allowed_fields`).\n\n"
+    "unter dem Feldnamen aus `vorschlagsfeld` (nur diese Felder sind in `allowed_fields`).\n"
+    "- Hat ein Gerät das Feld `funktion`, ist das eine vom User verfasste Beschreibung seiner "
+    "Funktion/Besonderheiten; berücksichtige sie bei der Planung dieses Geräts.\n\n"
     "Gib zusätzlich `confidence` (0–100), eine kurze deutsche `reasoning`-Begründung "
     "und optionale `warnings` aus. Antworte ausschließlich als JSON gemäß dem "
     "vorgegebenen Schema."

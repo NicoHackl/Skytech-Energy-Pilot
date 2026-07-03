@@ -235,6 +235,38 @@ async def test_device_extra_post_rejects_suggestion_conflict(aiohttp_client, tmp
     assert res.status == 409
 
 
+async def test_device_prompt_post_sets_and_reflects(aiohttp_client, tmp_path):
+    # KI-Beschreibung je Gerät (D-051): speichern -> erscheint als ai_prompt in /api/devices.
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/prompt", json={
+        "device_name": "heizstab",
+        "prompt": "  Versorgt die Fußbodenheizung, träge.  ",
+    })
+    body = await res.json()
+    assert res.status == 200 and body["ok"] is True and body["is_custom"] is True
+
+    data = await (await client.get("/api/devices")).json()
+    assert data["devices"][0]["ai_prompt"] == "Versorgt die Fußbodenheizung, träge."
+
+
+async def test_device_prompt_post_empty_clears(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    await client.post("/api/devices/prompt", json={"device_name": "heizstab", "prompt": "x"})
+    res = await client.post("/api/devices/prompt", json={"device_name": "heizstab", "prompt": ""})
+    body = await res.json()
+    assert res.status == 200 and body["is_custom"] is False
+    data = await (await client.get("/api/devices")).json()
+    assert data["devices"][0]["ai_prompt"] == ""
+
+
+async def test_device_prompt_post_rejects_unknown_device(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/prompt", json={
+        "device_name": "spuelmaschine", "prompt": "x",
+    })
+    assert res.status == 400
+
+
 async def test_hems_rediscover_endpoint_syncs_devices(aiohttp_client, tmp_path):
     # Manueller HEMS-Sync (D-046): erkennt die Geräte neu und meldet Quelle + Anzahl.
     options = tmp_path / "options.json"

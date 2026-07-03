@@ -328,3 +328,31 @@ def test_build_context_includes_onecall_weather():
     )
     assert ctx["weather"]["source"] == "onecall"
     assert ctx["weather"]["timeline"] == "1day"
+
+
+def test_build_context_includes_device_funktion_only_when_set():
+    # KI-Beschreibung je Gerät (D-051): erscheint als Kontext-Feld `funktion`, nur wenn gesetzt.
+    devices = [
+        Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE, "watt",
+               ai_prompt="Versorgt die Fußbodenheizung, träge."),
+        Device("heizluefter_1", "Heizlüfter 1", "heizluefter_1", BINARY, "watt"),
+    ]
+    readings = {
+        "heizstab": {
+            "technische_freigabe": {"value": True},
+            "min_technisch": {"value": 500.0},
+            "max_technisch": {"value": 3000.0},
+        },
+        "heizluefter_1": {"technische_freigabe": {"value": True}, "leistung_w": {"value": 1500.0}},
+    }
+    ctx = build_context(
+        {}, {}, build_constraints(devices, readings), objectives_from_config({}),
+        valid_from="A", valid_until="B",
+    )
+    by_name = {d["name"]: d for d in ctx["devices"]}
+    assert by_name["heizstab"]["funktion"] == "Versorgt die Fußbodenheizung, träge."
+    assert "funktion" not in by_name["heizluefter_1"]  # ohne Prompt kein Feld (Datenminimum)
+
+
+def test_default_prompt_mentions_funktion():
+    assert "funktion" in DEFAULT_PLANNING_PROMPT

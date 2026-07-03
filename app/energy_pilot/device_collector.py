@@ -139,6 +139,7 @@ class DeviceCollector:
                     "label": device.label,
                     "class": device.device_class,
                     "output_unit": device.output_unit,
+                    "ai_prompt": device.ai_prompt,
                     "fields": fields_out,
                 }
             )

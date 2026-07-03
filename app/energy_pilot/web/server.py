@@ -27,6 +27,7 @@ from energy_pilot.device_extras import (
     suggestion_conflict,
     upsert_extra,
 )
+from energy_pilot.device_prompts import load_device_prompts, set_device_prompt
 from energy_pilot.devices import DeviceExtra
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import RingBufferHandler, log
@@ -99,6 +100,7 @@ def create_app(
             web.get("/api/devices", devices_get),
             web.post("/api/devices/extras", device_extra_post),
             web.delete("/api/devices/extras", device_extra_delete),
+            web.post("/api/devices/prompt", device_prompt_post),
             web.get("/api/forecast", forecast_get),
             web.get("/api/weather", weather_get),
             web.get("/api/weather/test", weather_test),
@@ -153,7 +155,7 @@ async def rediscover_devices(app: web.Application) -> tuple[list, str]:
     # Zusatz-Entitäten (D-047) an die erkannten Geräte mergen: einmalig den Heizstab-Default
     # anlegen (ersetzt Hardcode D-035), dann die user-gepflegte Konfiguration aus der DB anhängen.
     seed_defaults(db, devices)
-    devices = apply_extras(devices, load_extras(db))
+    devices = apply_extras(devices, load_extras(db), load_device_prompts(db))
     device_collector.set_devices(devices, source)
 
     allowlist = app.get("allowlist")
@@ -171,11 +173,12 @@ async def rediscover_devices(app: web.Application) -> tuple[list, str]:
 
 
 def reapply_device_extras(app: web.Application) -> None:
-    """Übernimmt geänderte Zusatz-Entitäten (D-047) ohne erneute HEMS-Discovery.
+    """Übernimmt geänderte Zusatz-Entitäten (D-047) und Geräte-Prompts (D-051) ohne HEMS-Discovery.
 
-    Lädt die Zusatz-Konfiguration neu aus der DB, hängt sie an die aktuell bekannten Geräte an
-    und baut die Allowlist neu auf (die neuen Lese-Entitäten werden so freigegeben). Wird nach
-    jeder CRUD-Änderung im Geräte-Tab aufgerufen – die HEMS-Geräteliste bleibt unangetastet.
+    Lädt Zusatz-Konfiguration und KI-Beschreibungen neu aus der DB, hängt sie an die aktuell
+    bekannten Geräte an und baut die Allowlist neu auf (die neuen Lese-Entitäten werden so
+    freigegeben). Wird nach jeder CRUD-Änderung im Geräte-Tab aufgerufen – die HEMS-Geräteliste
+    bleibt unangetastet.
     """
     from energy_pilot.allowlist import collect_entity_ids
 
@@ -183,7 +186,9 @@ def reapply_device_extras(app: web.Application) -> None:
     if device_collector is None:
         return
     db = app.get("db")
-    devices = apply_extras(list(device_collector.devices), load_extras(db))
+    devices = apply_extras(
+        list(device_collector.devices), load_extras(db), load_device_prompts(db)
+    )
     device_collector.set_devices(devices, device_collector.discovery_source)
 
     allowlist = app.get("allowlist")
@@ -550,6 +555,39 @@ async def device_extra_delete(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def device_prompt_post(request: web.Request) -> web.Response:
+    """Speichert die KI-Beschreibung eines Geräts (D-051). Body: `{device_name, prompt}`.
+
+    Leerer `prompt` löscht die Beschreibung (zurück auf „keine"). Der Text ist advisorisch:
+    er geht als Kontext-Feld `funktion` in den Planungs-Prompt ein, nie an das HEMS. Übernimmt
+    die Änderung sofort (kein HEMS-Reload nötig) via `reapply_device_extras`.
+    """
+    db = request.app.get("db")
+    device_collector = request.app.get("device_collector")
+    if db is None or device_collector is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank/Geräte"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+
+    device_name = str(body.get("device_name") or "").strip()
+    prompt = str(body.get("prompt") or "").strip()
+    known = {d.name for d in getattr(device_collector, "devices", [])}
+    if device_name not in known:
+        return web.json_response(
+            {"ok": False, "reason": f"unbekanntes Gerät: {device_name or '(leer)'}"}, status=400
+        )
+
+    is_custom = set_device_prompt(db, device_name, prompt)
+    reapply_device_extras(request.app)
+    _audit_prompt(
+        db, "device_prompt_updated" if is_custom else "device_prompt_reset", len(prompt),
+        subject=device_name,
+    )
+    return web.json_response({"ok": True, "device_name": device_name, "is_custom": is_custom})
+
+
 def _audit_extra(db: sqlite3.Connection, action: str, device_name: str, entity_id: str) -> None:
     """Protokolliert eine Zusatz-Entität-Änderung (Geräte-Tab); blockiert nie."""
     try:
@@ -728,12 +766,17 @@ async def prompt_post(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "is_custom": is_custom})
 
 
-def _audit_prompt(db: sqlite3.Connection, action: str, length: int) -> None:
-    """Protokolliert die Prompt-Änderung (nur Länge, kein Volltext); blockiert nie."""
+def _audit_prompt(
+    db: sqlite3.Connection, action: str, length: int, *, subject: str = PLANNING_PROMPT_KEY
+) -> None:
+    """Protokolliert eine Prompt-Änderung (nur Länge, kein Volltext); blockiert nie.
+
+    `subject` ist der globale Planungs-Prompt (Default) oder ein Gerätename (Geräte-Prompt, D-051).
+    """
     try:
         db.execute(
             "INSERT INTO audit (actor, action, subject, detail_json) VALUES (?, ?, ?, ?)",
-            ("user", action, PLANNING_PROMPT_KEY, f'{{"length": {length}}}'),
+            ("user", action, subject, f'{{"length": {length}}}'),
         )
         db.commit()
     except sqlite3.Error:  # pragma: no cover - Audit darf den Vorgang nie stören

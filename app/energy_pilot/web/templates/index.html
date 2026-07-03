@@ -62,10 +62,13 @@
 
   <section id="geraete" class="tab">
     <div class="toolbar">
+      <label for="device-select">Gerät:</label>
+      <select id="device-select" style="padding:.3rem .4rem;min-width:14rem;"></select>
       <button id="refresh-devices">Aktualisieren</button>
       <span id="device-source"></span>
     </div>
-    <p style="font-size:.8rem;color:#888;margin:.4rem 0;">Geräte kommen ausschließlich vom HEMS.
+    <p style="font-size:.8rem;color:#888;margin:.4rem 0;">Ein Gerät auswählen, um dessen Werte,
+      Zusatz-Entitäten und KI-Beschreibung zu sehen. Geräte kommen ausschließlich vom HEMS.
       Über <b>Zusatz-Entitäten</b> kannst du je Gerät weitere Werte <b>beliebiger Domäne</b>
       hinterlegen (<code>sensor</code>, <code>input_number</code>, <code>input_boolean</code>,
       <code>input_datetime</code>, <code>input_text</code>, <code>input_select</code> …), die EP liest –
@@ -252,29 +255,84 @@
         .join("");
     }
 
+    // Geräte-Tab: nur EIN Gerät auf einmal anzeigen (Dropdown-Auswahl). Der aktuell gewählte
+    // Gerätename bleibt über die 10s-Auto-Aktualisierung hinweg erhalten.
+    let devicesCache = [];
+    let selectedDevice = null;
+
     async function loadDevices() {
       const data = await (await fetch("api/devices")).json();
       const srcLabel = { hems: "HEMS-Schema", none: "keine (HEMS nicht verbunden)" }[data.source] || data.source;
       document.getElementById("device-source").textContent = " Quelle: " + srcLabel;
-      const html = (data.devices || [])
-        .map((d) => {
-          const rows = d.fields
-            .map((f) => {
-              let val;
-              if (f.value === null || f.value === undefined) val = "–";
-              else if (f.kind === "bool") val = f.value ? "Ja" : "Nein";
-              else val = fmt(f.value) + (f.unit ? " " + f.unit : "");
-              return `<tr><td>${esc(f.label)}</td><td class="num">${val}</td><td><code>${esc(f.entity_id)}</code></td><td class="src-${f.source}">${f.source}</td></tr>`;
-            })
-            .join("");
-          const cls = d.class === "controllable" ? "regelbar" : "binär";
-          return `<h2 style="font-size:1rem;margin-top:1rem;">${esc(d.label)} <small style="font-weight:normal;color:#888;">(${cls})</small></h2>
-            <table><thead><tr><th>Größe</th><th class="num">Wert</th><th>Entität</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table>
-            ${renderExtras(d)}`;
+      devicesCache = data.devices || [];
+      const names = devicesCache.map((d) => d.name);
+      // Auswahl beibehalten; sonst (leer/entfernt) auf das erste Gerät zurückfallen.
+      if (!selectedDevice || !names.includes(selectedDevice)) selectedDevice = names[0] || null;
+      renderDeviceOptions();
+      renderSelectedDevice();
+    }
+
+    // Dropdown-Optionen nur neu aufbauen, wenn sich die Geräteliste geändert hat (verhindert,
+    // dass das Auf-/Zuklappen bei jeder Auto-Aktualisierung zurückgesetzt wird).
+    function renderDeviceOptions() {
+      const sel = document.getElementById("device-select");
+      const sig = devicesCache.map((d) => `${d.name}|${d.label}|${d.class}`).join("~");
+      if (sel.dataset.sig !== sig) {
+        sel.innerHTML = devicesCache
+          .map((d) => {
+            const cls = d.class === "controllable" ? "regelbar" : "binär";
+            return `<option value="${esc(d.name)}">${esc(d.label)} (${cls})</option>`;
+          })
+          .join("");
+        sel.dataset.sig = sig;
+      }
+      sel.style.display = devicesCache.length ? "" : "none";
+      if (selectedDevice) sel.value = selectedDevice;
+    }
+
+    function renderSelectedDevice() {
+      const box = document.getElementById("device-list");
+      if (!devicesCache.length) {
+        box.innerHTML = "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen und die Geräte im HEMS anlegen – dann im HEMS-Tab „Geräte von HEMS neu laden“.</p>";
+        return;
+      }
+      const d = devicesCache.find((x) => x.name === selectedDevice);
+      box.innerHTML = d ? renderDeviceCard(d) : "";
+    }
+
+    function renderDeviceCard(d) {
+      const rows = d.fields
+        .map((f) => {
+          let val;
+          if (f.value === null || f.value === undefined) val = "–";
+          else if (f.kind === "bool") val = f.value ? "Ja" : "Nein";
+          else val = fmt(f.value) + (f.unit ? " " + f.unit : "");
+          return `<tr><td>${esc(f.label)}</td><td class="num">${val}</td><td><code>${esc(f.entity_id)}</code></td><td class="src-${f.source}">${f.source}</td></tr>`;
         })
         .join("");
-      document.getElementById("device-list").innerHTML =
-        html || "<p>Keine Geräte erkannt. HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen und die Geräte im HEMS anlegen – dann im HEMS-Tab „Geräte von HEMS neu laden“.</p>";
+      const cls = d.class === "controllable" ? "regelbar" : "binär";
+      return `<h2 style="font-size:1rem;margin-top:1rem;">${esc(d.label)} <small style="font-weight:normal;color:#888;">(${cls})</small></h2>
+        <table><thead><tr><th>Größe</th><th class="num">Wert</th><th>Entität</th><th>Quelle</th></tr></thead><tbody>${rows}</tbody></table>
+        ${renderExtras(d)}
+        ${renderDevicePrompt(d)}`;
+    }
+
+    // Freitext-Beschreibung des Geräts für die KI (D-051): erklärt der KI Funktion/Besonderheiten.
+    function renderDevicePrompt(d) {
+      const status = d.ai_prompt ? " (eigene Beschreibung)" : " (keine)";
+      return `<div class="device-prompt" data-device="${esc(d.name)}">
+          <h3 style="font-size:.85rem;margin:.8rem 0 .2rem;">KI-Beschreibung / Funktion dieses Geräts</h3>
+          <p style="font-size:.8rem;color:#888;margin:.2rem 0;">Optionaler Freitext, der der KI erklärt,
+             was dieses Gerät tut und wie es zu behandeln ist (z. B. „versorgt die Fußbodenheizung, träge,
+             darf bevorzugt mittags laufen“). Geht als Feld <code>funktion</code> in die Planung ein –
+             rein advisorisch, <strong>nicht</strong> ans HEMS. Wirkt sofort beim nächsten Plan.</p>
+          <textarea class="dev-prompt" style="width:100%;max-width:44rem;min-height:3.5rem;box-sizing:border-box;font-family:inherit;font-size:.85rem;">${esc(d.ai_prompt || "")}</textarea>
+          <div style="margin-top:.3rem;">
+            <button class="dev-prompt-save">Speichern</button>
+            <button class="dev-prompt-clear">Leeren</button>
+            <span class="dev-prompt-msg" style="font-size:.8rem;">${status}</span>
+          </div>
+        </div>`;
     }
 
     // Zusatz-Entität-Wert typgerecht anzeigen (Zahl/Bool/Text/Datum, D-048).
@@ -870,12 +928,49 @@
     document.getElementById("refresh-state").addEventListener("click", loadState);
     document.getElementById("refresh-devices").addEventListener("click", loadDevices);
 
-    // True, solange der User im Zusatz-Entitäten-Formular tippt – verhindert, dass die
-    // 10s-Auto-Aktualisierung die Eingabe überschreibt.
-    function isEditingExtras() {
+    // True, solange der User im Zusatz-Entitäten-Formular ODER der KI-Beschreibung tippt –
+    // verhindert, dass die 10s-Auto-Aktualisierung die Eingabe überschreibt.
+    function isEditingDevices() {
       const el = document.activeElement;
-      return !!(el && el.closest && el.closest("#geraete .extra-form"));
+      return !!(el && el.closest && el.closest("#geraete .extra-form, #geraete .device-prompt"));
     }
+
+    // Gerätewahl im Dropdown: nur die Anzeige umschalten (kein Neuladen nötig, Cache reicht).
+    document.getElementById("device-select").addEventListener("change", (e) => {
+      selectedDevice = e.target.value;
+      renderSelectedDevice();
+    });
+
+    // KI-Beschreibung je Gerät speichern/leeren (D-051), delegiert über die Geräteliste.
+    document.getElementById("device-list").addEventListener("click", async (e) => {
+      const box = e.target.closest(".device-prompt");
+      if (!box) return;
+      const isSave = e.target.classList.contains("dev-prompt-save");
+      const isClear = e.target.classList.contains("dev-prompt-clear");
+      if (!isSave && !isClear) return;
+      const device = box.dataset.device;
+      const ta = box.querySelector(".dev-prompt");
+      const msg = box.querySelector(".dev-prompt-msg");
+      if (isClear) ta.value = "";
+      msg.textContent = " … speichern …";
+      try {
+        const res = await fetch("api/devices/prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device_name: device, prompt: ta.value }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          const dev = devicesCache.find((x) => x.name === device);
+          if (dev) dev.ai_prompt = ta.value.trim();
+          msg.textContent = data.is_custom ? " ✅ gespeichert (eigene Beschreibung)" : " ✅ geleert (keine)";
+        } else {
+          msg.textContent = " ❌ " + (data.reason || res.status);
+        }
+      } catch (err) {
+        msg.textContent = " ❌ " + err;
+      }
+    });
 
     // Add/Bearbeiten/Löschen der Zusatz-Entitäten (D-047), delegiert über die Geräteliste.
     document.getElementById("device-list").addEventListener("click", async (e) => {
@@ -954,7 +1049,7 @@
     // Daten-, Geräte-, Prognose-, Grenzen- und Diagnoseansicht regelmäßig aktualisieren
     setInterval(() => {
       if (document.getElementById("daten").classList.contains("active")) loadState();
-      if (document.getElementById("geraete").classList.contains("active") && !isEditingExtras()) loadDevices();
+      if (document.getElementById("geraete").classList.contains("active") && !isEditingDevices()) loadDevices();
       if (document.getElementById("prognose").classList.contains("active")) { loadForecast(); loadWeather(); }
       if (document.getElementById("grenzen").classList.contains("active")) loadConstraints();
       if (document.getElementById("hems").classList.contains("active")) loadHems();

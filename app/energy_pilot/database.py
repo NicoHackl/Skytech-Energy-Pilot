@@ -118,6 +118,16 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        7,
+        """
+        CREATE TABLE IF NOT EXISTS device_prompts (
+            device_name TEXT PRIMARY KEY,
+            prompt TEXT NOT NULL DEFAULT '',
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        """,
+    ),
 ]
 
 
