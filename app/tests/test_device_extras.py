@@ -45,6 +45,24 @@ def test_upsert_and_load_roundtrip():
     assert ex.suggestion_entity_id == "sensor.ep_min_soc_auto_vorschlag"
 
 
+def test_upsert_and_load_roundtrip_write_original():
+    db = _db()
+    upsert_extra(
+        db, device_name="heizstab", read_entity_id="input_number.min_soc_auto",
+        ai_suggestion=True, write_original=True,
+    )
+    ex = load_extras(db)["heizstab"][0]
+    assert ex.write_original is True
+    assert ex.should_write_original is True
+
+    # Default (nicht übergeben) bleibt False.
+    upsert_extra(
+        db, device_name="heizstab", read_entity_id="input_number.other", ai_suggestion=True,
+    )
+    ex2 = next(e for e in load_extras(db)["heizstab"] if e.read_entity_id == "input_number.other")
+    assert ex2.write_original is False
+
+
 def test_upsert_updates_existing():
     db = _db()
     upsert_extra(db, device_name="heizstab", read_entity_id="input_number.x", ai_suggestion=False)

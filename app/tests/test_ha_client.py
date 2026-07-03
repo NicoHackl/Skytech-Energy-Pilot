@@ -95,6 +95,31 @@ async def test_set_state_omits_attributes_when_none():
 
 
 @pytest.mark.asyncio
+async def test_call_service_posts_entity_id_and_data():
+    session = _FakeSession({"context": {"id": "abc"}})
+    client = HAClient(token="t", session=session)
+
+    await client.call_service(
+        "input_number", "set_value", "input_number.ep_heizstab_max_temperatur", {"value": 55.0}
+    )
+
+    assert session.posts[0]["url"].endswith("/services/input_number/set_value")
+    assert session.posts[0]["json"] == {
+        "entity_id": "input_number.ep_heizstab_max_temperatur", "value": 55.0
+    }
+
+
+@pytest.mark.asyncio
+async def test_call_service_without_data_only_posts_entity_id():
+    session = _FakeSession({})
+    client = HAClient(token="t", session=session)
+
+    await client.call_service("input_boolean", "turn_on", "input_boolean.eco_modus")
+
+    assert session.posts[0]["json"] == {"entity_id": "input_boolean.eco_modus"}
+
+
+@pytest.mark.asyncio
 async def test_get_state_allowed_entity_passes_guard():
     allow = EntityAllowlist()
     allow.register_all({"sensor.pv_leistung": SOURCE_MEASUREMENT})

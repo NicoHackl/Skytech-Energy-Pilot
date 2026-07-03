@@ -373,22 +373,29 @@
         .map((x) => {
           const sug = x.ai_suggestion ? `<code>${esc(x.suggestion_entity_id)}</code>` : "<span style='color:#888;'>–</span>";
           const hint = x.ai_hint ? esc(x.ai_hint) : "";
+          // D-052: „In Original schreiben" nur bei aktivem KI-Vorschlag anzeigbar; wirksam nur
+          // bei schreibbarer Helfer-Domäne (should_write_original, nie bei sensor.*).
+          const orig = !x.ai_suggestion ? "<span style='color:#888;'>–</span>"
+            : x.should_write_original ? "Ja"
+            : x.write_original ? "Ja <small style='color:#888;'>(nicht wirksam, kein Helfer)</small>"
+            : "Nein";
           return `<tr>
               <td><code>${esc(x.read_entity_id)}</code>${x.label ? " <small style='color:#888;'>(" + esc(x.label) + ")</small>" : ""}</td>
               <td style="font-size:.75rem;color:#888;">${extraTypeInfo(x)}</td>
               <td>${x.ai_suggestion ? "Ja" : "Nein"}</td>
               <td>${sug}</td>
+              <td>${orig}</td>
               <td class="num src-${x.source}">${fmtExtraValue(x)}</td>
               <td style="font-size:.72rem;color:#888;max-width:16rem;">${hint}</td>
               <td style="white-space:nowrap;">
-                <button class="extra-edit" data-entity="${esc(x.read_entity_id)}" data-suggest="${x.ai_suggestion ? 1 : 0}" data-hint="${esc(x.ai_hint)}" data-label="${esc(x.label)}" data-unit="${esc(x.unit)}">Bearbeiten</button>
+                <button class="extra-edit" data-entity="${esc(x.read_entity_id)}" data-suggest="${x.ai_suggestion ? 1 : 0}" data-original="${x.write_original ? 1 : 0}" data-hint="${esc(x.ai_hint)}" data-label="${esc(x.label)}" data-unit="${esc(x.unit)}">Bearbeiten</button>
                 <button class="extra-del" data-entity="${esc(x.read_entity_id)}">Löschen</button>
               </td>
             </tr>`;
         })
         .join("");
       const table = (d.extras || []).length
-        ? `<table><thead><tr><th>Entität (gelesen)</th><th>Typ</th><th>KI-Vorschlag</th><th>Vorschlags-Sensor</th><th class="num">Wert</th><th>Hinweis für KI</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        ? `<table><thead><tr><th>Entität (gelesen)</th><th>Typ</th><th>KI-Vorschlag</th><th>Vorschlags-Sensor</th><th>In Original schreiben</th><th class="num">Wert</th><th>Hinweis für KI</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : "<p style='font-size:.8rem;color:#888;'>Noch keine Zusatz-Entitäten. Unten hinzufügen.</p>";
       return `<div class="extras" data-device="${esc(d.name)}">
           <h3 style="font-size:.85rem;margin:.6rem 0 .2rem;">Zusatz-Entitäten <small style="font-weight:normal;color:#888;">(zusätzlich zu den HEMS-Werten)</small></h3>
@@ -398,10 +405,20 @@
             <input class="ex-label" placeholder="Anzeigename (optional)" />
             <input class="ex-unit" placeholder="Einheit, z. B. % oder °C (optional)" />
             <label style="grid-column:1/3;font-size:.82rem;"><input type="checkbox" class="ex-suggest" /> KI liefert Vorschlagswert (<code>sensor.ep_&lt;entität&gt;_vorschlag</code>)</label>
+            <label style="grid-column:1/3;font-size:.82rem;"><input type="checkbox" class="ex-original" disabled /> In Original schreiben <small style="color:#888;">(nur bei KI-Vorschlag; wirkungslos bei <code>sensor.*</code> – dort entsteht nur der Vorschlags-Sensor)</small></label>
             <textarea class="ex-hint" placeholder="Freitext für die KI: was der Wert bedeutet und wie sie ihn verwenden/interpretieren soll." style="grid-column:1/3;min-height:3rem;"></textarea>
             <div style="grid-column:1/3;"><button class="extra-add">Speichern</button> <span class="extra-msg" style="font-size:.8rem;"></span></div>
           </div>
         </div>`;
+    }
+
+    // D-052: Checkbox „In Original schreiben" ist nur bei aktivem KI-Vorschlag bedienbar; wird
+    // der Vorschlag deaktiviert, verliert sie ihren Haken (Server würde die Kombination sonst ablehnen).
+    function updateExtraOriginalState(box) {
+      const suggest = box.querySelector(".ex-suggest");
+      const original = box.querySelector(".ex-original");
+      original.disabled = !suggest.checked;
+      if (!suggest.checked) original.checked = false;
     }
 
     async function loadForecast() {
@@ -991,6 +1008,8 @@
         box.querySelector(".ex-hint").value = e.target.dataset.hint || "";
         box.querySelector(".ex-label").value = e.target.dataset.label || "";
         box.querySelector(".ex-unit").value = e.target.dataset.unit || "";
+        updateExtraOriginalState(box);
+        box.querySelector(".ex-original").checked = e.target.dataset.original === "1";
         box.querySelector(".ex-entity").focus();
       } else if (e.target.classList.contains("extra-add")) {
         const msg = box.querySelector(".extra-msg");
@@ -1001,6 +1020,7 @@
           ai_hint: box.querySelector(".ex-hint").value,
           label: box.querySelector(".ex-label").value,
           unit: box.querySelector(".ex-unit").value,
+          write_original: box.querySelector(".ex-original").checked,
         };
         if (!payload.read_entity_id) { msg.textContent = "❌ Entität erforderlich"; return; }
         msg.textContent = " … speichern …";
@@ -1014,6 +1034,12 @@
           else { msg.textContent = "❌ " + (data.reason || res.status); }
         } catch (err) { msg.textContent = "❌ " + err; }
       }
+    });
+    // D-052: KI-Vorschlag-Checkbox schaltet die Original-Schreiben-Checkbox frei/blockiert sie.
+    document.getElementById("device-list").addEventListener("change", (e) => {
+      if (!e.target.classList.contains("ex-suggest")) return;
+      const box = e.target.closest(".extras");
+      if (box) updateExtraOriginalState(box);
     });
     document.getElementById("refresh-forecast").addEventListener("click", () => { loadForecast(); loadWeather(); });
     document.getElementById("test-weather").addEventListener("click", testWeather);

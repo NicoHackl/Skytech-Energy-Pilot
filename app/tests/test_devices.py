@@ -130,6 +130,43 @@ def test_device_extra_kind_and_capture_attrs_per_domain():
         assert ex.capture_attrs == attrs
 
 
+def test_device_extra_writable_helper_domains():
+    # D-052: nur echte Helfer-Domänen sind schreibbar; sensor/switch/light/binary_sensor nicht.
+    writable = {
+        "input_number.x", "number.x", "input_boolean.x", "input_datetime.x",
+        "input_text.x", "text.x", "input_select.x", "select.x",
+    }
+    not_writable = {"sensor.x", "switch.x", "light.x", "binary_sensor.x"}
+    for entity in writable:
+        assert DeviceExtra(read_entity_id=entity).is_writable_helper is True
+    for entity in not_writable:
+        assert DeviceExtra(read_entity_id=entity).is_writable_helper is False
+
+
+def test_device_extra_should_write_original_requires_all_three():
+    # D-052: nur wirksam, wenn write_original + ai_suggestion + schreibbarer Helfer zusammenkommen.
+    full = DeviceExtra(
+        read_entity_id="input_number.x", ai_suggestion=True, write_original=True
+    )
+    assert full.should_write_original is True
+
+    no_suggestion = DeviceExtra(
+        read_entity_id="input_number.x", ai_suggestion=False, write_original=True
+    )
+    assert no_suggestion.should_write_original is False
+
+    no_flag = DeviceExtra(
+        read_entity_id="input_number.x", ai_suggestion=True, write_original=False
+    )
+    assert no_flag.should_write_original is False
+
+    sensor_source = DeviceExtra(
+        read_entity_id="sensor.x", ai_suggestion=True, write_original=True
+    )
+    assert sensor_source.is_writable_helper is False
+    assert sensor_source.should_write_original is False
+
+
 def test_read_fields_extra_kind_follows_domain():
     ex_bool = DeviceExtra(read_entity_id="input_boolean.eco_modus", ai_suggestion=True)
     dev = Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, extras=(ex_bool,))

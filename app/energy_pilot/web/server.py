@@ -438,6 +438,11 @@ def _extras_payload(device_collector: object, device_name: str) -> list[dict]:
                 "kind": ex.kind,
                 "plan_field": ex.plan_field,
                 "suggestion_entity_id": ex.suggestion_entity_id if ex.ai_suggestion else None,
+                # D-052: rohes Flag + Helfer-Fähigkeit + effektiver Original-Schreibweg (fürs UI:
+                # Checkbox nur bei is_writable_helper anzeigbar, wirksam nur bei should_write_original).
+                "write_original": ex.write_original,
+                "is_writable_helper": ex.is_writable_helper,
+                "should_write_original": ex.should_write_original,
                 "value": current.get("value"),
                 "source": current.get("source", "none"),
                 # Gelesene HA-Attribute (D-048): input_number min/max, input_datetime has_date/time.
@@ -471,9 +476,10 @@ async def devices_get(request: web.Request) -> web.Response:
 async def device_extra_post(request: web.Request) -> web.Response:
     """Legt eine Zusatz-Entität (D-047) an oder aktualisiert sie (Geräte-Tab).
 
-    Body: `{device_name, read_entity_id, ai_suggestion, ai_hint?, label?, unit?}`. Validiert
-    Gerät, Entity-ID-Format und Vorschlags-Sensor-Kollision; übernimmt die Änderung sofort
-    (kein HEMS-Reload nötig). Liefert den abgeleiteten Vorschlags-Sensor zurück.
+    Body: `{device_name, read_entity_id, ai_suggestion, ai_hint?, label?, unit?, write_original?}`.
+    Validiert Gerät, Entity-ID-Format, Vorschlags-Sensor-Kollision und den Original-Schreibweg
+    (D-052: `write_original` nur zusammen mit `ai_suggestion` erlaubt); übernimmt die Änderung
+    sofort (kein HEMS-Reload nötig). Liefert den abgeleiteten Vorschlags-Sensor zurück.
     """
     db = request.app.get("db")
     device_collector = request.app.get("device_collector")
@@ -490,6 +496,7 @@ async def device_extra_post(request: web.Request) -> web.Response:
     ai_hint = str(body.get("ai_hint") or "").strip()
     label = str(body.get("label") or "").strip()
     unit = str(body.get("unit") or "").strip()
+    write_original = bool(body.get("write_original"))
 
     known = {d.name for d in getattr(device_collector, "devices", [])}
     if device_name not in known:
@@ -499,6 +506,11 @@ async def device_extra_post(request: web.Request) -> web.Response:
     if not is_valid_entity_id(read_entity_id):
         return web.json_response(
             {"ok": False, "reason": "ungültige Entity-ID (Format: <domain>.<object_id>)"},
+            status=400,
+        )
+    if write_original and not ai_suggestion:
+        return web.json_response(
+            {"ok": False, "reason": "„In Original schreiben“ setzt einen KI-Vorschlag voraus"},
             status=400,
         )
     if ai_suggestion:
@@ -520,16 +532,20 @@ async def device_extra_post(request: web.Request) -> web.Response:
         ai_hint=ai_hint,
         label=label,
         unit=unit,
+        write_original=write_original,
     )
     reapply_device_extras(request.app)
     _audit_extra(db, "device_extra_upserted", device_name, read_entity_id)
-    extra = DeviceExtra(read_entity_id=read_entity_id, ai_suggestion=ai_suggestion)
+    extra = DeviceExtra(
+        read_entity_id=read_entity_id, ai_suggestion=ai_suggestion, write_original=write_original
+    )
     return web.json_response(
         {
             "ok": True,
             "device_name": device_name,
             "read_entity_id": read_entity_id,
             "suggestion_entity_id": extra.suggestion_entity_id if ai_suggestion else None,
+            "should_write_original": extra.should_write_original,
         }
     )
 

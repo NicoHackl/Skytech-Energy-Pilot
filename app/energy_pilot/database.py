@@ -128,6 +128,12 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        8,
+        """
+        ALTER TABLE device_extras ADD COLUMN write_original INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
 ]
 
 

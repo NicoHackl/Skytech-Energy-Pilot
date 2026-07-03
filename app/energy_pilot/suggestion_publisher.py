@@ -7,9 +7,15 @@ an HEMS (das ist M3). Der Schreibvertrag je Gerät stammt aus
 `plan_schema.suggestion_keys` (D-030/D-034/D-037/D-035); hier werden nur die im Plan
 tatsächlich gesetzten Felder geschrieben.
 
-Trennung: `build_suggestion_entities()` ist rein (testbar, ohne IO); `publish_suggestions()`
-schreibt über den HA-Client und fängt Fehler je Entität ab — die App blockiert nie
-(Iron Rule 8).
+**Ausnahme Original-Schreibweg (D-052):** ist bei einer Zusatz-Entität (D-047) „In Original
+schreiben" aktiv (`DeviceExtra.should_write_original`), schreibt EP den Vorschlag zusätzlich
+über einen HA-Service (`set_value`/`select_option`/`set_datetime`/`turn_on`/`turn_off`) in die
+Original-Entität zurück. Das gilt **nur** für echte Helfer-Domänen; `sensor.*` bleibt immer
+read-only, dort entsteht nur der `_vorschlag`-Sensor.
+
+Trennung: `build_suggestion_entities()`/`build_original_writes()` sind rein (testbar, ohne
+IO); `publish_suggestions()` schreibt über den HA-Client und fängt Fehler je Entität ab — die
+App blockiert nie (Iron Rule 8).
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ from energy_pilot.logging_setup import log
 from energy_pilot.plan_schema import SUGGESTION_FIELDS
 
 if TYPE_CHECKING:
-    from energy_pilot.devices import Device
+    from energy_pilot.devices import Device, DeviceExtra
     from energy_pilot.ha_client import HAClient
 
 # Anzeigename je festem Vorschlagsfeld (Watt/Ampere teilen sich den Begriff, Einheit unten).
@@ -50,6 +56,18 @@ class SuggestionEntity:
     entity_id: str
     state: str
     attributes: dict
+    device: str
+    field_name: str
+
+
+@dataclass
+class OriginalWrite:
+    """Ein Original-Schreibvorgang (D-052, „In Original schreiben") via HA-Service."""
+
+    entity_id: str
+    domain: str
+    service: str
+    data: dict
     device: str
     field_name: str
 
@@ -161,6 +179,71 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
     return entities
 
 
+def _service_payload(extra: DeviceExtra, value: object) -> tuple[str, str, dict] | None:
+    """Leitet Service/Domäne/Nutzdaten für den Original-Schreibweg (D-052) aus dem Typ ab.
+
+    Domäne = `extra.domain` (der Service liegt HA-idiomatisch im selben Namensraum wie die
+    Entität, z.B. `input_number.set_value`, `select.select_option`). `None` bei ungültigem
+    Zahlenwert oder unbekanntem Typ (`auto`, nur bei `sensor.*` – dort greift der
+    Original-Schreibweg wegen `is_writable_helper` ohnehin nie).
+    """
+    domain = extra.domain
+    if extra.kind == "number":
+        try:
+            return domain, "set_value", {"value": float(value)}
+        except (TypeError, ValueError):
+            return None
+    if extra.kind == "text":
+        return domain, "set_value", {"value": str(value)}
+    if extra.kind == "select":
+        return domain, "select_option", {"option": str(value)}
+    if extra.kind == "datetime":
+        return domain, "set_datetime", {"datetime": str(value)}
+    if extra.kind == "bool":
+        return domain, ("turn_on" if bool(value) else "turn_off"), {}
+    return None
+
+
+def build_original_writes(plan: dict, devices: list[Device]) -> list[OriginalWrite]:
+    """Leitet aus einem validierten Plan die Original-Schreibvorgänge ab (D-052).
+
+    Nur für Zusatz-Entitäten mit `should_write_original` (aktives `write_original`, aktiver
+    `ai_suggestion` **und** schreibbare Helfer-Domäne, kein `sensor.*`).
+    """
+    by_name = {device.name: device for device in devices}
+    writes: list[OriginalWrite] = []
+    for entry in plan.get("devices", []):
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        device = by_name.get(name)
+        if device is None:
+            continue
+        for extra in device.extras:
+            if not extra.should_write_original:
+                continue
+            value = entry.get(extra.plan_field)
+            if value is None:
+                continue
+            payload = _service_payload(extra, value)
+            if payload is None:
+                continue
+            domain, service, data = payload
+            writes.append(
+                OriginalWrite(
+                    entity_id=extra.read_entity_id,
+                    domain=domain,
+                    service=service,
+                    data=data,
+                    device=name,
+                    field_name=extra.plan_field,
+                )
+            )
+    return writes
+
+
 async def publish_suggestions(
     ha_client: HAClient | None,
     plan: dict,
@@ -171,12 +254,16 @@ async def publish_suggestions(
 ) -> PublishResult:
     """Schreibt die Vorschlagswerte eines validierten Plans als HA-Sensoren.
 
+    Zusätzlich (D-052): schreibt aktivierte `should_write_original`-Zusatzentitäten per
+    HA-Service in ihre Original-Entität zurück (`build_original_writes`).
+
     Fehler je Entität werden gefangen (`written`/`failed`) – die Methode wirft nie
     (Iron Rule 8). Ohne HA-Client passiert nichts (klare Begründung im Ergebnis).
     Jeder Schreibvorgang wird als `suggestions_published` auditiert.
     """
     plan_id = plan.get("plan_id")
     entities = build_suggestion_entities(plan, devices)
+    original_writes = build_original_writes(plan, devices)
 
     if ha_client is None:
         if logger is not None:
@@ -184,7 +271,7 @@ async def publish_suggestions(
                 plan_id=plan_id)
         return PublishResult(ok=False, reason="kein HA-Client konfiguriert")
 
-    if not entities:
+    if not entities and not original_writes:
         return PublishResult(ok=True, reason="keine Vorschlagswerte im Plan")
 
     written: list[str] = []
@@ -196,6 +283,15 @@ async def publish_suggestions(
         except Exception as exc:  # kontrolliert: ein Fehler bricht den Lauf nie ab
             failed.append(
                 {"entity_id": entity.entity_id, "error": str(exc).strip() or exc.__class__.__name__}
+            )
+
+    for write in original_writes:
+        try:
+            await ha_client.call_service(write.domain, write.service, write.entity_id, write.data)
+            written.append(write.entity_id)
+        except Exception as exc:  # kontrolliert: ein Fehler bricht den Lauf nie ab
+            failed.append(
+                {"entity_id": write.entity_id, "error": str(exc).strip() or exc.__class__.__name__}
             )
 
     result = PublishResult(ok=not failed, written=written, failed=failed)

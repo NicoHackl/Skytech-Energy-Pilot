@@ -44,6 +44,19 @@ _DOMAIN_KIND: dict[str, str] = {
     "select": "select",
 }
 
+# Domänen echter HA-„Helfer" (D-052): einzige Domänen, in die EP per Service zurückschreiben
+# darf ("In Original schreiben"). `switch`/`light`/`binary_sensor` sind Geräte-Entitäten, kein
+# Helfer, und `sensor` ist grundsätzlich read-only – dort entsteht nur der `_vorschlag`-Sensor.
+_WRITABLE_HELPER_DOMAINS: frozenset[str] = frozenset(
+    {
+        "input_number", "number",
+        "input_boolean",
+        "input_datetime",
+        "input_text", "text",
+        "input_select", "select",
+    }
+)
+
 
 @dataclass(frozen=True)
 class DeviceExtra:
@@ -63,6 +76,12 @@ class DeviceExtra:
     Diese Vorschläge sind rein **advisorisch** (nur HA-Sensor, D-047): sie werden NICHT an
     das HEMS übergeben (das HEMS kennt sie nicht); der Freitext (`ai_hint`) erklärt der KI
     Bedeutung und Verwendung des Werts.
+
+    `write_original` (D-052, „In Original schreiben"): nur bei `ai_suggestion=True` wählbar.
+    Ist sie aktiv, schreibt EP den KI-Vorschlag zusätzlich zum `sensor.ep_*_vorschlag` per
+    HA-Service in die Original-Entität zurück – aber **nur**, wenn diese ein echter,
+    schreibbarer Helfer ist (`is_writable_helper`). Bei `sensor.*` (immer read-only) entsteht
+    unabhängig von `write_original` nur der `_vorschlag`-Sensor (siehe `should_write_original`).
     """
 
     read_entity_id: str  # z.B. "input_number.min_soc_auto" (die von EP gelesene Quelle)
@@ -70,6 +89,7 @@ class DeviceExtra:
     ai_hint: str = ""  # Freitext für die KI: was der Wert bedeutet / wie zu verwenden
     label: str = ""  # Anzeigename (leer => aus der object_id abgeleitet)
     unit: str = ""  # optionale Einheit für Anzeige/HA-Sensor (z.B. "°C", "%")
+    write_original: bool = False  # D-052: Vorschlag zusätzlich in die Original-Entität schreiben
 
     @property
     def domain(self) -> str:
@@ -123,6 +143,21 @@ class DeviceExtra:
     def display_label(self) -> str:
         """Anzeigename: user-gepflegt oder aus der object_id abgeleitet."""
         return self.label.strip() or self.object_id.replace("_", " ").title()
+
+    @property
+    def is_writable_helper(self) -> bool:
+        """True, wenn die Quell-Domäne ein echter HA-Helfer ist (D-052), kein `sensor.*`."""
+        return self.domain in _WRITABLE_HELPER_DOMAINS
+
+    @property
+    def should_write_original(self) -> bool:
+        """Effektiver Original-Schreibweg (D-052): `write_original` + Vorschlag + Helfer.
+
+        Schützt gegen inkonsistent gepflegte/persistierte Kombinationen (z.B. `write_original`
+        ohne `ai_suggestion`, oder auf einer `sensor.*`-Quelle) – der tatsächliche Schreibweg
+        richtet sich immer nach dieser Eigenschaft, nie nach dem rohen `write_original`-Flag.
+        """
+        return self.write_original and self.ai_suggestion and self.is_writable_helper
 
 
 @dataclass(frozen=True)

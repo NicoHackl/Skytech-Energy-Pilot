@@ -99,6 +99,24 @@ class HAClient:
             resp.raise_for_status()
             return await resp.json()
 
+    async def call_service(
+        self, domain: str, service: str, entity_id: str, data: dict[str, Any] | None = None
+    ) -> Any:
+        """Ruft einen HA-Service auf (POST /api/services/<domain>/<service>).
+
+        Genutzt für den Original-Schreibweg „In Original schreiben" (D-052): schreibt einen
+        KI-Vorschlag über den passenden Helfer-Service (z.B. `input_number.set_value`,
+        `input_select.select_option`) statt eines rohen State-Overwrites zurück in die
+        Original-Entität – damit greifen HAs eigene Validierung/Min-Max/Optionspool.
+        """
+        session = await self._ensure_session()
+        body: dict[str, Any] = {"entity_id": entity_id, **(data or {})}
+        async with session.post(
+            f"{self.base_url}/services/{domain}/{service}", headers=self.headers, json=body
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     async def open_websocket(self) -> aiohttp.ClientWebSocketResponse:
         """Öffnet die WebSocket-Verbindung (Auth-Handshake folgt in M1)."""
         session = await self._ensure_session()

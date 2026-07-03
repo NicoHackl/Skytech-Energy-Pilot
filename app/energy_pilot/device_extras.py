@@ -55,6 +55,7 @@ def _row_to_extra(row: sqlite3.Row) -> DeviceExtra:
         ai_hint=row["ai_hint"] or "",
         label=row["label"] or "",
         unit=row["unit"] or "",
+        write_original=bool(row["write_original"]),
     )
 
 
@@ -64,8 +65,8 @@ def load_extras(db: sqlite3.Connection | None) -> dict[str, tuple[DeviceExtra, .
         return {}
     try:
         rows = db.execute(
-            "SELECT device_name, read_entity_id, ai_suggestion, ai_hint, label, unit "
-            "FROM device_extras ORDER BY device_name, sort_order, id"
+            "SELECT device_name, read_entity_id, ai_suggestion, ai_hint, label, unit, "
+            "write_original FROM device_extras ORDER BY device_name, sort_order, id"
         ).fetchall()
     except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (Iron Rule 8)
         return {}
@@ -114,18 +115,33 @@ def upsert_extra(
     ai_hint: str = "",
     label: str = "",
     unit: str = "",
+    write_original: bool = False,
 ) -> None:
-    """Legt eine Zusatz-Entität an oder aktualisiert sie (UPSERT auf device_name+entity)."""
+    """Legt eine Zusatz-Entität an oder aktualisiert sie (UPSERT auf device_name+entity).
+
+    `write_original` (D-052) ist nur bei `ai_suggestion=True` wirksam (siehe
+    `DeviceExtra.should_write_original`) – hier trotzdem roh übernommen, damit ein späteres
+    Aktivieren von `ai_suggestion` den zuvor gewählten Original-Schreibweg nicht verliert.
+    """
     if db is None:
         return
     db.execute(
         "INSERT INTO device_extras "
-        "(device_name, read_entity_id, ai_suggestion, ai_hint, label, unit, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, datetime('now')) "
+        "(device_name, read_entity_id, ai_suggestion, ai_hint, label, unit, write_original, "
+        "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) "
         "ON CONFLICT(device_name, read_entity_id) DO UPDATE SET "
         "ai_suggestion = excluded.ai_suggestion, ai_hint = excluded.ai_hint, "
-        "label = excluded.label, unit = excluded.unit, updated_at = datetime('now')",
-        (device_name, read_entity_id.strip(), 1 if ai_suggestion else 0, ai_hint, label, unit),
+        "label = excluded.label, unit = excluded.unit, "
+        "write_original = excluded.write_original, updated_at = datetime('now')",
+        (
+            device_name,
+            read_entity_id.strip(),
+            1 if ai_suggestion else 0,
+            ai_hint,
+            label,
+            unit,
+            1 if write_original else 0,
+        ),
     )
     db.commit()
 

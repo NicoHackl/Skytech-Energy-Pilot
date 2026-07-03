@@ -6,6 +6,26 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.36] - 2026-07-03
+
+### Hinzugefügt
+- **„In Original schreiben" für Zusatz-Entitäten (D-052).** Zusätzlich zur Checkbox „KI liefert
+  Vorschlagswert" gibt es je Zusatz-Entität nun eine zweite Checkbox „In Original schreiben"
+  (nur wählbar, wenn der KI-Vorschlag aktiv ist). Ist sie gesetzt, schreibt EP den Vorschlag
+  **zusätzlich** zum bestehenden `sensor.ep_<obj>_vorschlag` per HA-Service direkt in die
+  Original-Entität zurück (`input_number.set_value`, `input_select.select_option`,
+  `input_datetime.set_datetime`, `input_text.set_value`, `input_boolean.turn_on`/`turn_off` –
+  je nach Typ). Gilt **nur** für echte, schreibbare Helfer (`input_number`/`number`,
+  `input_boolean`, `input_datetime`, `input_text`/`text`, `input_select`/`select`); bei
+  `sensor.*`-Quellen (immer read-only) entsteht unverändert nur der `_vorschlag`-Sensor, die
+  Checkbox bleibt dort wirkungslos.
+  - Betrifft `devices.py` (`DeviceExtra.write_original`, `is_writable_helper`,
+    `should_write_original`), `database.py` (Migration 8, Spalte `write_original`),
+    `device_extras.py` (Persistenz), `ha_client.py` (neu: `call_service`),
+    `suggestion_publisher.py` (`build_original_writes`, `OriginalWrite`, Schreibweg in
+    `publish_suggestions`), `server.py` (`device_extra_post`-Validierung + `_extras_payload`),
+    `index.html` (Checkbox, an KI-Vorschlag gekoppelt, Anzeige des effektiven Zustands).
+
 ## [0.0.35] - 2026-07-03
 
 ### Geändert

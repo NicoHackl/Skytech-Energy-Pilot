@@ -235,6 +235,60 @@ async def test_device_extra_post_rejects_suggestion_conflict(aiohttp_client, tmp
     assert res.status == 409
 
 
+async def test_device_extra_post_rejects_write_original_without_suggestion(aiohttp_client, tmp_path):
+    # D-052: "In Original schreiben" setzt einen aktiven KI-Vorschlag voraus.
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "input_number.min_soc_auto",
+        "ai_suggestion": False,
+        "write_original": True,
+    })
+    assert res.status == 400
+
+
+async def test_device_extra_post_write_original_persists_and_reports_effective_state(
+    aiohttp_client, tmp_path
+):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "input_number.min_soc_auto",
+        "ai_suggestion": True,
+        "write_original": True,
+    })
+    body = await res.json()
+    assert res.status == 200 and body["ok"] is True
+    assert body["should_write_original"] is True
+
+    data = await (await client.get("/api/devices")).json()
+    extras = {e["read_entity_id"]: e for e in data["devices"][0]["extras"]}
+    ex = extras["input_number.min_soc_auto"]
+    assert ex["write_original"] is True
+    assert ex["is_writable_helper"] is True
+    assert ex["should_write_original"] is True
+
+
+async def test_device_extra_post_write_original_ineffective_for_sensor(aiohttp_client, tmp_path):
+    # sensor.* ist read-only: write_original wird zwar gespeichert, wirkt aber nie (D-052).
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "sensor.aussentemperatur",
+        "ai_suggestion": True,
+        "write_original": True,
+    })
+    body = await res.json()
+    assert res.status == 200 and body["should_write_original"] is False
+
+    data = await (await client.get("/api/devices")).json()
+    extras = {e["read_entity_id"]: e for e in data["devices"][0]["extras"]}
+    ex = extras["sensor.aussentemperatur"]
+    assert ex["write_original"] is True
+    assert ex["is_writable_helper"] is False
+    assert ex["should_write_original"] is False
+
+
 async def test_device_prompt_post_sets_and_reflects(aiohttp_client, tmp_path):
     # KI-Beschreibung je Gerät (D-051): speichern -> erscheint als ai_prompt in /api/devices.
     client, _ = await _discovered_client(aiohttp_client, tmp_path)
