@@ -1,0 +1,252 @@
+%% =============================================================================
+%%  Skytech Energy Pilot – Entitäten-Datenfluss (HA ↔ HEMS ↔ EP ↔ KI)
+%% =============================================================================
+%%  ZWECK
+%%    Kompakter LESE-/SCHREIB-Fluss auf Kategorie-Ebene (OBEN) zwischen Home
+%%    Assistant, HEMS, Energy Pilot (EP) und der KI. Jede Kategorie-Box im
+%%    Hauptchart ist eine Sammelbox – die einzelnen Entitäten/Helfer/
+%%    API-Endpunkte dahinter stehen in der LEGENDE (UNTEN), gruppiert exakt
+%%    wie sie im Hauptchart verwendet werden (gleiche Farbe = gleiche Gruppe).
+
+%%  RENDERN
+%%    - VS Code: Extension "Mermaid Editor" (Datei direkt öffnen, kein Fence nötig)
+%%    - CLI:     npx @mermaid-js/mermaid-cli -i entitäten_flowchart.mmd -o entitaeten_flowchart.png
+%%    - Online:  https://mermaid.live  (Dateiinhalt einfügen)
+
+%%  AUFBAU DER DATEI
+%%    1) HAUPTCHART   – Systeme HA/HEMS/EP/CLOUD als Sammelboxen + Kernflüsse
+%%    2) LEGENDE      – gleiche Gruppen, aber mit jeder einzelnen Entität/
+%%                       jedem Helfer/jedem API-Endpunkt ausgeschrieben
+%%    3) STYLING       – classDef + class-Zuordnung, Farbe = Gruppentyp
+
+%%  KONVENTIONEN
+%%    - „liest“ = EP liest aus HA;  „schreibt“ = EP schreibt nach HA
+%%    - NEUES GERÄT: eigenen ems_*-Block in der Legende (LEG_EMS_*) ergänzen,
+%%      Hauptchart-Box "ha_ems" bleibt unverändert (Sammelbox für alle Geräte).
+%% =============================================================================
+
+flowchart TB
+
+%% ###########################################################################
+%% ##  1) HAUPTCHART · kompakt, nur Sammelboxen + Kernflüsse
+%% ###########################################################################
+
+subgraph SYSTEM[" "]
+direction TB
+
+subgraph HA["🏠 Home Assistant · Entitäten-Store"]
+  direction TB
+  ha_mess["📊 Haus-Messgrößen\n8 Sensoren · Ø 1/15/60min"]
+  ha_ems["⚙️ ems_* Gerätewerte\n4 Geräte · HEMS-Domäne · EP liest"]
+  ha_extra["➕ Zusatz-Entitäten\nbeliebige Domäne · user-gepflegt"]
+  ha_pv["☀️ PV-Prognose\nje Ausrichtung × 4 Werte"]
+  ha_zone["📍 zone.home\nlat/lon → Wetter"]
+  ha_epw["📤 EP-Vorschläge\nsensor.ep_*_vorschlag · EP schreibt"]
+  ha_stat["🩺 EP-Status\nsensor.ep_plan_status / _hems_verbindung"]
+end
+
+subgraph HEMS["⚙️ HEMS-Addon · Echtzeitregelung (1–2s)"]
+  direction TB
+  hems_core["Regler\nverteilt PV-Überschuss · besitzt ems_*"]
+  hems_api["REST-API\nsiehe Legende LEG_API"]
+end
+
+subgraph EP["🧭 Energy Pilot · KI-Planung (plant, regelt nie)"]
+  direction TB
+  ep_client["Gateways\nHAClient + HEMSClient"]
+  ep_collect["Collectors\nState/Device/Forecast/Weather/HEMSStatus"]
+  ep_allow["Allowlist-Gate\nEP liest nur freigegebene Entitäten"]
+  ep_ctx["Planner\nbuild_context + Prompt + Schema"]
+  ep_val["Validator\nharte Grenzen + JSON-Schema"]
+  ep_pub["Publisher\nSuggestion + Status"]
+  ep_db[("SQLite /data\nentity_map · plans · allowlist · audit")]
+end
+
+subgraph CLOUD["☁️ Cloud (extern)"]
+  direction TB
+  ai_gemini(["KI · Gemini\nKontext+Prompt → Plan-JSON · kein HA-Zugriff"])
+  owm(["OpenWeatherMap\nnur EP-intern"])
+end
+
+%% -- A) HA → EP (liest) --
+ha_mess  --> ep_collect
+ha_ems   --> ep_collect
+ha_extra --> ep_collect
+ha_pv    --> ep_collect
+ha_zone  --> ep_collect
+
+%% -- B) EP → HA (schreibt) --
+ep_pub --> ha_epw
+ep_pub --> ha_stat
+
+%% -- C) EP-intern (Sammeln → Planen → KI → Validieren → Publizieren) --
+ep_collect --> ep_ctx
+ep_ctx -->|Kontext+Prompt+Schema| ai_gemini
+ai_gemini -->|Plan-JSON| ep_val
+ep_val --> ep_pub
+ep_val -.Plan+Audit.-> ep_db
+ep_client -. Transport .- ep_collect
+ep_client -. Transport .- ep_pub
+ep_allow -. gilt für .- ep_collect
+
+%% -- D) HEMS-Kopplung --
+hems_core -->|besitzt/regelt| ha_ems
+hems_api  -->|Schema/Status| ep_collect
+ep_client -. künftig POST /api/set (M3+) .-> hems_api
+
+%% -- E) Wetter --
+owm -->|Prognose| ep_collect
+
+end
+
+%% ###########################################################################
+%% ##  2) LEGENDE · gleiche Gruppen wie oben, aber mit jeder Einzel-Entität
+%% ###########################################################################
+
+subgraph LEGENDE["📖 Legende · Einzel-Entitäten / Helfer / API-Endpunkte je Gruppe"]
+  direction TB
+
+  subgraph LEG_ROW1[" "]
+  direction LR
+
+  subgraph LEG_HA_MESS["→ ha_mess: Haus-Messgrößen (EP liest)"]
+    direction TB
+    m_pv["pv_power · W · Ø"]
+    m_load["house_load · W · Ø"]
+    m_gridp["grid_power · W · Ø"]
+    m_imp["grid_import · W · Ø"]
+    m_exp["grid_export · W · Ø"]
+    m_batp["battery_power · W · Ø"]
+    m_soc["battery_soc · % · Letztwert"]
+    m_temp["water_temperature · °C · Letztwert"]
+  end
+
+  subgraph LEG_HA_EMS["→ ha_ems: ems_* je Gerät (HEMS-Domäne, EP liest)"]
+    direction TB
+    subgraph LEG_EMS_BAT["Batterie · immer Prio1/freigegeben"]
+      direction TB
+      eb_f["ems_batterie_technische_freigabe"]
+      eb_min["ems_batterie_min_technisch_w"]
+      eb_max["ems_batterie_max_technisch_w"]
+    end
+    subgraph LEG_EMS_HS["Heizstab · regelbar"]
+      direction TB
+      eh_f["ems_heizstab_technische_freigabe"]
+      eh_min["ems_heizstab_min_technisch_w"]
+      eh_max["ems_heizstab_max_technisch_w"]
+    end
+    subgraph LEG_EMS_HL1["Heizlüfter 1 · binär 1500W"]
+      direction TB
+      el1_f["ems_heizluefter_1_technische_freigabe"]
+      el1_p["ems_heizluefter_1_leistung_w"]
+    end
+    subgraph LEG_EMS_HL2["Heizlüfter 2 · binär 1500W"]
+      direction TB
+      el2_f["ems_heizluefter_2_technische_freigabe"]
+      el2_p["ems_heizluefter_2_leistung_w"]
+    end
+    ems_future[/"weitere Geräte analog: ems_GERÄT_… (w bzw. a)"/]
+  end
+
+  subgraph LEG_HA_EXTRA["→ ha_extra: Zusatz-Entitäten (EP liest)"]
+    direction TB
+    x_heiz["ep_heizstab_max_temperatur · Seed-Default · °C"]
+    x_generic[/"sensor./input_number./input_boolean./input_datetime./input_text./input_select. …"/]
+  end
+
+  end
+
+  subgraph LEG_ROW2[" "]
+  direction LR
+
+  subgraph LEG_HA_PV["→ ha_pv: PV-Prognose je Ausrichtung (EP summiert)"]
+    direction TB
+    pv_ch["current_hour"]
+    pv_nh["next_hour"]
+    pv_rt["remaining_today"]
+    pv_tm["tomorrow"]
+  end
+
+  subgraph LEG_HA_ZONE["→ ha_zone"]
+    direction TB
+    zone_attr["zone.home: latitude/longitude"]
+  end
+
+  subgraph LEG_HA_EPW["→ ha_epw: EP-Vorschläge (EP schreibt, nur Anzeige)"]
+    direction TB
+    w_prio["ep_GERÄT_prio_vorschlag"]
+    w_frei["ep_GERÄT_freigabe_vorschlag"]
+    w_minw["ep_GERÄT_geschutzte_mindestleistung_w_vorschlag"]
+    w_mina["ep_GERÄT_geschutzte_mindestleistung_a_vorschlag · Ampere-Geräte"]
+    w_bat["ep_batterie_geschutzte_mindestleistung_w_vorschlag · D-037"]
+    w_extra["ep_OBJ_vorschlag · Zusatz, z.B. ep_heizstab_max_temperatur_vorschlag"]
+  end
+
+  end
+
+  subgraph LEG_ROW3[" "]
+  direction LR
+
+  subgraph LEG_HA_STAT["→ ha_stat: EP-Status (EP schreibt, M3)"]
+    direction TB
+    s_plan["ep_plan_status"]
+    s_conn["ep_hems_verbindung"]
+  end
+
+  subgraph LEG_API["→ hems_api / ep_client: API-Endpunkte"]
+    direction TB
+    api_schema["GET /api/device_controls_schema"]
+    api_status["GET /api/status"]
+    api_controls["GET /api/controls"]
+    api_set["POST /api/set · künftig M3+"]
+    api_states["GET/POST /api/states/&lt;id&gt; · HAClient, SUPERVISOR_TOKEN"]
+  end
+
+  subgraph LEG_COLLECT["→ ep_collect: Collectors"]
+    direction TB
+    c_state["StateCollector · Haus-Messgrößen"]
+    c_dev["DeviceCollector · ems_* + Zusatz"]
+    c_fc["ForecastCollector · PV-Prognose"]
+    c_weather["WeatherCollector · OWM"]
+    c_hstat["HEMSStatusCollector · Plan-Rückkopplung"]
+  end
+
+  end
+
+  LEG_ROW1 ~~~ LEG_ROW2
+  LEG_ROW2 ~~~ LEG_ROW3
+end
+
+%% Reihenfolge erzwingen: Hauptchart oben, Legende darunter
+SYSTEM ~~~ LEGENDE
+
+%% ###########################################################################
+%% ##  3) STYLING · Farbe = Gruppentyp
+%% ###########################################################################
+classDef mess    fill:#dbeafe,stroke:#3b82f6,color:#0b2447;
+classDef ems     fill:#ffe8cc,stroke:#f59e0b,color:#5a3200;
+classDef extra   fill:#ccf2ec,stroke:#14b8a6,color:#053d36;
+classDef write   fill:#d7f5dd,stroke:#22c55e,color:#0a3d1a;
+classDef third   fill:#eceff3,stroke:#94a3b8,color:#1f2937;
+classDef comp    fill:#e9defb,stroke:#8b5cf6,color:#2b0f57;
+classDef store   fill:#fef3c7,stroke:#d97706,color:#4a2c00;
+classDef invisible fill:none,stroke:none;
+
+class LEG_ROW1,LEG_ROW2,LEG_ROW3,SYSTEM invisible;
+
+%% Hauptchart
+class ha_mess mess;
+class ha_ems ems;
+class ha_extra extra;
+class ha_pv,ha_zone,ai_gemini,owm third;
+class ha_epw,ha_stat write;
+class hems_core,hems_api,ep_client,ep_collect,ep_allow,ep_ctx,ep_val,ep_pub comp;
+class ep_db store;
+
+%% Legende (gleiche Farben wie zugehörige Hauptchart-Box)
+class m_pv,m_load,m_gridp,m_imp,m_exp,m_batp,m_soc,m_temp mess;
+class eb_f,eb_min,eb_max,eh_f,eh_min,eh_max,el1_f,el1_p,el2_f,el2_p,ems_future ems;
+class x_heiz,x_generic extra;
+class pv_ch,pv_nh,pv_rt,pv_tm,zone_attr third;
+class w_prio,w_frei,w_minw,w_mina,w_bat,w_extra,s_plan,s_conn write;
+class api_schema,api_status,api_controls,api_set,api_states,c_state,c_dev,c_fc,c_weather,c_hstat comp;
