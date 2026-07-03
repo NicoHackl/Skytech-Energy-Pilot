@@ -43,7 +43,7 @@ async def test_health_reports_config(aiohttp_client, app):
     assert resp.status == 200
     data = await resp.json()
     assert data["status"] == "ok"
-    assert data["model"] == "gemini-3.5-flash"
+    assert data["model"] == "gemini-2.5-flash"
     assert data["ha_configured"] is False
 
 

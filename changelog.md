@@ -6,6 +6,29 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.33] - 2026-07-03
+
+### Behoben
+- **Ursache des „Plan erzeugen"-Fehlers gefunden: das Default-Modell `gemini-3.5-flash`.**
+  Diese Modell-ID lieferte in der Praxis keinen brauchbaren Lauf – der Aufruf hing „ewig",
+  bis der HA-Ingress den Request mit einer HTML-Fehlerseite abbrach (im Frontend als
+  `SyntaxError: Unexpected token '<', "<html> <h"...`). Der Default ist auf
+  **`gemini-2.5-flash`** umgestellt (vom User als funktionierend verifiziert). Modell bleibt
+  in der Addon-Config frei wählbar. Betrifft `config.yaml`, `config.py`, `gemini_provider.py`,
+  Übersetzungen sowie die Doku (D-025 korrigiert).
+
+### Geändert
+- **Timeout-Obergrenze je KI-Aufruf von 120 s auf 600 s angehoben** (`ai_request_timeout_s`,
+  Schema `int(5,600)`), damit auch langsamere Modelle mehr Zeit bekommen. **Hinweis:** Ein
+  über die HA-Ingress-Zeitgrenze hinaus wartender Aufruf wird weiterhin vom Ingress als
+  HTML-Seite abgebrochen – ein *schnelles* Modell (z.B. `gemini-2.5-flash`) ist die
+  zuverlässige Lösung, nicht allein ein höheres Timeout. Default bleibt 30 s.
+- **Plan-Tab verkraftet Nicht-JSON-Antworten sauber.** Die Fetches (`/api/plan/run`,
+  `/api/plan`, `/api/plan/publish`) parsen die Antwort jetzt defensiv: liefert der Server
+  bzw. der HA-Ingress ausnahmsweise eine HTML-Fehlerseite (z.B. Ingress-Timeout/502, den das
+  Backend nicht abfangen kann), erscheint eine lesbare Meldung mit Hinweis aufs Addon-Log –
+  nie wieder das kryptische „SyntaxError: Unexpected token '<'".
+
 ## [0.0.32] - 2026-07-03
 
 ### Behoben

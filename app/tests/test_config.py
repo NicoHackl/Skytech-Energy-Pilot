@@ -7,7 +7,7 @@ from energy_pilot.config import AddonConfig
 
 def test_defaults_when_no_options_file(tmp_path):
     cfg = AddonConfig.load(options_path=str(tmp_path / "missing.json"), env={})
-    assert cfg.model == "gemini-3.5-flash"
+    assert cfg.model == "gemini-2.5-flash"
     assert cfg.provider == "gemini"
     assert cfg.min_confidence_percent == 70
 

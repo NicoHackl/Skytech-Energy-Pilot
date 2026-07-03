@@ -4,7 +4,7 @@
 Austauschbares Provider-Interface für externe KI-Dienste. Die KI ist **Orchestrator/Energie-Manager**, nicht der mathematische Regler (info.md §12).
 
 ## Provider (V1) — Start mit Gemini (D-007, D-025)
-- **Start: Google Gemini**, Default-Modell **`gemini-3.5-flash`** (vorhandener **Gratis-Key**, ~**10 Anfragen/min**).
+- **Start: Google Gemini**, Default-Modell **`gemini-2.5-flash`** (vorhandener **Gratis-Key**, ~**10 Anfragen/min**). Zuvor `gemini-3.5-flash` — hing in der Praxis und wurde korrigiert (D-025).
 - **OpenAI** (GPT, Function Calling + Structured Outputs) als zweiter Provider, austauschbar.
 - **Provider + Modell in der Addon-Config umschaltbar** (zukunftssicher).
 - Später: Ollama (lokal), OpenAI-kompatible APIs, vollständig lokale Planung ohne LLM.
@@ -55,6 +55,6 @@ Direkte Gerätesteuerung, sekundenschnelle Regelung, Umgehung technischer Grenze
 ## Offene Punkte
 - Prompt-/Tool-Schema-Versionierung.
 
-> Geklärt (D-025): Default `gemini-3.5-flash`, in Addon-Config änderbar. Exakte Modell-ID bei Implementierung gegen aktuelle Gemini-API prüfen.
+> Geklärt (D-025): Default `gemini-2.5-flash` (korrigiert von `gemini-3.5-flash`, das in der Praxis hing), in Addon-Config änderbar.
 
 > Geklärt: V1 = KI erzeugt Plan direkt (Vorschlagswerte, D-008); lokale Optimierungsengine erst später (Phase 6).

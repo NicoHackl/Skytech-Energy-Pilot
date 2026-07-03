@@ -10,7 +10,7 @@ from dataclasses import dataclass
 DEFAULTS: dict[str, object] = {
     "log_level": "info",
     "provider": "gemini",
-    "model": "gemini-3.5-flash",
+    "model": "gemini-2.5-flash",
     # KI-Provider-Schlüssel (D-007/D-041); leer => Planung deaktiviert. Wird nie geloggt.
     "api_key": "",
     # Timeout je KI-Aufruf (s) und Rate-Limit-Drossel (Aufrufe/min; Gemini-Free ~10).

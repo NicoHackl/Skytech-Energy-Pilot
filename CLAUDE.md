@@ -43,7 +43,7 @@ Eigene Achse, getrennt von den Betriebsmodi (Beobachten→Vorschlagen→Shadow�
 ## Getroffene Entscheidungen (Quelle: plan/entscheidungen.md)
 - **Sensorwerte:** Live übergeben; EP mittelt selbst über **1 / 15 / 60 min** parallel (keine Ereigniskopplung über Mittel). Gemittelt: Leistungs-/Flussgrößen. Letztwert: SOC, Temperaturen, Zeiten, Zustände. Langzeitprognose nutzt nur 60-min.
 - **HEMS-Anbindung:** V1 nur über HA-Helfer/`/api/set`; später versionierte Plan-API **im HEMS-Repo** (dort darf ich dann auch committen, paralleles lokales Arbeiten wird eingerichtet).
-- **KI-Provider:** Start **Google Gemini**, Default-Modell **`gemini-3.5-flash`** (Free, ~10 req/min → drosseln). Provider/Modell **in Addon-Config** umschaltbar. Keys nie in Logs/Entitäten.
+- **KI-Provider:** Start **Google Gemini**, Default-Modell **`gemini-2.5-flash`** (Free, ~10 req/min → drosseln; zuvor `gemini-3.5-flash`, hing in der Praxis → D-025). Provider/Modell **in Addon-Config** umschaltbar. Keys nie in Logs/Entitäten.
 - **V1-Verhalten:** KI liefert nur **Vorschlagswerte** (UI/Sensoren/Logs), keine Übernahme.
 - **HA-Helfer:** werden **nicht** automatisch angelegt. Ich liefere fertige `<domain>_ep.yaml` in [claude-ha-config-dateien/](claude-ha-config-dateien/) (Vorlage: [user-beispiele/](user-beispiele/)).
 - **Naming nach Domäne (D-029):** `ems_*` = User-/Geräte-Eingaben (EP liest), `ep_*` = EP-Vorschläge (EP schreibt). Beispiele: liest `ems_heizstab_technische_freigabe`, `ems_heizlüfter_1_leistung_w`; schreibt `sensor.ep_heizstab_prio_vorschlag`, `sensor.ep_heizlüfter_1_freigabe_vorschlag`. (Frühere `ziel_soc`-Beispiele überholt, D-030.)

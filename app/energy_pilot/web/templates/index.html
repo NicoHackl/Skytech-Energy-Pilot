@@ -636,9 +636,26 @@
         <h2 style="font-size:1rem;margin-top:1rem;">Geräte-Vorschläge</h2>${devHtml}${publishedHtml}${reasoning}${warnings}${context}`;
     }
 
+    // Robust gegen Nicht-JSON-Antworten: liefert der Server (bzw. der HA-Ingress bei
+    // Timeout/502) eine HTML-Fehlerseite, zeigen wir eine lesbare Meldung statt eines
+    // kryptischen „SyntaxError: Unexpected token '<'". Der Fehlertext verweist aufs Addon-Log.
+    async function fetchJson(url, opts) {
+      const resp = await fetch(url, opts);
+      const text = await resp.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        const hint =
+          resp.status >= 500 || !text.trim().startsWith("{")
+            ? `Server-Fehler ${resp.status}: keine JSON-Antwort (evtl. Zeitüberschreitung/Ingress). Details im Addon-Log.`
+            : `Unerwartete Antwort (${resp.status}). Details im Addon-Log.`;
+        return { ok: false, error: hint, reason: hint, validation: { ok: false, errors: [hint], clamped: [] } };
+      }
+    }
+
     async function loadPlan() {
       try {
-        renderPlan(await (await fetch("api/plan")).json());
+        renderPlan(await fetchJson("api/plan"));
       } catch (e) {
         document.getElementById("plan-result").innerHTML = `<p style="color:#c33;">${e}</p>`;
       }
@@ -650,7 +667,7 @@
       status.textContent = " … plane …";
       btn.disabled = true;
       try {
-        const data = await (await fetch("api/plan/run", { method: "POST" })).json();
+        const data = await fetchJson("api/plan/run", { method: "POST" });
         const errs = (data.validation && data.validation.errors) || (data.error ? [data.error] : []);
         status.textContent = data.ok ? " ✅ Plan erzeugt" : ` ❌ ${errs.join("; ")}`;
         renderPlan(data);
@@ -667,7 +684,7 @@
       status.textContent = " … schreibe nach HA …";
       btn.disabled = true;
       try {
-        const data = await (await fetch("api/plan/publish", { method: "POST" })).json();
+        const data = await fetchJson("api/plan/publish", { method: "POST" });
         if (data.ok) {
           status.textContent = ` ✅ ${(data.written || []).length} Sensor(en) geschrieben`;
         } else {

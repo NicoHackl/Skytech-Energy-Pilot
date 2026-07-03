@@ -123,10 +123,18 @@ Format: **ID · Thema · Entscheidung · Begründung/Detail · betroffene plan-D
 
 # Runde 3 (claude-fragen-v3)
 
-## D-025 · Default-KI-Modell: Gemini 3.5 Flash
-**Entscheidung:** Default-Modell **`gemini-3.5-flash`** (vom User vorgeschlagen; per Websuche bestätigt: existiert seit Google I/O Mai 2026). In der Addon-Config änderbar (D-019).
-**Detail:** Free-Tier-Rate-Limit (~10 req/min) weiterhin via Drossel beachten (D-007). Exakte Modell-ID bei Implementierung gegen die aktuelle Gemini-API gegenprüfen.
-**Quelle:** v3-A1. → [04](04-ki-provider.md)
+## D-025 · Default-KI-Modell: Gemini 2.5 Flash (korrigiert)
+**Entscheidung:** Default-Modell **`gemini-2.5-flash`**. In der Addon-Config änderbar (D-019).
+**Detail:** Free-Tier-Rate-Limit (~10 req/min) weiterhin via Drossel beachten (D-007).
+**Korrektur (2026-07-03):** Ursprünglich war `gemini-3.5-flash` als Default gesetzt (vom User
+vorgeschlagen, per Websuche als „ab Google I/O Mai 2026 existent" angenommen). In der Praxis
+lieferte diese Modell-ID keinen brauchbaren Lauf: der Aufruf hing „ewig" und wurde vom
+HA-Ingress mit einer HTML-Fehlerseite abgebrochen (im Frontend als `SyntaxError: Unexpected
+token '<'`). Mit `gemini-2.5-flash` funktioniert die Planung zuverlässig (vom User verifiziert).
+Da die reale Nutzung Vorrang vor der (KI-)Doku hat, ist der Default auf die nachweislich
+funktionierende ID umgestellt; wer `gemini-3.5-flash` testen will, kann es in der Addon-Config
+setzen (Timeout-Obergrenze dafür auf 600 s angehoben).
+**Quelle:** v3-A1 + Praxisbefund 2026-07-03. → [04](04-ki-provider.md)
 
 ## D-026 · PV-Prognose-Werte liegen im State, nicht als Attribut
 **Entscheidung:** Die vier PV-Werte (Energie aktuelle Stunde / nächste Stunde / verbleibend heute / morgen) liegen jeweils **direkt im State** eigener Sensoren — **nicht** als Attribut. EP liest also je Wert eine eigene Sensor-Entität (mehrere pro Ausrichtung, EP summiert, D-018).
@@ -222,7 +230,7 @@ Format: **ID · Thema · Entscheidung · Begründung/Detail · betroffene plan-D
 
 ## D-041 · KI-Provider Gemini via REST/aiohttp; Single-Shot + `responseSchema`; EP besitzt Plan-Metadaten
 **Entscheidung:** Die M2-Planung läuft über ein austauschbares `AIProvider`-Interface (`generate(prompt, response_schema) -> ProviderResponse`). Erster Provider ist **Gemini über die REST-API per aiohttp** (kein SDK, Muster wie `hems_client.py`). Die KI wird **einmal je Lauf** (Single-Shot) mit einem **verdichteten, freigegebenen** Kontext (Datenminimum, eiserne Regel 7) aufgerufen und liefert **strukturiertes JSON** (`generationConfig.responseSchema`). Die **Plan-Metadaten** (`plan_id`, `valid_from`, `valid_until`, `provider`, `model`) setzt **EP selbst** — nie das Modell; das Modell liefert nur Geräte-Vorschläge, `confidence`, `reasoning`, `warnings`. Danach prüft der lokale `validator.py` (D-040), bevor etwas sichtbar/persistiert wird.
-**Detail:** Module `ai_provider.py` (Basis + `AsyncRateLimiter`: Wartedrossel statt Fehlerflut, Default 10/min), `gemini_provider.py` (`GeminiProvider`; Schlüssel per Header `x-goog-api-key`, nie in URL/Log), `plan_context.py` (`build_context`/`build_prompt`/`build_response_schema` — Gemini-OpenAPI-Subset, **nicht** das `PLAN_JSON_SCHEMA` mit `const`/`additionalProperties`), `planner.py` (`Planner.run` → Validierung → DB). Gültigkeitsfenster `valid_until = jetzt + planning_interval_min`. Neue Config-Schlüssel `api_key` (Schema `password`, autom. maskiert über `SECRET_KEYS`), `ai_request_timeout_s`, `ai_rate_limit_per_min`. Persistenz: `ai_calls` (Tokens/Kosten), neue Tabelle `plans` (Migration v4), `audit` (`plan_created`/`plan_rejected`). Endpunkte `POST /api/plan/run`, `GET /api/plan`, `GET /api/ai/test`; Plan-Tab inkl. Transparenz „an KI gesendete Daten". **Bewusst V1:** nur Vorschlagswerte, **kein** Schreiben nach HA, **kein** Scheduler; agentischer Tool-Loop (info.md §5) + OpenAI-Provider später nachrüstbar (Abstraktion vorhanden). Exakte Gemini-Modell-ID bleibt config-getrieben (Default `gemini-3.5-flash`).
+**Detail:** Module `ai_provider.py` (Basis + `AsyncRateLimiter`: Wartedrossel statt Fehlerflut, Default 10/min), `gemini_provider.py` (`GeminiProvider`; Schlüssel per Header `x-goog-api-key`, nie in URL/Log), `plan_context.py` (`build_context`/`build_prompt`/`build_response_schema` — Gemini-OpenAPI-Subset, **nicht** das `PLAN_JSON_SCHEMA` mit `const`/`additionalProperties`), `planner.py` (`Planner.run` → Validierung → DB). Gültigkeitsfenster `valid_until = jetzt + planning_interval_min`. Neue Config-Schlüssel `api_key` (Schema `password`, autom. maskiert über `SECRET_KEYS`), `ai_request_timeout_s`, `ai_rate_limit_per_min`. Persistenz: `ai_calls` (Tokens/Kosten), neue Tabelle `plans` (Migration v4), `audit` (`plan_created`/`plan_rejected`). Endpunkte `POST /api/plan/run`, `GET /api/plan`, `GET /api/ai/test`; Plan-Tab inkl. Transparenz „an KI gesendete Daten". **Bewusst V1:** nur Vorschlagswerte, **kein** Schreiben nach HA, **kein** Scheduler; agentischer Tool-Loop (info.md §5) + OpenAI-Provider später nachrüstbar (Abstraktion vorhanden). Exakte Gemini-Modell-ID bleibt config-getrieben (Default `gemini-2.5-flash`, korrigiert von `gemini-3.5-flash`, D-025).
 **Quelle:** Umsetzung M2-Schritt „KI-Provider + Planning-Engine" (roadmap M2, Punkte 2 & 3); Ausrichtung per User-Entscheidung (Umfang „Plan erzeugen + anzeigen", REST/aiohttp, Single-Shot). → [04](04-ki-provider.md), [07](07-planning-engine.md), [08](08-validierung-sicherheit.md), [roadmap](roadmap.md) (M2)
 
 ## D-042 · Wettervorhersage direkt im EP über OpenWeatherMap; Koordinaten aus HA-Zone

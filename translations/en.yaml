@@ -7,7 +7,7 @@ configuration:
     description: Provider of the language model used for planning.
   model:
     name: Model
-    description: Concrete model of the selected provider (default gemini-3.5-flash).
+    description: Concrete model of the selected provider (default gemini-2.5-flash).
   planning_interval_min:
     name: Planning interval (minutes)
     description: Interval of full re-planning (15-60 minutes).

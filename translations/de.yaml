@@ -7,7 +7,7 @@ configuration:
     description: Anbieter des Sprachmodells für die Planung.
   model:
     name: Modell
-    description: Konkretes Modell des gewählten Anbieters (Standard gemini-3.5-flash).
+    description: Konkretes Modell des gewählten Anbieters (Standard gemini-2.5-flash).
   planning_interval_min:
     name: Planungsintervall (Minuten)
     description: Abstand der vollständigen Neuplanung (15–60 Minuten).
