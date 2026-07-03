@@ -60,6 +60,31 @@ async def test_generate_parses_json_and_tokens():
     assert "secret-key" not in call["url"]
 
 
+async def test_generate_sends_temperature_and_seed():
+    # D-050: Determinismus-Parameter landen in der generationConfig (stabile Ausgabefelder).
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = GeminiProvider("k", temperature=0.0, seed=42, session=session)
+
+    await provider.generate("hi", {"type": "OBJECT"})
+
+    gen = session.calls[0]["json"]["generationConfig"]
+    assert gen["temperature"] == 0.0
+    assert gen["seed"] == 42
+    assert gen["responseMimeType"] == "application/json"
+
+
+async def test_generate_omits_determinism_when_unset():
+    # temperature=None/seed=None => Felder weglassen (Provider-Default greift).
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = GeminiProvider("k", temperature=None, seed=None, session=session)
+
+    await provider.generate("hi", {"type": "OBJECT"})
+
+    gen = session.calls[0]["json"]["generationConfig"]
+    assert "temperature" not in gen
+    assert "seed" not in gen
+
+
 class _TimeoutResponse:
     async def __aenter__(self):
         raise TimeoutError  # aiohttp meldet den total-Timeout als asyncio.TimeoutError

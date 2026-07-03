@@ -91,12 +91,90 @@ def _check_time_logic(plan: dict, now: datetime, errors: list[str]) -> None:
         errors.append("Zeitlogik: Plan ist bereits abgelaufen (valid_until <= jetzt)")
 
 
+def _fallback_value(constraint: DeviceConstraint, key: str) -> object:
+    """Sicherer Default für ein fehlendes Pflicht-Vorschlagsfeld (deterministische Füllung, D-050).
+
+    Behebt schwankende Ausgabefelder: statt ein vom Modell vergessenes Vertragsfeld lautlos zu
+    übergehen, füllt EP es aus dem aktuellen Zustand. Bewusst sicherheitskonservativ:
+    - `prio_vorschlag` => None (die Rangfolge vergibt `_normalize_priorities`, auch bei Lücken).
+    - `freigabe_vorschlag` => aktuelle technische Freigabe (nie eine gesperrte Last freigeben).
+    - geschützte Mindestleistung => technische Mindestleistung bzw. 0 (wird ohnehin geklemmt).
+    - Zusatzfeld => aktueller Lesewert, sonst typ-abhängiger Default (Zahl 0/min, Bool False,
+      Auswahl erste Option, Text leer). `datetime` ohne Lesewert bleibt offen (kein sinnvoller
+      Default; advisorisch und selten – ein Repair-Aufruf soll es nachreichen).
+    """
+    if key == _PRIO_KEY:
+        return None
+    if key == "freigabe_vorschlag":
+        return constraint.freigabe if isinstance(constraint.freigabe, bool) else False
+    if key in _PROTECTED_MIN_KEYS:
+        return constraint.min_power if constraint.min_power is not None else 0.0
+    ce = next((c for c in constraint.extras if c.extra.plan_field == key), None)
+    if ce is None:
+        return None
+    if ce.value is not None:
+        return ce.value
+    if ce.kind == "number":
+        return ce.min if ce.min is not None else 0.0
+    if ce.kind == "bool":
+        return False
+    if ce.kind == "select" and ce.options:
+        return ce.options[0]
+    if ce.kind == "text":
+        return ""
+    return None
+
+
+def _fill_missing_fields(
+    entry: dict, constraint: DeviceConstraint, clamped: list[str]
+) -> None:
+    """Ergänzt fehlende Pflicht-Vorschlagsfelder deterministisch (Vollständigkeitsgarantie, D-050).
+
+    Läuft VOR der Vertrags-/Grenzprüfung, damit gefüllte Werte anschließend regulär geklemmt
+    werden. Prio wird bewusst ausgelassen (Rangfolge kommt aus `_normalize_priorities`). Jede
+    Füllung wird wie eine Klemmung protokolliert – Transparenz in UI/Audit, dass EP (nicht die
+    KI) den Wert gesetzt hat.
+    """
+    for key in suggestion_keys(constraint):
+        if entry.get(key) is not None:
+            continue
+        value = _fallback_value(constraint, key)
+        if value is None:
+            continue
+        entry[key] = value
+        clamped.append(f"{constraint.name}.{key}: fehlt -> {value!r} (Fallback aus Ist-Zustand)")
+
+
+def missing_suggestion_fields(
+    plan_dict: dict, constraints: list[DeviceConstraint]
+) -> dict[str, list[str]]:
+    """Liefert je Gerät die noch fehlenden Pflicht-Vorschlagsfelder (Basis für den Repair-Aufruf).
+
+    Grundlage ist der Schreibvertrag (`suggestion_keys`); ein komplett fehlendes Gerät zählt mit
+    allen seinen Feldern. Wird VOR der Validierung/Füllung auf dem montierten Modell-Plan
+    ausgewertet, damit der Planner gezielt genau die Lücken nachfordern kann (D-050).
+    """
+    by_entry = {
+        e.get("name"): e for e in plan_dict.get("devices", []) if isinstance(e, dict)
+    }
+    missing: dict[str, list[str]] = {}
+    for constraint in constraints:
+        entry = by_entry.get(constraint.name) or {}
+        gaps = [key for key in suggestion_keys(constraint) if entry.get(key) is None]
+        if gaps:
+            missing[constraint.name] = gaps
+    return missing
+
+
 def _check_device(
     entry: dict, constraint: DeviceConstraint, errors: list[str], clamped: list[str]
 ) -> None:
-    """Stufe 2 für ein Gerät: Schreibvertrag + harte Grenzen klemmen/ablehnen (in-place)."""
+    """Stufe 2 je Gerät: fehlende Felder füllen, dann Schreibvertrag + harte Grenzen (in-place)."""
     name = constraint.name
     allowed = set(suggestion_keys(constraint))
+
+    # Stufe 2a (D-050): fehlende Pflichtfelder deterministisch auffüllen, bevor geprüft wird.
+    _fill_missing_fields(entry, constraint, clamped)
 
     # Schreibvertrag: nur erlaubte Felder je Gerät (z.B. Batterie keine Priorität, D-037;
     # Binärlast keine geschützte Mindestleistung; korrekte Einheit w/a).
@@ -139,28 +217,34 @@ def _normalize_priorities(
     Plan also nie (konsistent mit der Klemm-Logik). Die Batterie trägt keine Priorität
     (Schreibvertrag D-037) und bleibt außen vor.
     """
-    # Nur Geräte, deren Schreibvertrag eine Priorität erlaubt und die einen
-    # ganzzahligen Prio-Wert tragen (float wie 2.0 wird mitgenommen, bool nicht).
-    ranked: list[tuple[int, int, dict]] = []  # (KI-Prio, ursprünglicher Index, Eintrag)
+    # Alle Geräte, deren Schreibvertrag eine Priorität erlaubt. Fehlt/ungültig der KI-Wert
+    # (kein int; float wie 2.0 wird mitgenommen, bool nicht), gilt die Prio als „fehlend" und
+    # wird ans Ende gereiht – so bleibt die Ausgabe vollständig (D-050), statt das Feld zu
+    # verlieren. `None`-Prio sortiert nach den vorhandenen, stabil nach ursprünglichem Index.
+    ranked: list[tuple[int | None, int, dict]] = []  # (KI-Prio | None, Index, Eintrag)
     for index, entry in enumerate(devices):
         constraint = by_name.get(entry.get("name"))
         if constraint is None or _PRIO_KEY not in suggestion_keys(constraint):
             continue
         value = entry.get(_PRIO_KEY)
         if isinstance(value, bool):
-            continue
-        if isinstance(value, float) and value.is_integer():
+            value = None
+        elif isinstance(value, float) and value.is_integer():
             value = int(value)
         if not isinstance(value, int):
-            continue
+            value = None
         ranked.append((value, index, entry))
 
-    # Stabil nach (KI-Priorität, ursprüngliche Reihenfolge) sortieren = gemeinte Rangfolge.
+    # Sortierschlüssel: vorhandene Prios (kleiner=höher) vor fehlenden; innerhalb stabil per Index.
     # Hinweis: >10 Prio-Geräte sprengen das 10–100-Band; für V1 (≤10 Geräte) irrelevant.
-    ranked.sort(key=lambda item: (item[0], item[1]))
+    ranked.sort(key=lambda item: (item[0] is None, item[0] or 0, item[1]))
     for rank, (old_value, _index, entry) in enumerate(ranked, start=1):
         new_value = rank * _PRIO_STEP
-        if new_value != old_value:
+        if old_value is None:
+            clamped.append(
+                f"{entry['name']}.{_PRIO_KEY}: fehlt -> {new_value} (Fallback, ans Ende gereiht)"
+            )
+        elif new_value != old_value:
             clamped.append(f"{entry['name']}.{_PRIO_KEY}: {old_value} -> {new_value}")
         entry[_PRIO_KEY] = new_value  # immer den kanonischen int schreiben
 
@@ -192,6 +276,16 @@ def validate(
 
     # Stufe 2: harte Grenzen je Gerät.
     by_name = {c.name: c for c in constraints}
+
+    # Vollständigkeit (D-050): fehlt ein bekanntes Gerät ganz im Plan, wird ein leerer Eintrag
+    # ergänzt (die Felder füllt `_check_device` deterministisch). So liefert EP nie „mal nur
+    # manche Geräte", ohne dass ein ausgelassenes Gerät lautlos verschwindet.
+    present = {e["name"] for e in normalized["devices"] if isinstance(e, dict) and "name" in e}
+    for constraint in constraints:
+        if constraint.name not in present:
+            normalized["devices"].append({"name": constraint.name})
+            clamped.append(f"{constraint.name}: Gerät fehlte im Plan -> Fallback ergänzt")
+
     for entry in normalized["devices"]:
         constraint = by_name.get(entry["name"])
         if constraint is None:

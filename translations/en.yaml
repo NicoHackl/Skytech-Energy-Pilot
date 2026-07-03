@@ -8,6 +8,15 @@ configuration:
   model:
     name: Model
     description: Concrete model of the selected provider (default gemini-2.5-flash).
+  ai_temperature:
+    name: AI temperature
+    description: Sampling temperature of the AI call (0 = deterministic). Low values make the same context return the same suggestion fields instead of varying per run.
+  ai_seed:
+    name: AI seed
+    description: Fixed random seed for the AI call - reinforces reproducible, stable output across runs.
+  ai_repair_missing:
+    name: Re-request missing fields
+    description: If the model omits required suggestion fields, request exactly those once more before the validator fills them deterministically from the current state.
   planning_interval_min:
     name: Planning interval (minutes)
     description: Interval of full re-planning (15-60 minutes).

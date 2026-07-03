@@ -8,6 +8,7 @@ from energy_pilot.plan_context import (
     _condense_weather,
     build_context,
     build_prompt,
+    build_repair_prompt,
     build_response_schema,
 )
 
@@ -55,15 +56,29 @@ def _constraints():
     return build_constraints(devices, readings)
 
 
-def test_build_response_schema_is_gemini_compatible():
+def test_build_response_schema_forces_all_fields_per_device():
     schema = build_response_schema(_constraints())
     assert schema["type"] == "OBJECT"
-    assert "devices" in schema["properties"]
     assert "confidence" in schema["properties"]
     # Kein JSON-Schema-Dialekt, den Gemini ablehnt:
     assert "$schema" not in schema
     assert "additionalProperties" not in schema
-    assert schema["properties"]["devices"]["items"]["properties"]["name"]["type"] == "STRING"
+    devices = schema["properties"]["devices"]
+    # `devices` ist ein OBJECT (Property je Gerätename), kein Array – nur so lässt sich pro Gerät
+    # ein eigenes `required` erzwingen (Kernfix D-050 gegen schwankende Ausgabefelder).
+    assert devices["type"] == "OBJECT"
+    assert set(devices["required"]) == {"batterie", "heizstab", "heizluefter_1"}
+    heizstab = devices["properties"]["heizstab"]
+    assert heizstab["properties"]["name"]["type"] == "STRING"
+    # ALLE Vertragsfelder des Heizstabs sind Pflicht (das Modell darf keines weglassen).
+    assert set(heizstab["required"]) == {
+        "name", "prio_vorschlag", "freigabe_vorschlag",
+        "geschutzte_mindestleistung_w_vorschlag",
+    }
+    # Batterie: nur geschützte Mindestleistung Pflicht, keine Prio (D-037).
+    assert set(devices["properties"]["batterie"]["required"]) == {
+        "name", "geschutzte_mindestleistung_w_vorschlag",
+    }
 
 
 def _typed_extra_constraints():
@@ -84,9 +99,10 @@ def _typed_extra_constraints():
 
 
 def test_response_schema_types_follow_extra_domain():
-    props = build_response_schema(_typed_extra_constraints())["properties"]["devices"]["items"][
+    wallbox = build_response_schema(_typed_extra_constraints())["properties"]["devices"][
         "properties"
-    ]
+    ]["wallbox"]
+    props = wallbox["properties"]
     assert props["extra_min_soc_vorschlag"]["type"] == "NUMBER"
     assert props["extra_eco_vorschlag"]["type"] == "BOOLEAN"
     assert props["extra_abfahrt_vorschlag"]["type"] == "STRING"
@@ -94,6 +110,12 @@ def test_response_schema_types_follow_extra_domain():
     # min/max und Format landen in der Feldbeschreibung.
     assert "0 bis 100" in props["extra_min_soc_vorschlag"]["description"]
     assert "Datum und Uhrzeit" in props["extra_abfahrt_vorschlag"]["description"]
+    # D-050: alle aktivierten Zusatz-Vorschlagsfelder sind Pflicht -> werden nie mehr „vergessen".
+    for extra_field in (
+        "extra_min_soc_vorschlag", "extra_eco_vorschlag",
+        "extra_abfahrt_vorschlag", "extra_notiz_vorschlag",
+    ):
+        assert extra_field in wallbox["required"]
 
 
 def test_context_zusatzwerte_carry_type_bounds_and_format():
@@ -118,13 +140,25 @@ def _select_constraints():
 
 def test_response_schema_select_uses_enum_pool():
     # input_select (D-049): Antwort-Schema erzwingt genau eine Option (Enum).
-    props = build_response_schema(_select_constraints())["properties"]["devices"]["items"][
-        "properties"
-    ]
+    props = build_response_schema(_select_constraints())["properties"]["devices"]["properties"][
+        "wallbox"
+    ]["properties"]
     field = props["extra_lademodus_vorschlag"]
     assert field["type"] == "STRING"
     assert field["enum"] == ["Aus", "PV-Überschuss", "Schnell"]
     assert "PV-Überschuss" in field["description"]
+
+
+def test_build_repair_prompt_lists_missing_fields():
+    # D-050: die Nachforderung hängt an den Basis-Prompt an und benennt exakt die Lücken.
+    base = build_prompt(
+        build_context({}, {}, _constraints(), objectives_from_config({}),
+                      valid_from="A", valid_until="B")
+    )
+    out = build_repair_prompt(base, {"heizstab": ["prio_vorschlag", "freigabe_vorschlag"]})
+    assert out.startswith(base)
+    assert "unvollständig" in out
+    assert "heizstab: prio_vorschlag, freigabe_vorschlag" in out
 
 
 def test_context_select_carries_option_pool():

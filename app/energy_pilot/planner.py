@@ -24,7 +24,12 @@ from energy_pilot.config import AddonConfig
 from energy_pilot.constraints import build_constraints
 from energy_pilot.logging_setup import log
 from energy_pilot.objectives import objectives_from_config
-from energy_pilot.plan_context import build_context, build_prompt, build_response_schema
+from energy_pilot.plan_context import (
+    build_context,
+    build_prompt,
+    build_repair_prompt,
+    build_response_schema,
+)
 from energy_pilot.plan_schema import (
     SCHEMA_VERSION,
     SUGGESTION_FIELDS,
@@ -35,7 +40,7 @@ from energy_pilot.plan_schema import (
 )
 from energy_pilot.settings import PLANNING_PROMPT_KEY, get_setting
 from energy_pilot.suggestion_publisher import publish_suggestions
-from energy_pilot.validator import validate
+from energy_pilot.validator import missing_suggestion_fields, validate
 from energy_pilot.weather import weather_config_from_options
 
 
@@ -61,6 +66,18 @@ def _as_int(value: object) -> int | None:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return None
+
+
+def _gap_count(missing: dict[str, list[str]]) -> int:
+    """Anzahl fehlender Pflichtfelder über alle Geräte (Vergleich Erst- vs. Nachforder-Plan)."""
+    return sum(len(fields) for fields in missing.values())
+
+
+def _sum_tokens(first: int | None, second: int | None) -> int | None:
+    """Addiert zwei optionale Token-Zähler (None wirkt wie 0; beide None => None)."""
+    if first is None and second is None:
+        return None
+    return (first or 0) + (second or 0)
 
 
 def _describe_exc(exc: BaseException) -> str:
@@ -178,10 +195,48 @@ class Planner:
         self._record_ai_call(
             ok=True, tokens_in=response.tokens_in, tokens_out=response.tokens_out, error=None
         )
+        tokens_in = response.tokens_in
+        tokens_out = response.tokens_out
 
         plan_dict = self._assemble_plan(
             response.data, plan_id=run_id, valid_from=valid_from, valid_until=valid_until
         )
+
+        # Vollständigkeits-Nachforderung (D-050): fehlen dem Modell-Plan Pflicht-Vorschlagsfelder,
+        # genau diese einmalig gezielt nachfordern. Der Validator würde sie sonst deterministisch
+        # füllen; ein echter KI-Wert ist aber besser (v.a. für die Prio). Scheitert der Aufruf,
+        # bleibt der erste Plan und die Validator-Füllung greift (Iron Rule 8).
+        missing = missing_suggestion_fields(plan_dict, constraints)
+        if missing and bool(self.config.values.get("ai_repair_missing", True)):
+            try:
+                repair = await self.provider.generate(
+                    build_repair_prompt(prompt, missing), schema
+                )
+                self._record_ai_call(
+                    ok=True, tokens_in=repair.tokens_in, tokens_out=repair.tokens_out, error=None
+                )
+                tokens_in = _sum_tokens(tokens_in, repair.tokens_in)
+                tokens_out = _sum_tokens(tokens_out, repair.tokens_out)
+                repaired = self._assemble_plan(
+                    repair.data, plan_id=run_id, valid_from=valid_from, valid_until=valid_until
+                )
+                # Nur übernehmen, wenn die Nachforderung tatsächlich weniger Lücken hat.
+                if _gap_count(missing_suggestion_fields(repaired, constraints)) < _gap_count(
+                    missing
+                ):
+                    plan_dict = repaired
+                self._log(
+                    "info", "KI-Nachforderung fehlender Felder ausgeführt",
+                    context={"missing": missing}, run_id=run_id,
+                    provider=self.provider.name, model=str(self.config.model),
+                )
+            except Exception as exc:  # optional: Fehler blockiert nie (Iron Rule 8)
+                self._log(
+                    "warning", "KI-Nachforderung fehlgeschlagen (Fallback-Füllung greift)",
+                    context={"error": _describe_exc(exc)}, run_id=run_id,
+                    provider=self.provider.name, model=str(self.config.model),
+                )
+
         result = validate(plan_dict, constraints, now=now)
         stored = result.normalized_plan or plan_dict
         self._store_plan(stored, result)
@@ -210,8 +265,8 @@ class Planner:
             ai_call={
                 "provider": self.provider.name,
                 "model": str(self.config.model),
-                "tokens_in": response.tokens_in,
-                "tokens_out": response.tokens_out,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
                 "ok": True,
             },
             context=context,
@@ -269,14 +324,32 @@ class Planner:
         """Ob Vorschlagswerte nach HA geschrieben werden (Addon-Option, Default an)."""
         return bool(self.config.values.get("publish_suggestions", True))
 
+    @staticmethod
+    def _device_entries(raw: object) -> list[dict]:
+        """Normalisiert die Modell-Geräte auf eine Liste von Einträgen mit `name`.
+
+        Neues Antwort-Schema (D-050): `devices` ist ein Objekt `{Gerätename: {...}}` – der
+        Schlüssel ist der autoritative Name. Fällt ein Modell/Provider auf die frühere Array-Form
+        zurück, wird auch diese akzeptiert (Robustheit über Provider-/Modellwechsel hinweg).
+        """
+        if isinstance(raw, dict):
+            entries: list[dict] = []
+            for name, entry in raw.items():
+                if isinstance(entry, dict):
+                    merged = dict(entry)
+                    merged["name"] = name  # Schlüssel gewinnt über evtl. abweichenden inneren name
+                    entries.append(merged)
+            return entries
+        if isinstance(raw, list):
+            return [entry for entry in raw if isinstance(entry, dict)]
+        return []
+
     def _assemble_plan(
         self, model_data: dict, *, plan_id: str, valid_from: str, valid_until: str
     ) -> dict:
         """Baut den vollständigen Plan: EP-Metadaten + Modell-Vorschläge (D-041)."""
         suggestions: list[DeviceSuggestion] = []
-        for entry in model_data.get("devices", []):
-            if not isinstance(entry, dict):
-                continue
+        for entry in self._device_entries(model_data.get("devices")):
             name = entry.get("name")
             if not isinstance(name, str) or not name:
                 continue

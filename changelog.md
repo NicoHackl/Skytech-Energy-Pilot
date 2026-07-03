@@ -6,6 +6,28 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.34] - 2026-07-03
+
+### Behoben
+- **Schwankende KI-Vorschlagsfelder stabilisiert – EP liefert jetzt IMMER alle geforderten
+  Werte (D-050).** Bisher hing es vom Modell/Lauf ab, welche Felder kamen (mal nur die
+  Priorität, mal alles, die Max-Wassertemperatur des Heizstabs fehlte gelegentlich), weil das
+  Gemini-Antwort-Schema **alle** Geräte-Felder optional ließ und kein Determinismus gesetzt
+  war. Behoben durch vier ineinandergreifende Schichten (Defense in Depth):
+  - **Antwort-Schema erzwingt Felder:** `devices` ist jetzt ein Objekt je Gerätename statt eines
+    Arrays; jedes Gerät trägt ein eigenes `required` = exakt sein Schreibvertrag (`suggestion_keys`)
+    plus `propertyOrdering`. Das Modell darf kein gefordertes Feld mehr weglassen.
+  - **Determinismus:** `temperature` (Default 0) + fixer `seed` (Default 42) in der
+    `generationConfig` – gleicher Kontext ⇒ stabil dieselben Felder.
+  - **Validator-Vollständigkeit (unabhängig vom Modell):** fehlt ein Gerät oder ein Pflichtfeld,
+    ergänzt/füllt EP es deterministisch aus dem Ist-Zustand (Freigabe ← aktuelle technische
+    Freigabe, geschützte Mindestleistung ← technische Mindestleistung/0, Zusatzwert ← aktueller
+    Lesewert; fehlende Priorität wird ans Ende der 10er-Rangfolge gereiht) und protokolliert das.
+  - **Gezielte Nachforderung:** bei Lücken fordert EP die fehlenden Felder einmalig gezielt nach,
+    bevor die deterministische Füllung greift; scheitert der Aufruf, blockiert EP nie (Iron Rule 8).
+  - Betrifft `gemini_provider.py`, `plan_context.py`, `validator.py`, `planner.py`, `config.py`,
+    `config.yaml`. Neue Addon-Optionen `ai_temperature`, `ai_seed`, `ai_repair_missing`.
+
 ## [0.0.33] - 2026-07-03
 
 ### Behoben

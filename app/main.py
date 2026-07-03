@@ -126,11 +126,14 @@ def build() -> web.Application:
     api_key = str(config.values.get("api_key") or "").strip()
     provider = None
     if api_key and str(config.provider) == "gemini":
+        seed_opt = config.values.get("ai_seed")
         provider = GeminiProvider(
             api_key,
             model=str(config.model),
             timeout_s=float(config.ai_request_timeout_s),
             rate_limit_per_min=int(config.ai_rate_limit_per_min),
+            temperature=float(config.ai_temperature),
+            seed=int(seed_opt) if seed_opt is not None else None,
         )
         log(logger, "info", "KI-Provider aktiv", provider="gemini", model=str(config.model))
     else:

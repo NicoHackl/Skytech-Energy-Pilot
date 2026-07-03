@@ -31,6 +31,34 @@ class _FakeProvider(AIProvider):
         self.closed = True
 
 
+class _SequenceProvider(AIProvider):
+    """Liefert je Aufruf die nächste vorbereitete Antwort (für den Nachforder-Test).
+
+    `exc_on` (0-basierter Aufrufindex) lässt genau diesen Aufruf scheitern – so lässt sich
+    prüfen, dass eine fehlgeschlagene Nachforderung die deterministische Füllung nicht blockiert.
+    """
+
+    name = "seq"
+
+    def __init__(self, responses, *, model="seq-1", exc_on=None):
+        self.model = model
+        self._responses = list(responses)
+        self._exc_on = exc_on
+        self.calls = 0
+
+    async def generate(self, prompt, response_schema):
+        idx = self.calls
+        self.calls += 1
+        if self._exc_on is not None and idx == self._exc_on:
+            raise ProviderError("repair boom")
+        return ProviderResponse(
+            data=self._responses[min(idx, len(self._responses) - 1)], tokens_in=3, tokens_out=4
+        )
+
+    async def close(self):
+        return None
+
+
 class _Devices:
     def __init__(self):
         self.devices = [
@@ -145,6 +173,67 @@ async def test_run_produces_valid_plan(tmp_path):
     latest = planner.latest_plan()
     assert latest["ok"]
     assert latest["plan"]["devices"]
+
+
+_INCOMPLETE_DATA = {
+    "devices": [
+        {"name": "heizstab", "prio_vorschlag": 10},  # freigabe + geschützte Mindestleistung fehlen
+        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+    ],
+    "confidence": 70, "reasoning": "x", "warnings": [],
+}
+_COMPLETE_DATA = {
+    "devices": [
+        {"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+         "geschutzte_mindestleistung_w_vorschlag": 800.0},
+        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+    ],
+    "confidence": 70, "reasoning": "x", "warnings": [],
+}
+
+
+async def test_run_repairs_missing_fields(tmp_path):
+    # D-050: unvollständige Erstantwort -> genau eine gezielte Nachforderung; der vollständige
+    # Zweitplan wird übernommen (echter KI-Wert 800, nicht der Fallback 500 = min_technisch).
+    provider = _SequenceProvider([_INCOMPLETE_DATA, _COMPLETE_DATA])
+    planner, db = _planner(tmp_path, provider)
+
+    result = await planner.run(now=NOW)
+
+    assert result.ok
+    assert provider.calls == 2
+    heizstab = next(d for d in result.plan["devices"] if d["name"] == "heizstab")
+    assert heizstab["freigabe_vorschlag"] is True
+    assert heizstab["geschutzte_mindestleistung_w_vorschlag"] == 800.0
+    assert db.execute("SELECT COUNT(*) AS n FROM ai_calls WHERE ok=1").fetchone()["n"] == 2
+    assert result.ai_call["tokens_in"] == 6  # Tokens beider Aufrufe summiert
+
+
+async def test_run_repair_failure_falls_back_to_deterministic_fill(tmp_path):
+    # Scheitert die Nachforderung, bleibt der erste Plan gültig und der Validator füllt die
+    # Lücken deterministisch aus dem Ist-Zustand (Iron Rule 8 – EP blockiert nie).
+    provider = _SequenceProvider([_INCOMPLETE_DATA], exc_on=1)
+    planner, _ = _planner(tmp_path, provider)
+
+    result = await planner.run(now=NOW)
+
+    assert result.ok
+    assert provider.calls == 2
+    heizstab = next(d for d in result.plan["devices"] if d["name"] == "heizstab")
+    assert heizstab["freigabe_vorschlag"] is True  # aus aktueller technischer Freigabe
+    assert heizstab["geschutzte_mindestleistung_w_vorschlag"] == 500.0  # Fallback = min_technisch
+
+
+async def test_run_no_repair_when_first_response_complete(tmp_path):
+    # Vollständige Erstantwort -> keine Nachforderung (nur ein KI-Aufruf).
+    provider = _SequenceProvider([_COMPLETE_DATA])
+    planner, db = _planner(tmp_path, provider)
+
+    result = await planner.run(now=NOW)
+
+    assert result.ok
+    assert provider.calls == 1
+    assert db.execute("SELECT COUNT(*) AS n FROM ai_calls WHERE ok=1").fetchone()["n"] == 1
 
 
 async def test_run_includes_weather_in_context(tmp_path):

@@ -37,11 +37,18 @@ class GeminiProvider(AIProvider):
         *,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         rate_limit_per_min: int = 10,
+        temperature: float | None = 0.0,
+        seed: int | None = None,
         base_url: str = DEFAULT_BASE_URL,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
         self.api_key = api_key
         self.model = model
+        # Determinismus (D-050): niedrige Temperatur + fixer Seed => bei gleichem Kontext
+        # stabil dieselben Vorschlagsfelder statt schwankender Ausgaben je Lauf. None = Feld
+        # weglassen (Provider-Default). Reines Sampling-Verhalten, keine harte Grenze.
+        self.temperature = temperature
+        self.seed = seed
         self.base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout_s)
         self._limiter = AsyncRateLimiter(rate_limit_per_min)
@@ -63,12 +70,18 @@ class GeminiProvider(AIProvider):
         await self._limiter.acquire()
         session = await self._ensure_session()
         url = f"{self.base_url}/models/{self.model}:generateContent"
+        generation_config: dict[str, object] = {
+            "responseMimeType": "application/json",
+            "responseSchema": response_schema,
+        }
+        # Determinismus (D-050): nur setzen, wenn konfiguriert – sonst Provider-Default.
+        if self.temperature is not None:
+            generation_config["temperature"] = self.temperature
+        if self.seed is not None:
+            generation_config["seed"] = self.seed
         body = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "responseSchema": response_schema,
-            },
+            "generationConfig": generation_config,
         }
         # Schlüssel als Header (nicht in der URL) → erscheint nicht in Zugriffs-/Proxy-Logs.
         headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}

@@ -8,6 +8,15 @@ configuration:
   model:
     name: Modell
     description: Konkretes Modell des gewählten Anbieters (Standard gemini-2.5-flash).
+  ai_temperature:
+    name: KI-Temperatur
+    description: Sampling-Temperatur des KI-Aufrufs (0 = deterministisch). Niedrige Werte sorgen dafür, dass gleicher Kontext stabil dieselben Vorschlagsfelder liefert, statt je Lauf zu schwanken.
+  ai_seed:
+    name: KI-Seed
+    description: Fester Zufalls-Seed für den KI-Aufruf – verstärkt reproduzierbare, stabile Ausgaben über mehrere Läufe.
+  ai_repair_missing:
+    name: Fehlende Felder nachfordern
+    description: Lässt das Modell fehlende Pflicht-Vorschlagsfelder aus, werden genau diese einmalig nachgefordert, bevor der Validator sie deterministisch aus dem Ist-Zustand auffüllt.
   planning_interval_min:
     name: Planungsintervall (Minuten)
     description: Abstand der vollständigen Neuplanung (15–60 Minuten).

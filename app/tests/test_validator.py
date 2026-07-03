@@ -56,15 +56,18 @@ def _plan(devices, **overrides):
 
 
 def test_happy_path_ok_without_clamps():
+    # Vollständiger Plan für ALLE erkannten Geräte (D-050): fehlt keines und keins ein
+    # Pflichtfeld, füllt/klemmt der Validator nichts.
     plan = _plan(
         [
             {
                 "name": "heizstab",
-                "prio_vorschlag": 10,  # einziges Prio-Gerät -> Rang 1, bleibt unverändert
+                "prio_vorschlag": 10,  # Rang 1 -> bleibt 10 (unverändert)
                 "freigabe_vorschlag": True,
                 "geschutzte_mindestleistung_w_vorschlag": 800.0,
                 "extra_heizstab_max_temperatur_vorschlag": 55.0,
             },
+            {"name": "heizluefter_1", "prio_vorschlag": 20, "freigabe_vorschlag": False},
             {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
         ]
     )
@@ -136,6 +139,7 @@ def _select_constraints():
 
 def test_input_select_valid_option_passes():
     plan = _plan([{"name": "wallbox", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+                   "geschutzte_mindestleistung_a_vorschlag": 0.0,
                    "extra_lademodus_vorschlag": "Schnell"}])
     result = validate(plan, _select_constraints(), now=NOW)
     assert result.ok
@@ -255,11 +259,13 @@ def _ranked_constraints():
 def test_priorities_normalized_to_strict_ranking():
     # KI liefert unsaubere Prios (Duplikate, Lücken, >100); EP kanonisiert auf 10/20/30
     # in relativer Reihenfolge und klemmt – statt den Plan abzulehnen.
+    # Alle Pflichtfelder gesetzt, damit nur die Prio-Neuvergabe klemmt (keine Fallback-Füllung).
     plan = _plan(
         [
-            {"name": "heizstab", "prio_vorschlag": 90},
-            {"name": "heizluefter_1", "prio_vorschlag": 5},
-            {"name": "heizluefter_2", "prio_vorschlag": 5},
+            {"name": "heizstab", "prio_vorschlag": 90, "freigabe_vorschlag": True,
+             "geschutzte_mindestleistung_w_vorschlag": 1000.0},
+            {"name": "heizluefter_1", "prio_vorschlag": 5, "freigabe_vorschlag": True},
+            {"name": "heizluefter_2", "prio_vorschlag": 5, "freigabe_vorschlag": True},
         ]
     )
     result = validate(plan, _ranked_constraints(), now=NOW)
@@ -268,6 +274,62 @@ def test_priorities_normalized_to_strict_ranking():
     # Sortierung (Prio, Index): lüfter1(5,1)->10, lüfter2(5,2)->20, heizstab(90,0)->30
     assert prios == {"heizluefter_1": 10, "heizluefter_2": 20, "heizstab": 30}
     assert len(result.clamped) == 3
+
+
+def test_missing_contract_fields_filled_from_state():
+    # D-050: fehlt dem Modell ein Pflichtfeld (hier freigabe + Max-Wassertemperatur des
+    # Heizstabs), füllt EP es deterministisch aus dem Ist-Zustand statt es zu übergehen.
+    plan = _plan(
+        [
+            {"name": "heizstab", "prio_vorschlag": 10,
+             "geschutzte_mindestleistung_w_vorschlag": 800.0},
+            {"name": "heizluefter_1", "prio_vorschlag": 20, "freigabe_vorschlag": False},
+            {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+        ]
+    )
+    result = validate(plan, _constraints(), now=NOW)
+    assert result.ok
+    heizstab = next(d for d in result.normalized_plan["devices"] if d["name"] == "heizstab")
+    # freigabe aus der aktuellen technischen Freigabe (True), Max-Temp aus dem Lesewert (60.0).
+    assert heizstab["freigabe_vorschlag"] is True
+    assert heizstab["extra_heizstab_max_temperatur_vorschlag"] == 60.0
+    assert any("freigabe_vorschlag: fehlt" in c for c in result.clamped)
+    assert any("max_temperatur_vorschlag: fehlt" in c for c in result.clamped)
+
+
+def test_missing_device_is_appended_and_filled():
+    # D-050: ein vom Modell ganz ausgelassenes Gerät wird ergänzt und vollständig gefüllt,
+    # statt lautlos aus dem Plan zu verschwinden ("mal nur manche Geräte").
+    plan = _plan([{"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+                   "geschutzte_mindestleistung_w_vorschlag": 800.0,
+                   "extra_heizstab_max_temperatur_vorschlag": 55.0}])
+    result = validate(plan, _constraints(), now=NOW)
+    assert result.ok
+    names = {d["name"] for d in result.normalized_plan["devices"]}
+    assert names == {"heizstab", "heizluefter_1", "batterie"}
+    heizluefter = next(d for d in result.normalized_plan["devices"] if d["name"] == "heizluefter_1")
+    # Binärlast: freigabe aus Ist-Zustand (False = gesperrt), Prio ans Ende gereiht.
+    assert heizluefter["freigabe_vorschlag"] is False
+    assert heizluefter["prio_vorschlag"] == 20
+    assert any("Gerät fehlte" in c for c in result.clamped)
+
+
+def test_missing_priority_ranked_last_deterministically():
+    # D-050: fehlt ein Prio-Wert, wird das Gerät ans Ende der 10er-Rangfolge gestellt (statt das
+    # Feld zu verlieren) – vorhandene Prios behalten Vorrang.
+    plan = _plan(
+        [
+            {"name": "heizstab", "freigabe_vorschlag": True,
+             "geschutzte_mindestleistung_w_vorschlag": 1000.0},  # Prio fehlt -> ans Ende
+            {"name": "heizluefter_1", "prio_vorschlag": 5, "freigabe_vorschlag": True},
+            {"name": "heizluefter_2", "prio_vorschlag": 8, "freigabe_vorschlag": True},
+        ]
+    )
+    result = validate(plan, _ranked_constraints(), now=NOW)
+    assert result.ok
+    prios = {d["name"]: d["prio_vorschlag"] for d in result.normalized_plan["devices"]}
+    assert prios == {"heizluefter_1": 10, "heizluefter_2": 20, "heizstab": 30}
+    assert any("prio_vorschlag: fehlt" in c for c in result.clamped)
 
 
 def test_battery_excluded_from_priority_ranking():

@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.33"
+version: "0.0.34"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -25,6 +25,13 @@ options:
   # Timeout je KI-Aufruf (s) und Rate-Limit-Drossel (Aufrufe/min; Gemini-Free ~10).
   ai_request_timeout_s: 30
   ai_rate_limit_per_min: 10
+  # Determinismus (D-050): Sampling-Temperatur (0 = deterministisch) + fixer Seed sorgen dafür,
+  # dass gleicher Kontext stabil dieselben Vorschlagsfelder liefert (statt je Lauf/Modell zu schwanken).
+  ai_temperature: 0.0
+  ai_seed: 42
+  # Fehlende Pflicht-Vorschlagsfelder per gezieltem Nachforder-Aufruf ergänzen (ein Versuch),
+  # bevor der Validator sie deterministisch aus dem Ist-Zustand auffüllt.
+  ai_repair_missing: true
   planning_interval_min: 60
   plan_update_interval_min: 15
   forecast_horizon_h: 24
@@ -119,6 +126,9 @@ schema:
   api_key: password?
   ai_request_timeout_s: int(5,600)?
   ai_rate_limit_per_min: int(1,60)?
+  ai_temperature: float(0,2)?
+  ai_seed: int?
+  ai_repair_missing: bool?
   planning_interval_min: int(15,60)
   plan_update_interval_min: int(5,60)
   forecast_horizon_h: int(12,48)

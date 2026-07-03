@@ -16,6 +16,13 @@ DEFAULTS: dict[str, object] = {
     # Timeout je KI-Aufruf (s) und Rate-Limit-Drossel (Aufrufe/min; Gemini-Free ~10).
     "ai_request_timeout_s": 30,
     "ai_rate_limit_per_min": 10,
+    # Determinismus des KI-Aufrufs (D-050): niedrige Temperatur + fixer Seed => bei gleichem
+    # Kontext stabil dieselben Vorschlagsfelder (behebt schwankende Ausgaben je Lauf/Modell).
+    "ai_temperature": 0.0,
+    "ai_seed": 42,
+    # Fehlende Pflicht-Vorschlagsfelder per gezieltem Nachforder-Aufruf ergänzen (ein Versuch),
+    # bevor der Validator sie deterministisch auffüllt (D-050).
+    "ai_repair_missing": True,
     "planning_interval_min": 60,
     "plan_update_interval_min": 15,
     "forecast_horizon_h": 24,

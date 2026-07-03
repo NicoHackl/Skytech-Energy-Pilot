@@ -291,60 +291,109 @@ def build_prompt(context: dict, template: str | None = None) -> str:
     return f"{instruction}\n\nDaten:\n{data}\n"
 
 
-def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
-    """Gemini-kompatibles Antwort-Schema (OpenAPI-Subset, Typ-Enums in Großschreibung).
+def _extra_field_schema(ce) -> dict:
+    """Antwort-Schema-Property eines Zusatz-Vorschlagsfelds (Typ/Enum/Beschreibung, D-047 ff.)."""
+    prop: dict[str, object] = {"type": _KIND_TO_GEMINI.get(ce.kind, "STRING")}
+    desc: list[str] = []
+    if ce.extra.ai_hint:
+        desc.append(ce.extra.ai_hint)
+    if ce.kind == "number" and (ce.min is not None or ce.max is not None):
+        lo = "-unendlich" if ce.min is None else ce.min
+        hi = "unendlich" if ce.max is None else ce.max
+        desc.append(f"Wertebereich {lo} bis {hi}.")
+    elif ce.kind == "datetime":
+        desc.append(f"Format {_datetime_format(ce.has_date, ce.has_time)}.")
+    elif ce.kind == "select" and ce.options:
+        # Auswahlpool als Enum erzwingen (D-049): die KI MUSS genau eine Option wählen.
+        prop["enum"] = list(ce.options)
+        desc.append("Wähle genau einen dieser Werte: " + ", ".join(ce.options) + ".")
+    if desc:
+        prop["description"] = " ".join(str(p) for p in desc)
+    return prop
 
-    Bewusst NICHT `PLAN_JSON_SCHEMA` (nutzt `const`/`$schema`/`additionalProperties`,
-    die Gemini nicht unterstützt). Die Geräte-Properties sind die **Vereinigung** aller
-    möglichen Vorschlagsfelder; die Vertragstreue je Gerät erzwingt der Validator.
-    """
-    device_properties = {
-        "name": {"type": "STRING"},
-        "prio_vorschlag": {
+
+def _fixed_field_schema(key: str) -> dict:
+    """Antwort-Schema-Property eines festen Vorschlagsfelds (Prio/Freigabe/Mindestleistung)."""
+    if key == "prio_vorschlag":
+        return {
             "type": "INTEGER",
             "description": "10er-Rangfolge ab 10 (höchste Prio); nicht für die Batterie.",
-        },
-        "freigabe_vorschlag": {"type": "BOOLEAN"},
-        "geschutzte_mindestleistung_w_vorschlag": {"type": "NUMBER"},
-        "geschutzte_mindestleistung_a_vorschlag": {"type": "NUMBER"},
+        }
+    if key == "freigabe_vorschlag":
+        return {"type": "BOOLEAN"}
+    return {"type": "NUMBER"}  # geschutzte_mindestleistung_{w,a}_vorschlag
+
+
+def _device_response_schema(constraint: DeviceConstraint) -> dict:
+    """Antwort-Schema genau eines Geräts: nur die erlaubten Felder, ALLE als Pflicht.
+
+    Kernfix gegen schwankende Ausgabefelder (D-050): `required` = exakt der Schreibvertrag
+    dieses Geräts (`suggestion_keys`), sodass das Modell KEIN gefordertes Feld weglassen darf
+    (auch nicht die früher „vergessene" Max-Wassertemperatur). `propertyOrdering` stabilisiert
+    zusätzlich die Ausgabe (Gemini-Empfehlung für reproduzierbare strukturierte Antworten).
+    """
+    keys = suggestion_keys(constraint)
+    extra_by_field = {
+        ce.extra.plan_field: ce for ce in constraint.extras if ce.extra.ai_suggestion
     }
-    # Dynamische Zusatz-Vorschlagsfelder (D-047/D-048): Vereinigung über alle Geräte. Typ folgt
-    # der Domäne der Quell-Entität; Freitext + Grenzen/Format gehen als Feldbeschreibung mit.
-    for constraint in constraints:
-        for ce in constraint.extras:
-            if not ce.extra.ai_suggestion:
-                continue
-            prop: dict[str, object] = {"type": _KIND_TO_GEMINI.get(ce.kind, "STRING")}
-            desc: list[str] = []
-            if ce.extra.ai_hint:
-                desc.append(ce.extra.ai_hint)
-            if ce.kind == "number" and (ce.min is not None or ce.max is not None):
-                lo = "-unendlich" if ce.min is None else ce.min
-                hi = "unendlich" if ce.max is None else ce.max
-                desc.append(f"Wertebereich {lo} bis {hi}.")
-            elif ce.kind == "datetime":
-                desc.append(f"Format {_datetime_format(ce.has_date, ce.has_time)}.")
-            elif ce.kind == "select" and ce.options:
-                # Auswahlpool als Enum erzwingen (D-049): die KI MUSS genau eine Option wählen.
-                prop["enum"] = list(ce.options)
-                desc.append("Wähle genau einen dieser Werte: " + ", ".join(ce.options) + ".")
-            if desc:
-                prop["description"] = " ".join(str(p) for p in desc)
-            device_properties.setdefault(ce.extra.plan_field, prop)
+    properties: dict[str, object] = {"name": {"type": "STRING"}}
+    for key in keys:
+        properties[key] = (
+            _extra_field_schema(extra_by_field[key])
+            if key in extra_by_field
+            else _fixed_field_schema(key)
+        )
+    return {
+        "type": "OBJECT",
+        "properties": properties,
+        "required": ["name", *keys],
+        "propertyOrdering": ["name", *keys],
+    }
+
+
+def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
+    """Gemini-Antwort-Schema mit per-Gerät **erzwungenen** Pflichtfeldern (Kernfix D-050).
+
+    Bewusst NICHT `PLAN_JSON_SCHEMA` (nutzt `const`/`$schema`/`additionalProperties`, die
+    Gemini nicht unterstützt). `devices` ist ein OBJECT (ein Property je Gerätename) statt eines
+    Arrays: nur so lässt sich pro Gerät ein eigenes `required` erzwingen – ein gemeinsames
+    Array-`items` könnte die je nach Geräteklasse unterschiedlichen Pflichtfelder (Batterie ohne
+    Prio, gerätespezifische Zusatzfelder) nicht abbilden. So MUSS das Modell für jedes Gerät alle
+    geforderten Vorschlagsfelder liefern; der Validator füllt etwaige Restlücken zusätzlich auf.
+    """
+    device_properties = {c.name: _device_response_schema(c) for c in constraints}
+    device_order = [c.name for c in constraints]
     return {
         "type": "OBJECT",
         "properties": {
             "devices": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "OBJECT",
-                    "properties": device_properties,
-                    "required": ["name"],
-                },
+                "type": "OBJECT",
+                "properties": device_properties,
+                # Alle Geräte Pflicht (behebt „mal nur manche Geräte"): das Modell muss jeden
+                # bekannten Gerätenamen als Schlüssel liefern.
+                "required": device_order,
+                "propertyOrdering": device_order,
             },
             "confidence": {"type": "INTEGER"},
             "reasoning": {"type": "STRING"},
             "warnings": {"type": "ARRAY", "items": {"type": "STRING"}},
         },
         "required": ["devices", "confidence", "reasoning"],
+        "propertyOrdering": ["devices", "confidence", "reasoning", "warnings"],
     }
+
+
+def build_repair_prompt(base_prompt: str, missing: dict[str, list[str]]) -> str:
+    """Hängt an den Basis-Prompt eine gezielte Nachforderung fehlender Pflichtfelder an (D-050).
+
+    Ein einmaliger, bewusst schlanker Zusatz: Er benennt exakt die je Gerät fehlenden Felder und
+    fordert den KOMPLETTEN Plan erneut an. Rein promptseitig – Schema und Validator bleiben die
+    harten Garanten; scheitert der Aufruf, greift die deterministische Füllung im Validator.
+    """
+    lines = [f"- {name}: {', '.join(fields)}" for name, fields in missing.items()]
+    note = (
+        "\n\nWICHTIG: Deine vorige Antwort war unvollständig. Liefere den KOMPLETTEN Plan erneut "
+        "als JSON gemäß Schema und fülle für JEDES Gerät ALLE geforderten Vorschlagsfelder – "
+        "insbesondere diese bisher fehlenden Pflichtfelder:\n" + "\n".join(lines)
+    )
+    return base_prompt + note
