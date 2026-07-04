@@ -235,7 +235,9 @@ async def test_device_extra_post_rejects_suggestion_conflict(aiohttp_client, tmp
     assert res.status == 409
 
 
-async def test_device_extra_post_rejects_write_original_without_suggestion(aiohttp_client, tmp_path):
+async def test_device_extra_post_rejects_write_original_without_suggestion(
+    aiohttp_client, tmp_path
+):
     # D-052: "In Original schreiben" setzt einen aktiven KI-Vorschlag voraus.
     client, _ = await _discovered_client(aiohttp_client, tmp_path)
     res = await client.post("/api/devices/extras", json={

@@ -439,7 +439,8 @@ def _extras_payload(device_collector: object, device_name: str) -> list[dict]:
                 "plan_field": ex.plan_field,
                 "suggestion_entity_id": ex.suggestion_entity_id if ex.ai_suggestion else None,
                 # D-052: rohes Flag + Helfer-Fähigkeit + effektiver Original-Schreibweg (fürs UI:
-                # Checkbox nur bei is_writable_helper anzeigbar, wirksam nur bei should_write_original).
+                # Checkbox nur bei is_writable_helper anzeigbar, wirksam nur bei
+                # should_write_original).
                 "write_original": ex.write_original,
                 "is_writable_helper": ex.is_writable_helper,
                 "should_write_original": ex.should_write_original,
