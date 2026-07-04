@@ -6,6 +6,19 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.38] - 2026-07-04
+
+### Hinzugefügt
+- **Responsive Darstellung (Handy/Tablet).** Die Ingress-Oberfläche passt sich an kleine
+  Bildschirme an – **kein horizontales Scrollen mehr, nur vertikal**: breite Tabellen werden
+  am Handy (≤480 px) zu gestapelten Karten mit Spaltenbeschriftung, die Tab-Leiste bricht um
+  statt seitlich zu scrollen, das Zusatz-Entitäten-Formular wird einspaltig, lange Code-/JSON-
+  Blöcke brechen um. Tablet-Breakpoint (≤900 px) mit reduzierten Abständen; größere Touch-Ziele
+  auf Finger-Geräten.
+  - **Rein visuell/additiv:** Tabellenzellen erhalten ihre Spaltenüberschrift per
+    MutationObserver als `data-label` (fürs Karten-Layout). Alle Tabs, API-Aufrufe, IDs und
+    Event-Handler bleiben unverändert.
+
 ## [0.0.37] - 2026-07-04
 
 ### Geändert

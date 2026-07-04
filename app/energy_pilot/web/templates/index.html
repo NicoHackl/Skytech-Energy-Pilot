@@ -260,6 +260,65 @@
     .src-live { color: var(--ha-success); }
     .src-fallback { color: var(--ha-warning); }
     .src-none { color: var(--ha-text-disabled); }
+
+    /* ============================================================
+       Responsive – KEIN horizontales Scrollen (nur vertikal).
+       Tablet ≤900 px, Handy ≤480 px. Rein visuell/additiv.
+       ============================================================ */
+
+    /* Größere Touch-Ziele auf Finger-Geräten (kein feiner Zeiger). */
+    @media (hover: none) and (pointer: coarse) {
+      button, .btn-link { padding-top: 11px; padding-bottom: 11px; }
+      nav button { padding-top: 14px; padding-bottom: 14px; }
+    }
+
+    /* Tablet: Tab-Leiste umbrechen statt seitlich scrollen, Formular einspaltig. */
+    @media (max-width: 900px) {
+      .ha-content { padding: 12px; }
+      .ha-tabs { flex-wrap: wrap; overflow-x: visible; padding: 0 4px 4px; }
+      .extra-form { grid-template-columns: 1fr !important; }
+      .extra-form [style*="grid-column"] { grid-column: 1 / -1 !important; }
+    }
+
+    /* Handy: Tabellen → gestapelte Karten, alles bricht um. */
+    @media (max-width: 480px) {
+      body { font-size: 13.5px; }
+      .ha-header-top { height: 52px; padding: 0 12px; }
+      .ha-title { font-size: 1.1rem; }
+      .ha-content { padding: 10px; }
+      .ha-card { padding: 12px; }
+      .card-title { font-size: 1rem; }
+      .card-actions { width: 100%; }
+      .card-actions button, .card-actions .btn-link { flex: 1 1 auto; text-align: center; }
+
+      /* Tabelle als Kartenliste (kein overflow-x). */
+      .table-wrap { overflow-x: visible; }
+      table, tbody, tr, td { display: block; width: auto; }
+      thead { display: none; } /* Kopf ausblenden – Spalten via data-label (JS) an den Zellen */
+      tbody tr {
+        border: 1px solid var(--ha-divider);
+        border-radius: var(--ha-radius-sm);
+        padding: 8px 10px;
+        margin-bottom: 8px;
+      }
+      tbody tr:hover { background: transparent; }
+      tbody td { border: none; padding: 3px 0; }
+      /* Zellen mit gespiegelter Spaltenüberschrift: Label links, Wert rechts. */
+      tbody td[data-label] { display: flex; justify-content: space-between; gap: 1rem; text-align: right; }
+      tbody td[data-label]::before {
+        content: attr(data-label);
+        color: var(--ha-text-secondary);
+        font-weight: 500;
+        text-align: left;
+      }
+      tbody td:empty { display: none; }
+
+      /* Lange Inhalte umbrechen statt seitlich scrollen. */
+      pre { white-space: pre-wrap; word-break: break-word; }
+      code { word-break: break-word; }
+      textarea, select, input { max-width: 100% !important; }
+      #device-select { width: 100%; min-width: 0; }
+    }
   </style>
 </head>
 <body>
@@ -1380,6 +1439,25 @@
       if (document.getElementById("hems").classList.contains("active")) loadHems();
       if (document.getElementById("status").classList.contains("active")) { loadDiag(); loadAllowlist(); }
     }, 10000);
+
+    // ---- Responsive: Tabellen am Handy als Karten (siehe CSS @media ≤480px) ----
+    // Spiegelt je Tabelle die <thead>-Überschriften als data-label in die Körperzellen,
+    // damit die Karten-Ansicht die Spalte zeigt. Idempotent, läuft nach jedem Render
+    // (MutationObserver) – rein visuell, ändert keine Daten, IDs oder Event-Handler.
+    function labelizeTables(root) {
+      (root || document).querySelectorAll("table").forEach((t) => {
+        const heads = [...t.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+        if (!heads.length) return;
+        t.querySelectorAll("tbody tr").forEach((tr) => {
+          [...tr.children].forEach((td, i) => {
+            if (heads[i] && !td.hasAttribute("data-label")) td.setAttribute("data-label", heads[i]);
+          });
+        });
+      });
+    }
+    new MutationObserver(() => labelizeTables(document))
+      .observe(document.querySelector(".ha-content"), { childList: true, subtree: true });
+    labelizeTables(document);
   </script>
 </body>
 </html>
