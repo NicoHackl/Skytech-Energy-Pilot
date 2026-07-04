@@ -43,6 +43,7 @@ from energy_pilot.settings import (
 )
 
 TEMPLATES = Path(__file__).parent / "templates"
+STATIC = Path(__file__).parent / "static"
 
 # Auto-Retry der Geräte-Discovery (D-046): HA garantiert keine Addon-Startreihenfolge,
 # daher kann das HEMS beim EP-Start noch nicht erreichbar sein. Ohne Config-Fallback liefe
@@ -91,6 +92,9 @@ def create_app(
     app.add_routes(
         [
             web.get("/", index),
+            # Vendored Frontend-Assets (Preact/htm + app.js). Relativer Pfad `static/…`
+            # löst hinter dem HA-Ingress korrekt auf (wie im HEMS-Addon).
+            web.static("/static", STATIC),
             web.get("/api/health", health),
             web.get("/api/logs", logs),
             web.get("/api/logs/export", logs_export),

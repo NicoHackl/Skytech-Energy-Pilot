@@ -6,6 +6,22 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.39] - 2026-07-04
+
+### Geändert
+- **Frontend-Architektur auf Preact + htm umgestellt (kein Build-Schritt).** Die Ingress-SPA wird
+  nicht mehr per Hand über `innerHTML`-Strings aufgebaut, sondern als Preact-Komponenten
+  (htm-Templates; Preact/htm vendored unter `web/static/vendor/`, keine externe CDN, kein Node-Build).
+  Löst die frühere Vanilla-JS-SPA ab (D-010: „später optional Framework, sobald die UI ausgebaut ist").
+  Reaktiver Komponenten-Zustand ersetzt die manuellen DOM-Hacks (Fokus-Erhalt beim Tippen,
+  Dropdown-Auswahl, Auto-Refresh nur des aktiven Tabs).
+  - **Verhalten/Endpunkte unverändert:** identische API-Pfade, Payloads, Tabs und Funktionen; das
+    HA-Design (Klassennamen/CSS) und die responsive Darstellung (0.0.38) bleiben erhalten.
+  - Neue aiohttp-`/static`-Route liefert die vendored Assets + `app.js` aus (Ingress-relativer Pfad
+    `static/…`, wie im HEMS-Addon).
+  - Verifiziert: `ruff`, 37 Web-Tests (inkl. neuem Static-Route-Test) sowie ein Headless-Render
+    (jsdom) aller neun Tabs mit leeren **und** realistischen Daten – ohne Render-Fehler.
+
 ## [0.0.38] - 2026-07-04
 
 ### Hinzugefügt
