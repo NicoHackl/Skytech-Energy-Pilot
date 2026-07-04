@@ -6,6 +6,22 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.37] - 2026-07-04
+
+### Geändert
+- **Weboberfläche im Home-Assistant-Design neu gestaltet.** Layout, Farben und Aufbau der
+  Ingress-Oberfläche sind jetzt stark an das HA-Standardtheme (Material Design) angelehnt:
+  blaue App-Bar (Primärfarbe `#03a9f4`) mit View-Tabs und Unterstrich-Indikator, abgerundete
+  `ha-card`-Karten (12 px, weiche Schatten), HA-typische Datentabellen, `mwc-button`-Anmutung
+  für Schaltflächen, HA-Textfelder für Eingaben sowie helles **und** dunkles Theme über
+  `prefers-color-scheme`. Der bisherige minimalistische Systemschrift-Look wurde ersetzt.
+  - **Rein visuell – keine funktionale Änderung:** sämtliche Tabs (Status, Daten, Geräte,
+    Prognose, Grenzen & Ziele, Plan, HEMS, Einstellungen, Logs), alle API-Aufrufe, IDs,
+    Event-Handler und das gesamte Frontend-`<script>` bleiben unverändert. Betrifft nur den
+    `<style>`-Block und die statische Markup-Struktur in `web/templates/index.html` (Kopfleiste,
+    Tab-Navigation, Karten-Wrapper); die per JavaScript erzeugten Inhalte werden über die
+    bestehenden Klassennamen HA-konform gestylt.
+
 ## [0.0.36] - 2026-07-03
 
 ### Hinzugefügt

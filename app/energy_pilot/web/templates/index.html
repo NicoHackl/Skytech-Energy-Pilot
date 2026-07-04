@@ -5,182 +5,481 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Skytech Energy Pilot</title>
   <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
-    h1 { font-size: 1.3rem; }
-    nav button { padding: .5rem 1rem; margin-right: .25rem; cursor: pointer; }
-    nav button.active { font-weight: bold; }
-    .tab { display: none; margin-top: 1rem; }
+    /* ============================================================
+       Skytech Energy Pilot – Weboberfläche im Home-Assistant-Design.
+       Farben/Karten/Kopfleiste/Typografie sind an das HA-Standardtheme
+       (Material Design) angelehnt. Alle IDs, Klassennamen und das
+       <script> bleiben unverändert – nur das Aussehen wird angepasst.
+       ============================================================ */
+
+    /* ---- HA-Designtokens (Standardtheme, hell) ---- */
+    :root {
+      color-scheme: light dark;
+      --ha-primary: #03a9f4;
+      --ha-primary-dark: #0288d1;
+      --ha-accent: #ff9800;
+      --ha-bg: #f5f5f5;
+      --ha-card-bg: #ffffff;
+      --ha-text: #212121;
+      --ha-text-secondary: #727272;
+      --ha-text-disabled: #bdbdbd;
+      --ha-divider: rgba(0, 0, 0, .12);
+      --ha-error: #db4437;
+      --ha-warning: #f57c00;
+      --ha-success: #43a047;
+      --ha-info: #039be5;
+      --ha-header-bg: #03a9f4;
+      --ha-header-text: #ffffff;
+      --ha-header-text-dim: rgba(255, 255, 255, .72);
+      --ha-radius: 12px;
+      --ha-radius-sm: 6px;
+      --ha-shadow: 0 2px 1px -1px rgba(0, 0, 0, .2),
+                   0 1px 1px 0 rgba(0, 0, 0, .14),
+                   0 1px 3px 0 rgba(0, 0, 0, .12);
+      --ha-chip-bg: rgba(0, 0, 0, .06);
+      --ha-hover: rgba(0, 0, 0, .04);
+      --ha-code-bg: rgba(0, 0, 0, .05);
+      --ha-font: Roboto, "Helvetica Neue", -apple-system, BlinkMacSystemFont,
+                 "Segoe UI", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ha-bg: #111111;
+        --ha-card-bg: #1c1c1c;
+        --ha-text: #e1e1e1;
+        --ha-text-secondary: #9b9b9b;
+        --ha-text-disabled: #6f6f6f;
+        --ha-divider: rgba(225, 225, 225, .12);
+        --ha-header-bg: #1c1c1c;
+        --ha-chip-bg: rgba(255, 255, 255, .08);
+        --ha-hover: rgba(255, 255, 255, .06);
+        --ha-code-bg: rgba(255, 255, 255, .07);
+        --ha-shadow: 0 2px 1px -1px rgba(0, 0, 0, .4),
+                     0 1px 1px 0 rgba(0, 0, 0, .28),
+                     0 1px 3px 0 rgba(0, 0, 0, .24);
+      }
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: var(--ha-font);
+      margin: 0;
+      background: var(--ha-bg);
+      color: var(--ha-text);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---- Kopfleiste (HA App-Bar) ---- */
+    .ha-header {
+      background: var(--ha-header-bg);
+      color: var(--ha-header-text);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: var(--ha-shadow);
+    }
+    .ha-header-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 56px;
+      padding: 0 16px;
+    }
+    .ha-logo { width: 26px; height: 26px; flex-shrink: 0; fill: currentColor; }
+    .ha-title {
+      font-size: 1.25rem;
+      font-weight: 500;
+      letter-spacing: .1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* ---- Tabs (HA-View-Tabs mit Unterstrich-Indikator) ---- */
+    .ha-tabs {
+      display: flex;
+      padding: 0 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .ha-tabs::-webkit-scrollbar { display: none; }
+    nav button {
+      appearance: none;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--ha-header-text-dim);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: .875rem;
+      font-weight: 500;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+      padding: 14px 16px;
+      white-space: nowrap;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    nav button.active { color: var(--ha-header-text); border-bottom-color: var(--ha-header-text); }
+    nav button:hover:not(.active) { color: var(--ha-header-text); background: rgba(255, 255, 255, .08); }
+
+    /* ---- Inhalt ---- */
+    .ha-content { max-width: 1280px; margin: 0 auto; padding: 16px; }
+    .tab { display: none; }
     .tab.active { display: block; }
-    .kv { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; }
+
+    /* ---- Karten (ha-card) ---- */
+    .ha-card {
+      background: var(--ha-card-bg);
+      border-radius: var(--ha-radius);
+      box-shadow: var(--ha-shadow);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--ha-text);
+      margin-bottom: 12px;
+    }
+    .card-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+    .sub-title {
+      font-size: .8rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--ha-text-secondary);
+      margin: 18px 0 8px;
+    }
+    h1, h2, h3 { color: var(--ha-text); font-weight: 500; }
+    h2 { margin: 4px 0 8px; }
+    h3 { margin: 12px 0 6px; }
+
+    /* ---- Beschreibungstexte ---- */
+    .hint { font-size: .82rem; color: var(--ha-text-secondary); margin: 6px 0 10px; }
+    .hint-inline { font-size: .82rem; color: var(--ha-text-secondary); }
+    p { margin: 8px 0; }
+
+    /* ---- Definition (Schlüssel/Wert) ---- */
+    .kv {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: .35rem 1.2rem;
+      font-size: .88rem;
+      align-items: baseline;
+    }
+    .kv > div:nth-child(odd) { color: var(--ha-text-secondary); }
+
+    /* ---- Tabellen (HA-Datentabelle) ---- */
+    .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-    th, td { text-align: left; padding: .25rem .5rem; border-bottom: 1px solid #8884; vertical-align: top; }
-    code { font-family: ui-monospace, monospace; }
-    .toolbar { margin-bottom: .5rem; }
-    input { padding: .2rem .3rem; }
-    .src-live { color: #2a8; }
-    .src-fallback { color: #c93; }
-    .src-none { color: #999; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--ha-divider); vertical-align: top; }
+    th {
+      color: var(--ha-text-secondary);
+      font-weight: 500;
+      font-size: .75rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+    tbody tr:hover { background: var(--ha-hover); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    /* ---- Code ---- */
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .82em;
+      background: var(--ha-code-bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    pre {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      background: var(--ha-code-bg);
+      padding: 12px;
+      border-radius: var(--ha-radius-sm);
+      overflow: auto;
+    }
+    pre code { background: none; padding: 0; }
+
+    /* ---- Werkzeugleiste ---- */
+    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+
+    /* ---- Schaltflächen (mwc-button-Anmutung) ---- */
+    button, .btn-link {
+      appearance: none;
+      font-family: inherit;
+      font-size: .82rem;
+      font-weight: 500;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: var(--ha-radius-sm);
+      border: 1px solid var(--ha-divider);
+      background: var(--ha-card-bg);
+      color: var(--ha-primary);
+      padding: 8px 14px;
+      transition: background .15s, border-color .15s, opacity .15s;
+      text-decoration: none;
+      display: inline-block;
+      line-height: 1.2;
+    }
+    button:hover, .btn-link:hover { background: rgba(3, 169, 244, .08); border-color: var(--ha-primary); }
+    button:disabled { color: var(--ha-text-disabled); cursor: default; background: var(--ha-card-bg); border-color: var(--ha-divider); opacity: .6; }
+    button.primary { background: var(--ha-primary); color: #fff; border-color: var(--ha-primary); }
+    button.primary:hover { background: var(--ha-primary-dark); border-color: var(--ha-primary-dark); }
+
+    /* ---- Eingabefelder (HA-Textfeld) ---- */
+    input, select, textarea {
+      font-family: inherit;
+      font-size: .85rem;
+      color: var(--ha-text);
+      background: var(--ha-bg);
+      border: 1px solid var(--ha-divider);
+      border-radius: var(--ha-radius-sm);
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--ha-primary); }
+    select { cursor: pointer; }
+    textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    input[type="checkbox"] { accent-color: var(--ha-primary); width: auto; vertical-align: middle; }
+    label { font-size: .85rem; }
+    a { color: var(--ha-primary); }
+
+    /* ---- Aufklappbereiche ---- */
+    details { margin: 10px 0; border: 1px solid var(--ha-divider); border-radius: var(--ha-radius-sm); padding: 10px 12px; }
+    summary { cursor: pointer; font-weight: 500; color: var(--ha-primary); }
+
+    /* ---- Quellen-Kennzeichnung ---- */
+    .src-live { color: var(--ha-success); }
+    .src-fallback { color: var(--ha-warning); }
+    .src-none { color: var(--ha-text-disabled); }
   </style>
 </head>
 <body>
-  <h1>Skytech Energy Pilot</h1>
-  <nav>
-    <button data-tab="status" class="active">Status</button>
-    <button data-tab="daten">Daten</button>
-    <button data-tab="geraete">Geräte</button>
-    <button data-tab="prognose">Prognose</button>
-    <button data-tab="grenzen">Grenzen &amp; Ziele</button>
-    <button data-tab="plan">Plan</button>
-    <button data-tab="hems">HEMS</button>
-    <button data-tab="einstellungen">Einstellungen</button>
-    <button data-tab="logs">Logs</button>
-  </nav>
+  <header class="ha-header">
+    <div class="ha-header-top">
+      <svg class="ha-logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/>
+      </svg>
+      <span class="ha-title">Skytech Energy Pilot</span>
+    </div>
+    <nav class="ha-tabs">
+      <button data-tab="status" class="active">Status</button>
+      <button data-tab="daten">Daten</button>
+      <button data-tab="geraete">Geräte</button>
+      <button data-tab="prognose">Prognose</button>
+      <button data-tab="grenzen">Grenzen &amp; Ziele</button>
+      <button data-tab="plan">Plan</button>
+      <button data-tab="hems">HEMS</button>
+      <button data-tab="einstellungen">Einstellungen</button>
+      <button data-tab="logs">Logs</button>
+    </nav>
+  </header>
+
+  <main class="ha-content">
 
   <section id="status" class="tab active">
-    <div class="kv" id="health"></div>
-    <h2 style="font-size:1rem;margin-top:1rem;">Diagnose</h2>
-    <div class="kv" id="diag"></div>
-    <div class="toolbar" style="margin-top:.5rem;">
-      <button id="ha-test">HA-Verbindung testen</button>
-      <span id="ha-test-result"></span>
+    <div class="ha-card">
+      <div class="card-title">Systemstatus</div>
+      <div class="kv" id="health"></div>
     </div>
-    <h2 style="font-size:1rem;margin-top:1rem;">Freigegebene Entitäten (Allowlist)</h2>
-    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">EP liest nur diese Entitäten.
-       Zugriffe außerhalb der Liste werden protokolliert, aber nicht blockiert.</p>
-    <div id="allowlist"></div>
+    <div class="ha-card">
+      <div class="card-title">Diagnose</div>
+      <div class="kv" id="diag"></div>
+      <div class="toolbar">
+        <button id="ha-test">HA-Verbindung testen</button>
+        <span id="ha-test-result" class="hint-inline"></span>
+      </div>
+    </div>
+    <div class="ha-card">
+      <div class="card-title">Freigegebene Entitäten (Allowlist)</div>
+      <p class="hint">EP liest nur diese Entitäten.
+         Zugriffe außerhalb der Liste werden protokolliert, aber nicht blockiert.</p>
+      <div id="allowlist"></div>
+    </div>
   </section>
 
   <section id="daten" class="tab">
-    <div class="toolbar"><button id="refresh-state">Aktualisieren</button></div>
-    <table>
-      <thead><tr><th>Größe</th><th class="num">Aktuell</th><th class="num">Ø 1 min</th><th class="num">Ø 15 min</th><th class="num">Ø 60 min</th><th>Quelle</th></tr></thead>
-      <tbody id="state-rows"></tbody>
-    </table>
+    <div class="ha-card">
+      <div class="card-title">Messwerte
+        <div class="card-actions"><button id="refresh-state">Aktualisieren</button></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Größe</th><th class="num">Aktuell</th><th class="num">Ø 1 min</th><th class="num">Ø 15 min</th><th class="num">Ø 60 min</th><th>Quelle</th></tr></thead>
+          <tbody id="state-rows"></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <section id="geraete" class="tab">
-    <div class="toolbar">
-      <label for="device-select">Gerät:</label>
-      <select id="device-select" style="padding:.3rem .4rem;min-width:14rem;"></select>
-      <button id="refresh-devices">Aktualisieren</button>
-      <span id="device-source"></span>
+    <div class="ha-card">
+      <div class="card-title">Geräte
+        <div class="card-actions"><button id="refresh-devices">Aktualisieren</button></div>
+      </div>
+      <div class="toolbar">
+        <label for="device-select">Gerät:</label>
+        <select id="device-select" style="min-width:14rem;"></select>
+        <span id="device-source" class="hint-inline"></span>
+      </div>
+      <p class="hint">Ein Gerät auswählen, um dessen Werte,
+        Zusatz-Entitäten und KI-Beschreibung zu sehen. Geräte kommen ausschließlich vom HEMS.
+        Über <b>Zusatz-Entitäten</b> kannst du je Gerät weitere Werte <b>beliebiger Domäne</b>
+        hinterlegen (<code>sensor</code>, <code>input_number</code>, <code>input_boolean</code>,
+        <code>input_datetime</code>, <code>input_text</code>, <code>input_select</code> …), die EP liest –
+        optional liefert die KI dafür einen typgerechten Vorschlag als
+        <code>sensor.ep_&lt;entität&gt;_vorschlag</code> (nur HA-Sensor, nicht ans HEMS). Bei
+        <code>input_number</code> gehen min/max als Grenzen an die KI, bei <code>input_datetime</code>
+        das Datum/Zeit-Format, bei <code>input_select</code> die Auswahlmöglichkeiten als Wertepool
+        (die KI wählt genau eine). Der Freitext erklärt der KI den Wert.</p>
+      <div id="device-list"></div>
     </div>
-    <p style="font-size:.8rem;color:#888;margin:.4rem 0;">Ein Gerät auswählen, um dessen Werte,
-      Zusatz-Entitäten und KI-Beschreibung zu sehen. Geräte kommen ausschließlich vom HEMS.
-      Über <b>Zusatz-Entitäten</b> kannst du je Gerät weitere Werte <b>beliebiger Domäne</b>
-      hinterlegen (<code>sensor</code>, <code>input_number</code>, <code>input_boolean</code>,
-      <code>input_datetime</code>, <code>input_text</code>, <code>input_select</code> …), die EP liest –
-      optional liefert die KI dafür einen typgerechten Vorschlag als
-      <code>sensor.ep_&lt;entität&gt;_vorschlag</code> (nur HA-Sensor, nicht ans HEMS). Bei
-      <code>input_number</code> gehen min/max als Grenzen an die KI, bei <code>input_datetime</code>
-      das Datum/Zeit-Format, bei <code>input_select</code> die Auswahlmöglichkeiten als Wertepool
-      (die KI wählt genau eine). Der Freitext erklärt der KI den Wert.</p>
-    <div id="device-list"></div>
   </section>
 
   <section id="prognose" class="tab">
-    <div class="toolbar"><button id="refresh-forecast">Aktualisieren</button></div>
-    <h2 style="font-size:1rem;">PV-Prognose (Summe über alle Ausrichtungen)</h2>
-    <div id="forecast-totals"></div>
-    <div id="forecast-orient"></div>
-    <h2 style="font-size:1rem;margin-top:1.5rem;">Wetter (OpenWeatherMap)</h2>
-    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Direkt im EP über OpenWeatherMap
-       abgerufen (Quelle umschaltbar: 5 Tage / 3 h oder One Call API 4.0). Koordinaten aus der
-       HA-Zone, API-Schlüssel in der Addon-Config (<code>weather</code>). Nur EP-intern —
-       <strong>nicht</strong> als HA-Sensor oder an HEMS.</p>
-    <div class="toolbar"><button id="test-weather">Wetter testen</button><span id="weather-status"></span></div>
-    <div id="weather-meta" style="font-size:.8rem;color:#888;margin:.25rem 0;"></div>
-    <div id="weather-list"></div>
+    <div class="ha-card">
+      <div class="card-title">PV-Prognose (Summe über alle Ausrichtungen)
+        <div class="card-actions"><button id="refresh-forecast">Aktualisieren</button></div>
+      </div>
+      <div id="forecast-totals"></div>
+      <div id="forecast-orient"></div>
+    </div>
+    <div class="ha-card">
+      <div class="card-title">Wetter (OpenWeatherMap)
+        <div class="card-actions"><button id="test-weather">Wetter testen</button></div>
+      </div>
+      <p class="hint">Direkt im EP über OpenWeatherMap
+         abgerufen (Quelle umschaltbar: 5 Tage / 3 h oder One Call API 4.0). Koordinaten aus der
+         HA-Zone, API-Schlüssel in der Addon-Config (<code>weather</code>). Nur EP-intern —
+         <strong>nicht</strong> als HA-Sensor oder an HEMS.</p>
+      <div id="weather-status" class="hint-inline"></div>
+      <div id="weather-meta" class="hint"></div>
+      <div id="weather-list"></div>
+    </div>
   </section>
 
   <section id="grenzen" class="tab">
-    <div class="toolbar"><button id="refresh-grenzen">Aktualisieren</button></div>
-    <h2 style="font-size:1rem;">Harte Grenzen je Gerät</h2>
-    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Technische Limits/Freigaben aus den
-       <code>ems_*</code>-Werten. Read-only und <strong>nie</strong> durch die KI änderbar.
-       „Schreibbar" = Vorschlagsfelder, die EP für dieses Gerät erzeugen darf.</p>
-    <div id="constraints-list"></div>
-    <h2 style="font-size:1rem;margin-top:1rem;">Weiche Zielgewichte</h2>
-    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Gewichte (0–100 %) aus info.md §7,
-       in der Addon-Config unter <code>objective_weights</code> pflegbar.</p>
-    <table>
-      <thead><tr><th>Ziel</th><th class="num">Gewicht</th></tr></thead>
-      <tbody id="objective-rows"></tbody>
-    </table>
+    <div class="ha-card">
+      <div class="card-title">Harte Grenzen je Gerät
+        <div class="card-actions"><button id="refresh-grenzen">Aktualisieren</button></div>
+      </div>
+      <p class="hint">Technische Limits/Freigaben aus den
+         <code>ems_*</code>-Werten. Read-only und <strong>nie</strong> durch die KI änderbar.
+         „Schreibbar" = Vorschlagsfelder, die EP für dieses Gerät erzeugen darf.</p>
+      <div id="constraints-list"></div>
+    </div>
+    <div class="ha-card">
+      <div class="card-title">Weiche Zielgewichte</div>
+      <p class="hint">Gewichte (0–100 %) aus info.md §7,
+         in der Addon-Config unter <code>objective_weights</code> pflegbar.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ziel</th><th class="num">Gewicht</th></tr></thead>
+          <tbody id="objective-rows"></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <section id="plan" class="tab">
-    <div class="toolbar">
-      <button id="run-plan">Plan erzeugen</button>
-      <button id="publish-plan">Erneut nach HA schreiben</button>
-      <button id="refresh-plan">Aktualisieren</button>
-      <button id="test-ai">KI-Verbindung testen</button>
-      <span id="plan-status"></span>
-    </div>
-    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Die KI erzeugt einen
-       <strong>Vorschlagsplan</strong> (V1). Werte werden lokal gegen die harten Grenzen
-       validiert und bei Gültigkeit als <code>sensor.ep_*_vorschlag</code> nach Home
-       Assistant geschrieben (reine Anzeige zum manuellen Verdrahten) — aber
-       <strong>nicht</strong> an HEMS übergeben.</p>
-    <details style="margin:.5rem 0;">
-      <summary style="cursor:pointer;font-weight:bold;">Planungs-Prompt bearbeiten</summary>
-      <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Die Instruktion an die KI. Änderungen
-         wirken sofort beim nächsten Plan — <strong>kein</strong> Git-Push/Add-on-Update nötig
-         (gespeichert in der EP-Datenbank, übersteht Neustart &amp; Update). Der Datenblock
-         (<code>Daten:</code> mit Zustand/Prognose/Wetter/Geräten/Zielen) wird automatisch angehängt;
-         das JSON-Antwortformat und die harten Grenzen bleiben fest erzwungen.</p>
-      <textarea id="prompt-text" rows="14" style="width:100%;font-family:monospace;font-size:.8rem;box-sizing:border-box;"></textarea>
-      <div class="toolbar">
-        <button id="save-prompt">Speichern</button>
-        <button id="reset-prompt">Auf Standard zurücksetzen</button>
-        <span id="prompt-status"></span>
+    <div class="ha-card">
+      <div class="card-title">Plan
+        <div class="card-actions">
+          <button id="run-plan" class="primary">Plan erzeugen</button>
+          <button id="publish-plan">Erneut nach HA schreiben</button>
+          <button id="refresh-plan">Aktualisieren</button>
+          <button id="test-ai">KI-Verbindung testen</button>
+        </div>
       </div>
-    </details>
-    <div id="plan-result"></div>
+      <div class="toolbar"><span id="plan-status" class="hint-inline"></span></div>
+      <p class="hint">Die KI erzeugt einen
+         <strong>Vorschlagsplan</strong> (V1). Werte werden lokal gegen die harten Grenzen
+         validiert und bei Gültigkeit als <code>sensor.ep_*_vorschlag</code> nach Home
+         Assistant geschrieben (reine Anzeige zum manuellen Verdrahten) — aber
+         <strong>nicht</strong> an HEMS übergeben.</p>
+      <details>
+        <summary>Planungs-Prompt bearbeiten</summary>
+        <p class="hint">Die Instruktion an die KI. Änderungen
+           wirken sofort beim nächsten Plan — <strong>kein</strong> Git-Push/Add-on-Update nötig
+           (gespeichert in der EP-Datenbank, übersteht Neustart &amp; Update). Der Datenblock
+           (<code>Daten:</code> mit Zustand/Prognose/Wetter/Geräten/Zielen) wird automatisch angehängt;
+           das JSON-Antwortformat und die harten Grenzen bleiben fest erzwungen.</p>
+        <textarea id="prompt-text" rows="14"></textarea>
+        <div class="toolbar">
+          <button id="save-prompt" class="primary">Speichern</button>
+          <button id="reset-prompt">Auf Standard zurücksetzen</button>
+          <span id="prompt-status" class="hint-inline"></span>
+        </div>
+      </details>
+      <div id="plan-result"></div>
+    </div>
   </section>
 
   <section id="hems" class="tab">
-    <div class="toolbar">
-      <button id="refresh-hems">Aktualisieren</button>
-      <button id="test-hems">Jetzt prüfen</button>
-      <button id="sync-hems-devices">Geräte von HEMS neu laden</button>
-      <span id="hems-status"></span>
+    <div class="ha-card">
+      <div class="card-title">HEMS-Rückkopplung
+        <div class="card-actions">
+          <button id="refresh-hems">Aktualisieren</button>
+          <button id="test-hems">Jetzt prüfen</button>
+          <button id="sync-hems-devices">Geräte von HEMS neu laden</button>
+        </div>
+      </div>
+      <div class="toolbar"><span id="hems-status" class="hint-inline"></span></div>
+      <p class="hint">Status-Rückkopplung (M3): EP liest den
+         HEMS-Zustand (<code>/api/status</code>) und vergleicht die KI-Vorschläge mit dem Ist-Zustand.
+         Die Aussage ist <strong>beobachtend</strong> — in V1 verdrahtet der User die Vorschläge selbst
+         in HA. Gespiegelt als <code>sensor.ep_plan_status</code> und <code>sensor.ep_hems_verbindung</code>.
+         HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen.</p>
+      <h3 class="sub-title">Verbindung &amp; Regelzyklus</h3>
+      <div class="kv" id="hems-conn"></div>
+      <h3 class="sub-title">Plan-Rückkopplung</h3>
+      <div id="hems-feedback"></div>
+      <h3 class="sub-title">HEMS-Gerätezustände</h3>
+      <div id="hems-devices"></div>
     </div>
-    <p style="font-size:.8rem;color:#888;margin:.25rem 0;">Status-Rückkopplung (M3): EP liest den
-       HEMS-Zustand (<code>/api/status</code>) und vergleicht die KI-Vorschläge mit dem Ist-Zustand.
-       Die Aussage ist <strong>beobachtend</strong> — in V1 verdrahtet der User die Vorschläge selbst
-       in HA. Gespiegelt als <code>sensor.ep_plan_status</code> und <code>sensor.ep_hems_verbindung</code>.
-       HEMS-URL in der Addon-Config (<code>hems_base_url</code>) setzen.</p>
-    <h2 style="font-size:1rem;margin-top:1rem;">Verbindung &amp; Regelzyklus</h2>
-    <div class="kv" id="hems-conn"></div>
-    <h2 style="font-size:1rem;margin-top:1rem;">Plan-Rückkopplung</h2>
-    <div id="hems-feedback"></div>
-    <h2 style="font-size:1rem;margin-top:1rem;">HEMS-Gerätezustände</h2>
-    <div id="hems-devices"></div>
   </section>
 
   <section id="einstellungen" class="tab">
-    <p>Die Zuordnung der Größen zu HA-Entitäten wird in der <strong>Addon-Konfiguration</strong> gepflegt
-       (gleiche Seite wie das KI-Modell, Felder <code>entity_…</code> / <code>fallback_…</code>).
-       Hier wird nur der aktuell geladene Stand angezeigt.</p>
-    <table>
-      <thead><tr><th>Größe</th><th>HA-Entität</th><th>Fallback</th></tr></thead>
-      <tbody id="entity-rows"></tbody>
-    </table>
+    <div class="ha-card">
+      <div class="card-title">Einstellungen (Anzeige)</div>
+      <p class="hint">Die Zuordnung der Größen zu HA-Entitäten wird in der <strong>Addon-Konfiguration</strong> gepflegt
+         (gleiche Seite wie das KI-Modell, Felder <code>entity_…</code> / <code>fallback_…</code>).
+         Hier wird nur der aktuell geladene Stand angezeigt.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Größe</th><th>HA-Entität</th><th>Fallback</th></tr></thead>
+          <tbody id="entity-rows"></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <section id="logs" class="tab">
-    <div class="toolbar">
-      <button id="refresh-logs">Aktualisieren</button>
-      <a id="export-logs" href="api/logs/export">Export (JSONL)</a>
+    <div class="ha-card">
+      <div class="card-title">Logs
+        <div class="card-actions">
+          <button id="refresh-logs">Aktualisieren</button>
+          <a id="export-logs" class="btn-link" href="api/logs/export">Export (JSONL)</a>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Zeit</th><th>Level</th><th>Komponente</th><th>Nachricht</th></tr></thead>
+          <tbody id="log-rows"></tbody>
+        </table>
+      </div>
     </div>
-    <table>
-      <thead><tr><th>Zeit</th><th>Level</th><th>Komponente</th><th>Nachricht</th></tr></thead>
-      <tbody id="log-rows"></tbody>
-    </table>
   </section>
+
+  </main>
 
   <script>
     // Ingress liefert relative Pfade; daher API ohne führenden Slash ansprechen.
