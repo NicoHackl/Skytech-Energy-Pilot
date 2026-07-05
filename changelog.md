@@ -6,6 +6,25 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.42] - 2026-07-05
+
+### Geändert
+- **Addon-Konfiguration vollständig deutsch beschriftet (HA-Formular).** Die
+  `translations/de.yaml` (und `en.yaml`) waren unvollständig und veraltet, wodurch viele
+  Felder im HA-Konfigurationsformular mit ihrem rohen technischen Schlüssel angezeigt wurden.
+  Jetzt hat **jede** Option einen lesbaren Anzeigenamen + Beschreibung:
+  - **Neu übersetzt (fehlten):** `api_key`, `ai_request_timeout_s`, `ai_rate_limit_per_min`,
+    `hems_base_url`, `hems_status_interval_s`, `publish_status`, `pv_forecast_unit`.
+  - **Verschachtelte Gruppen/Listen über `fields:`-Blöcke beschriftet** (HA-Mechanismus):
+    `sensoren` (entity_*), `objective_weights` (Zielgewichte), `weather` inkl. `weather.onecall`,
+    und die Listeneinträge von `pv_forecast`. So bekommt auch jedes Unterfeld einen deutschen
+    Namen statt des technischen Schlüssels.
+  - **Veraltete Einträge entfernt:** `fallback_*` (Feature in 0.0.40 entfernt) und
+    `entity_water_temperature` (Warmwassertemperatur ist gerätespezifisch, Geräte-Tab). Die
+    `entity_*`-Namen lagen zudem fälschlich top-level und greifen erst korrekt unter
+    `sensoren.fields`.
+  Der technische Schlüssel in `config.yaml`/`schema` bleibt unverändert – nur die Anzeige.
+
 ## [0.0.41] - 2026-07-05
 
 ### Geändert
