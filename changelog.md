@@ -6,6 +6,26 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.44] - 2026-07-05
+
+### Geändert
+- **Logging: Original-Fehlermeldungen der Backends werden jetzt mitgeloggt.** Bislang gingen bei
+  HTTP-Fehlern (4XX/5XX) von Home Assistant und dem HEMS die eigentlichen Servergründe verloren,
+  weil `resp.raise_for_status()` nur „HTTP 400" o.ä. meldete und den Antwort-Body verwarf. Jetzt
+  wird der Body ausgelesen und der echte Grund (`{"message": …}` bzw. `{"error": {"message": …}}`)
+  in die Fehlermeldung gehoben – z.B. `Home Assistant: HTTP 404 Not Found (/api/states/…) – Entity
+  not found.` statt eines nichtssagenden „HTTP 404".
+  - **Neu:** gemeinsamer Helfer `http_errors.raise_for_status`/`read_error_body` + Ausnahme
+    `HTTPStatusError` (trägt Status, Reason, Servermeldung und Endpunkt-**Pfad** als strukturierte
+    Felder). Genutzt von HA-Client, HEMS-Client und (Body-Leser) OWM-/Gemini-Client.
+  - **Gemini:** 429- und 4XX/5XX-Fehler nehmen jetzt ebenfalls den Original-Grund aus dem Body
+    mit (vorher nur roher Textausschnitt bzw. beim Rate-Limit gar keine Server-Info).
+  - **Iron Rule 6 gewahrt:** es wird nur der Pfad ohne Query mitgeführt – kein als Query-Parameter
+    übergebener Schlüssel (z.B. OWM `appid`) kann in ein Log geraten.
+  - **Unerwartete Ausnahmen** im Sammellauf werden mit **Traceback** (`exc_info`) und dem Namen der
+    fehlgeschlagenen Komponente geloggt → maschinenlesbar im JSONL-Export (KI-Fehleranalyse,
+    user-regeln §02). `log()` akzeptiert dafür nun `exc_info`.
+
 ## [0.0.43] - 2026-07-05
 
 ### Behoben

@@ -131,5 +131,15 @@ async def run_poller(
                 await component.collect_once()
             except Exception as exc:
                 if logger:
-                    log(logger, "error", "Sammellauf fehlgeschlagen", context={"error": str(exc)})
+                    # Unerwarteter Fehler → Komponente benennen + Traceback für die KI-Analyse.
+                    log(
+                        logger,
+                        "error",
+                        "Sammellauf fehlgeschlagen",
+                        context={
+                            "component": type(component).__name__,
+                            "error": str(exc).strip() or exc.__class__.__name__,
+                        },
+                        exc_info=exc,
+                    )
         await asyncio.sleep(interval_s)

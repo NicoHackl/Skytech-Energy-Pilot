@@ -3,12 +3,21 @@
 import pytest
 
 from energy_pilot.hems_client import HEMSClient
+from energy_pilot.http_errors import HTTPStatusError
+
+
+class _FakeURL:
+    def __init__(self, path):
+        self.path = path
 
 
 class _FakeResponse:
-    def __init__(self, payload, status=200):
+    def __init__(self, payload, status=200, text="", reason="OK", path="/api/status"):
         self._payload = payload
         self.status = status
+        self._text = text
+        self.reason = reason
+        self.url = _FakeURL(path)
 
     async def __aenter__(self):
         return self
@@ -16,23 +25,23 @@ class _FakeResponse:
     async def __aexit__(self, *exc):
         return False
 
-    def raise_for_status(self):
-        if self.status >= 400:
-            raise RuntimeError(f"HTTP {self.status}")
-
     async def json(self):
         return self._payload
 
+    async def text(self):
+        return self._text
+
 
 class _FakeSession:
-    def __init__(self, payload, status=200):
+    def __init__(self, payload, status=200, text=""):
         self._payload = payload
         self._status = status
+        self._text = text
         self.urls = []
 
     def get(self, url, timeout=None):
         self.urls.append(url)
-        return _FakeResponse(self._payload, self._status)
+        return _FakeResponse(self._payload, self._status, self._text, path=url)
 
 
 def test_base_url_is_normalized():
@@ -54,11 +63,15 @@ async def test_device_schema_calls_endpoint():
 
 @pytest.mark.asyncio
 async def test_device_schema_raises_on_error_status():
-    session = _FakeSession({}, status=502)
+    session = _FakeSession({}, status=502, text="Bad Gateway")
     client = HEMSClient("http://hems:8099", session=session)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(HTTPStatusError) as exc:
         await client.device_schema()
+
+    assert exc.value.status == 502
+    assert "HEMS" in str(exc.value)
+    assert "502" in str(exc.value)
 
 
 @pytest.mark.asyncio
@@ -86,9 +99,14 @@ async def test_controls_calls_endpoint():
 
 
 @pytest.mark.asyncio
-async def test_status_raises_on_error_status():
-    session = _FakeSession({}, status=500)
+async def test_status_raises_on_error_status_with_server_message():
+    # 5XX mit JSON-Body: die HEMS-Meldung + der Endpunkt-Pfad landen in der Fehlermeldung.
+    session = _FakeSession({}, status=500, text='{"message": "Regelzyklus abgestürzt"}')
     client = HEMSClient("http://hems:8099", session=session)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(HTTPStatusError) as exc:
         await client.status()
+
+    assert exc.value.server_message == "Regelzyklus abgestürzt"
+    assert exc.value.path.endswith("/api/status")
+    assert "Regelzyklus abgestürzt" in str(exc.value)
