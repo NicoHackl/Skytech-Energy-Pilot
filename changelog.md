@@ -6,6 +6,28 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.41] - 2026-07-05
+
+### Geändert
+- **Durchgängig lesbare deutsche Anzeigetexte (UI-Audit).** Verbliebene technische/englische
+  Bezeichner in der Ingress-Oberfläche durch schön lesbare deutsche Namen ersetzt:
+  - HEMS-Tab: Spaltenkopf `Eligible` → `Freigegeben`; Spalte „Typ" zeigt statt der rohen
+    HEMS-Werte `binary`/`controllable` jetzt `binär`/`regelbar`.
+  - Plan-Tab: Geräte-Überschrift zeigt den technischen Gerätenamen (z. B. `heizstab`) jetzt
+    als lesbare Überschrift (`Heizstab`) statt in snake_case.
+  - Status-Tab: Karte „Systemstatus" beschriftet die Roh-Schlüssel jetzt deutsch
+    (`provider` → „KI-Anbieter", `model` → „Modell", `ha_configured` → „HA verbunden" …) und
+    zeigt Bool-Werte als Ja/Nein statt `true`/`false`; Diagnose-Zeilen ebenso (Ja/Nein).
+  - Spalten „Quelle" (Daten/Geräte/Prognose/Allowlist): technische Herkunftstoken lesbar
+    übersetzt (`live` → „Live", `none` → „keine", `weather` → „Wetter", `measurement`
+    → „Messwert", `device` → „Gerät", `forecast` → „Prognose"). CSS-Klassen unverändert.
+  - HEMS-Tab: „Globaler Modus" zeigt den Regelmodus-Wert lesbar (`nur_heizen` → „Nur Heizen"
+    usw.) statt in snake_case.
+- **HA-Helfer-Vorlage `input_select_ep.yaml`:** Auswahloptionen von technischem snake_case auf
+  lesbares Deutsch umgestellt (`eigenverbrauch_maximieren` → `Eigenverbrauch maximieren`,
+  `manuell` → `Manuell` usw.). Bei `input_select` ist der Options-Text zugleich der gespeicherte
+  Wert; die Optionen werden derzeit von keinem Code gelesen, daher rein anzeigeseitig.
+
 ## [0.0.40] - 2026-07-05
 
 ### Entfernt

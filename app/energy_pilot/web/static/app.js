@@ -14,6 +14,22 @@ const fmt = (v) =>
   v === null || v === undefined ? "–" : Number(v).toLocaleString("de-DE", { maximumFractionDigits: 1 });
 const tsDE = (t) => (t ? new Date(t * 1000).toLocaleString("de-DE") : "–");
 const boolDe = (v) => (v ? "Ja" : "Nein");
+// Technische Quell-/Herkunftstoken (aus dem Backend) als lesbare deutsche Anzeige.
+// Die CSS-Klasse `src-<token>` bleibt am Rohwert – nur der sichtbare Text wird übersetzt.
+const SRC_LABELS = {
+  live: "Live",
+  none: "keine",
+  fallback: "Ersatzwert",
+  hems: "HEMS",
+  measurement: "Messwert",
+  device: "Gerät",
+  forecast: "Prognose",
+  weather: "Wetter",
+};
+const srcDe = (s) => SRC_LABELS[s] || s || "–";
+// Technischer HEMS-Regelmodus-Wert als lesbare deutsche Anzeige (aus input_select.ems_regelmodus).
+const MODE_LABELS = { aus: "Aus", auto: "Automatik", nur_heizen: "Nur Heizen", nur_laden: "Nur Laden" };
+const modeDe = (m) => MODE_LABELS[m] || m || "–";
 
 // Robust gegen Nicht-JSON-Antworten (HA-Ingress-Fehlerseite bei Timeout/502): liefert
 // eine lesbare Meldung statt „Unexpected token '<'". Ersetzt die frühere fetchJson().
@@ -79,6 +95,13 @@ function planFieldLabel(k) {
   if (m) return "Zusatz: " + m[1].replace(/_/g, " ");
   return k;
 }
+// Technischer Gerätename (z. B. "heizstab") als lesbare Überschrift, falls kein
+// Anzeige-Label mitgeliefert wird (Plan-Geräte tragen nur den technischen `name`).
+function deviceHeading(name) {
+  return String(name || "")
+    .replace(/_/g, " ")
+    .replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+}
 const HEMS_OVERALL = {
   kein_plan: ["Kein Plan", "#888"],
   unbekannt: ["Unbekannt", "#c93"],
@@ -116,12 +139,25 @@ function StatusTab() {
     }
     reloadDiag();
   };
-  const healthRows = health && !health.__error ? Object.entries(health).map(([k, v]) => [k, String(v)]) : [];
+  const HEALTH_LABELS = {
+    status: "Status",
+    version: "Version",
+    provider: "KI-Anbieter",
+    model: "Modell",
+    ha_configured: "HA verbunden",
+  };
+  const healthRows =
+    health && !health.__error
+      ? Object.entries(health).map(([k, v]) => [
+          HEALTH_LABELS[k] || k,
+          typeof v === "boolean" ? boolDe(v) : String(v),
+        ])
+      : [];
   const diagRows =
     diag && !diag.__error
       ? [
-          ["HA verbunden", String(diag.ha_configured)],
-          ["Poller aktiv", String(diag.poller_active)],
+          ["HA verbunden", boolDe(diag.ha_configured)],
+          ["Poller aktiv", boolDe(diag.poller_active)],
           ["Intervall (s)", diag.poll_interval_s],
           ["Zugeordnete Größen", (diag.mapped_roles || []).join(", ") || "–"],
           ["Letzter Lauf", tsDE(diag.last_collect_ts)],
@@ -153,14 +189,14 @@ function Allowlist({ data }) {
   if (!data.count)
     return html`<p>Noch keine Entitäten freigegeben (Zuordnung/Geräte/Prognose in der Addon-Config pflegen).</p>`;
   const bySrc = Object.entries(data.by_source || {})
-    .map(([k, v]) => `${k}: ${v}`)
+    .map(([k, v]) => `${srcDe(k)}: ${v}`)
     .join(", ");
   return html`
     <p style="font-size:.8rem;color:#888;">${data.count} Entitäten (${bySrc})</p>
     <div class="table-wrap"><table>
       <thead><tr><th>Entität</th><th>Quelle</th></tr></thead>
       <tbody>${(data.entries || []).map(
-        (e, i) => html`<tr key=${i}><td><code>${e.entity_id}</code></td><td>${e.source}</td></tr>`
+        (e, i) => html`<tr key=${i}><td><code>${e.entity_id}</code></td><td>${srcDe(e.source)}</td></tr>`
       )}</tbody>
     </table></div>`;
 }
@@ -184,7 +220,7 @@ function DatenTab() {
           <td class="num">${r.averaged ? fmt(r.mean_1m) + unit : ""}</td>
           <td class="num">${r.averaged ? fmt(r.mean_15m) + unit : ""}</td>
           <td class="num">${r.averaged ? fmt(r.mean_60m) + unit : ""}</td>
-          <td class="src-${r.source}">${r.source}</td>
+          <td class="src-${r.source}">${srcDe(r.source)}</td>
         </tr>`;
       })}</tbody>
     </table></div>
@@ -251,7 +287,7 @@ function DeviceCard({ device: d, onChanged }) {
         if (f.value === null || f.value === undefined) val = "–";
         else if (f.kind === "bool") val = f.value ? "Ja" : "Nein";
         else val = fmt(f.value) + (f.unit ? " " + f.unit : "");
-        return html`<tr key=${i}><td>${f.label}</td><td class="num">${val}</td><td><code>${f.entity_id}</code></td><td class="src-${f.source}">${f.source}</td></tr>`;
+        return html`<tr key=${i}><td>${f.label}</td><td class="num">${val}</td><td><code>${f.entity_id}</code></td><td class="src-${f.source}">${srcDe(f.source)}</td></tr>`;
       })}</tbody>
     </table>
     <${Extras} device=${d} onChanged=${onChanged} />
@@ -513,7 +549,7 @@ function Forecast({ data }) {
           <tbody>${Object.entries(o.values).map(
             ([k, f], i) => html`<tr key=${i}><td>${labels[k] || k}</td>
               <td class="num">${f.value == null ? "–" : fmt(f.value) + unit}</td>
-              <td><code>${f.entity_id}</code></td><td class="src-${f.source}">${f.source}</td></tr>`
+              <td><code>${f.entity_id}</code></td><td class="src-${f.source}">${srcDe(f.source)}</td></tr>`
           )}</tbody>
         </table></div>
       </${Fragment}>`
@@ -815,7 +851,7 @@ function PlanResult({ data }) {
     ${(p.devices || []).map((d, di) => {
       const entries = Object.entries(d).filter(([k]) => k !== "name");
       return html`<${Fragment} key=${di}>
-        <h3 style="font-size:.95rem;margin:.75rem 0 .25rem;">${d.name}</h3>
+        <h3 style="font-size:.95rem;margin:.75rem 0 .25rem;">${deviceHeading(d.name)}</h3>
         <table><tbody>${entries.length
           ? entries.map(([k, val], i) => {
               const show =
@@ -918,7 +954,7 @@ function HemsBody({ data }) {
     ["Regelintervall (s)", data.interval_s ?? "–"],
     ["Pool", data.pool_w == null ? "–" : fmt(data.pool_w) + " W"],
     ["Defizit", data.current_deficit_w == null ? "–" : fmt(data.current_deficit_w) + " W"],
-    ["Globaler Modus", data.global_mode || "–"],
+    ["Globaler Modus", modeDe(data.global_mode)],
     ["HEMS-Fehler", data.error || data.last_error || "–"],
   ];
   return html`<${Fragment}>
@@ -967,10 +1003,11 @@ function HemsFeedback({ fb }) {
 function HemsDevices({ devices }) {
   if (!devices.length) return html`<p>Keine Gerätezustände (HEMS offline oder ohne Geräte).</p>`;
   return html`<div class="table-wrap"><table>
-    <thead><tr><th>Gerät</th><th>Typ</th><th class="num">Priorität</th><th>Eligible</th><th class="num">Ist</th></tr></thead>
+    <thead><tr><th>Gerät</th><th>Typ</th><th class="num">Priorität</th><th>Freigegeben</th><th class="num">Ist</th></tr></thead>
     <tbody>${devices.map((d, i) => {
       const ist = d.type === "binary" ? (d.actual_on ? "an" : "aus") : d.actual_w == null ? "–" : fmt(d.actual_w) + " W";
-      return html`<tr key=${i}><td>${d.label || d.id}</td><td>${d.type || "–"}</td>
+      const typ = d.type === "binary" ? "binär" : d.type === "controllable" ? "regelbar" : d.type || "–";
+      return html`<tr key=${i}><td>${d.label || d.id}</td><td>${typ}</td>
         <td class="num">${d.priority ?? "–"}</td><td>${boolDe(d.eligible)}</td><td class="num">${ist}</td></tr>`;
     })}</tbody>
   </table></div>`;
