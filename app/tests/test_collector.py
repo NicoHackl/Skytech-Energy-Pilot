@@ -40,26 +40,23 @@ async def test_live_value_is_collected_and_averaged():
 
 
 @pytest.mark.asyncio
-async def test_fallback_used_when_entity_invalid():
+async def test_invalid_entity_value_reports_none():
     ha = _FakeHAClient({"sensor.pv": "unavailable"})
     collector = _collector(ha, (PV,))
-    collector.set_mapping({"pv_power": EntityMapping("pv_power", "sensor.pv", fallback_value=0.0)})
+    collector.set_mapping({"pv_power": EntityMapping("pv_power", "sensor.pv")})
 
     sources = await collector.collect_once(now=1.0)
-    assert sources["pv_power"] == "fallback"
-    assert collector.snapshot(now=1.0)["pv_power"]["latest"] == 0.0
+    assert sources["pv_power"] == "none"
 
 
 @pytest.mark.asyncio
-async def test_fallback_used_when_entity_missing():
+async def test_missing_entity_reports_none():
     ha = _FakeHAClient({})
     collector = _collector(ha, (PV,))
-    collector.set_mapping(
-        {"pv_power": EntityMapping("pv_power", "sensor.fehlt", fallback_value=5.0)}
-    )
+    collector.set_mapping({"pv_power": EntityMapping("pv_power", "sensor.fehlt")})
 
     sources = await collector.collect_once(now=1.0)
-    assert sources["pv_power"] == "fallback"
+    assert sources["pv_power"] == "none"
 
 
 @pytest.mark.asyncio

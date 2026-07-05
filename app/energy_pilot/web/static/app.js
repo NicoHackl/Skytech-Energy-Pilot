@@ -985,13 +985,13 @@ function EinstellungenTab() {
   return html`<div class="ha-card">
     <div class="card-title">Einstellungen (Anzeige)</div>
     <p class="hint">Die Zuordnung der Größen zu HA-Entitäten wird in der <strong>Addon-Konfiguration</strong> gepflegt
-      (gleiche Seite wie das KI-Modell, Felder <code>entity_…</code> / <code>fallback_…</code>). Hier wird nur der
+      (gleiche Seite wie das KI-Modell, Felder <code>entity_…</code>). Hier wird nur der
       aktuell geladene Stand angezeigt.</p>
     <div class="table-wrap"><table>
-      <thead><tr><th>Größe</th><th>HA-Entität</th><th>Fallback</th></tr></thead>
+      <thead><tr><th>Größe</th><th>HA-Entität</th></tr></thead>
       <tbody>${list.map(
         (r, i) => html`<tr key=${i}><td>${r.label}${r.averaged ? "" : " *"}</td>
-          <td><code>${r.entity_id ?? "–"}</code></td><td class="num">${r.fallback_value ?? "–"}</td></tr>`
+          <td><code>${r.entity_id ?? "–"}</code></td></tr>`
       )}</tbody>
     </table></div>
   </div>`;

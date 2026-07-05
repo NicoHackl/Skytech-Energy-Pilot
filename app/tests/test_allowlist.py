@@ -17,7 +17,7 @@ from energy_pilot.logging_setup import setup_logging
 
 
 def test_collect_entity_ids_from_all_sources():
-    mapping = {"pv_power": EntityMapping("pv_power", "sensor.pv", None)}
+    mapping = {"pv_power": EntityMapping("pv_power", "sensor.pv")}
     orientations = [PVOrientation("Ost", {"current_hour": "sensor.ost"})]
     devices = [Device("heizstab", "Heizstab", "heizstab", "controllable")]
 
@@ -31,8 +31,8 @@ def test_collect_entity_ids_from_all_sources():
 
 
 def test_collect_entity_ids_skips_mapping_without_entity():
-    # Nur Fallback gesetzt, keine HA-Entität -> nichts freizugeben.
-    mapping = {"pv_power": EntityMapping("pv_power", None, 1.0)}
+    # Keine HA-Entität gesetzt -> nichts freizugeben.
+    mapping = {"pv_power": EntityMapping("pv_power", None)}
     assert collect_entity_ids(mapping=mapping) == {}
 
 

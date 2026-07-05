@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.39"
+version: "0.0.40"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -101,24 +101,16 @@ options:
     eigenverbrauch: 80
     einspeisung: 70
     batterieschonung: 50
-  # Sensor-Zuordnung als eigene aufklappbare Gruppe (entity_ = HA-Entität, fallback_ = Ersatzwert).
+  # Sensor-Zuordnung als eigene aufklappbare Gruppe (entity_ = HA-Entität).
+  # Warmwassertemperatur ist NICHT systemweit, sondern gerätespezifisch (Geräte-Tab).
   sensoren:
     entity_pv_power: ""
-    fallback_pv_power: ""
     entity_house_load: ""
-    fallback_house_load: ""
     entity_grid_power: ""
-    fallback_grid_power: ""
     entity_grid_import: ""
-    fallback_grid_import: ""
     entity_grid_export: ""
-    fallback_grid_export: ""
     entity_battery_power: ""
-    fallback_battery_power: ""
     entity_battery_soc: ""
-    fallback_battery_soc: ""
-    entity_water_temperature: ""
-    fallback_water_temperature: ""
 schema:
   log_level: list(debug|info|warning|error)
   provider: list(gemini|openai)
@@ -178,18 +170,9 @@ schema:
     batterieschonung: int(0,100)?
   sensoren:
     entity_pv_power: str?
-    fallback_pv_power: str?
     entity_house_load: str?
-    fallback_house_load: str?
     entity_grid_power: str?
-    fallback_grid_power: str?
     entity_grid_import: str?
-    fallback_grid_import: str?
     entity_grid_export: str?
-    fallback_grid_export: str?
     entity_battery_power: str?
-    fallback_battery_power: str?
     entity_battery_soc: str?
-    fallback_battery_soc: str?
-    entity_water_temperature: str?
-    fallback_water_temperature: str?

@@ -6,6 +6,20 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.40] - 2026-07-05
+
+### Entfernt
+- **Sensor-Fallback-Werte komplett entfernt.** In der Addon-Konfiguration (Gruppe „Sensoren")
+  hatte jeder Sensor ein Feld `fallback_<rolle>`; fachlich sinnlos (ein statischer Ersatzwert
+  für eine Live-Messgröße). Felder aus `options`/`schema` in `config.yaml` entfernt, die
+  Fallback-Logik aus `entity_map.py` (Feld `EntityMapping.fallback_value`, DB-Spalte wird nicht
+  mehr gelesen/geschrieben), `collector.py` (Quelle `fallback` entfällt → nur noch `live`/`none`)
+  und der Anzeige-Spalte im Einstellungen-Tab (`app.js`, `web/server.py`) gezogen.
+- **Systemweite Warmwassertemperatur entfernt.** `entity_water_temperature`/`fallback_water_temperature`
+  gehörten nicht in die systemweite Sensor-Zuordnung, da die Warmwassertemperatur **gerätespezifisch**
+  ist. Rolle `water_temperature` aus `roles.py` und die Felder aus `config.yaml` entfernt; die
+  Konfiguration erfolgt künftig pro Gerät im Geräte-Tab (vgl. Zusatz-Entität „Max. Wassertemperatur", D-047).
+
 ## [0.0.39] - 2026-07-04
 
 ### Geändert

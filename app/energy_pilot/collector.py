@@ -34,7 +34,7 @@ class StateCollector:
         self.roles = roles
         self.logger = logger
         self.mapping: dict[str, EntityMapping] = {}
-        # Quelle des zuletzt erfassten Werts je Rolle: live | fallback | none
+        # Quelle des zuletzt erfassten Werts je Rolle: live | none
         self.last_source: dict[str, str] = {}
         # Diagnose: Zeitpunkt des letzten Laufs und letzter Lesefehler
         self.last_collect_ts: float | None = None
@@ -75,8 +75,6 @@ class StateCollector:
                         context={"role": role.key, "entity": mapping.entity_id, "error": str(exc)},
                     )
 
-        if mapping.fallback_value is not None:
-            return mapping.fallback_value, "fallback"
         return None, "none"
 
     def snapshot(self, now: float | None = None) -> dict[str, dict]:

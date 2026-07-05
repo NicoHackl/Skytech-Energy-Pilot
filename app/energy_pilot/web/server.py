@@ -413,7 +413,6 @@ async def entities_get(request: web.Request) -> web.Response:
                 "unit": role.unit,
                 "averaged": role.averaged,
                 "entity_id": current.entity_id if current else None,
-                "fallback_value": current.fallback_value if current else None,
             }
         )
     return web.json_response(payload)
