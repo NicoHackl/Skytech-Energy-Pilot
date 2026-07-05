@@ -2,7 +2,7 @@
 
 import pytest
 
-from energy_pilot.onecall_client import OneCallClient, parse_alerts, parse_timeline
+from energy_pilot.onecall_client import OneCallClient, parse_alert, parse_timeline
 from energy_pilot.weather_client import WeatherClientError
 
 
@@ -208,47 +208,61 @@ def test_masked_request_url_hides_key():
 
 # --- Unwetter-Alerts (O3) --------------------------------------------------------------------
 
-def test_parse_alerts_normalizes_entries_and_skips_garbage():
+def test_parse_timeline_collects_alert_ids_from_data_entries():
     payload = {
-        "alerts": [
-            {"sender_name": "DWD", "event": "Sturm", "start": 100, "end": 200,
-             "description": "Sturmböen", "tags": ["Wind"]},
-            "kein-dict",  # wird übersprungen
-            {"event": "Hitzewarnung"},  # fehlende Felder → None/[]
+        "data": [
+            {"dt": 1, "temp": 10, "alerts": ["ID-A", "ID-B"]},
+            {"dt": 2, "temp": 11, "alerts": ["ID-B", "ID-C"]},  # ID-B dedupliziert
+            {"dt": 3, "temp": 12},  # kein alerts-Feld
         ]
     }
-    alerts = parse_alerts(payload)
-    assert len(alerts) == 2
-    assert alerts[0].sender_name == "DWD"
-    assert alerts[0].start == 100
-    assert alerts[0].tags == ["Wind"]
-    assert alerts[1].event == "Hitzewarnung"
-    assert alerts[1].sender_name is None
-    assert alerts[1].tags == []
+    tl = parse_timeline("1h", payload)
+    assert tl.alert_ids == ["ID-A", "ID-B", "ID-C"]
 
 
-def test_parse_alerts_missing_list_returns_empty():
-    assert parse_alerts({}) == []
-    assert parse_alerts({"alerts": None}) == []
+def test_parse_timeline_no_alerts_yields_empty_ids():
+    assert parse_timeline("1h", {"data": [{"dt": 1, "temp": 10}]}).alert_ids == []
 
 
-async def test_fetch_alerts_returns_normalized_list_with_masked_key():
-    payload = {"alerts": [{"event": "Sturm", "start": 1, "end": 2, "tags": ["Wind"]}]}
+def test_parse_alert_normalizes_single_detail_object():
+    payload = {
+        "id": "8B46C632", "sender_name": "DWD", "event": "Sturm",
+        "start": 100, "end": 200, "description": "Sturmböen", "tags": ["Wind"],
+    }
+    alert = parse_alert(payload)
+    assert alert.sender_name == "DWD"
+    assert alert.event == "Sturm"
+    assert alert.start == 100
+    assert alert.tags == ["Wind"]
+
+
+def test_parse_alert_tolerates_missing_fields():
+    alert = parse_alert({"event": "Hitzewarnung"})  # ohne tags/sender/start
+    assert alert.event == "Hitzewarnung"
+    assert alert.sender_name is None
+    assert alert.start is None
+    assert alert.tags == []
+
+
+async def test_fetch_alert_hits_detail_endpoint_with_masked_key():
+    payload = {"id": "ID-A", "event": "Sturm", "start": 1, "end": 2}
     session = _FakeSession(_FakeResponse(payload=payload))
     client = OneCallClient("secret", session=session)
 
-    alerts = await client.fetch_alerts(48.2, 16.3)
+    alert = await client.fetch_alert("ID-A")
 
-    assert len(alerts) == 1
-    assert alerts[0].event == "Sturm"
+    assert alert.event == "Sturm"
     call = session.calls[0]
-    assert call["url"].endswith("/alert")
+    assert call["url"].endswith("/alert/ID-A")
     assert call["params"]["appid"] == "secret"
+    assert "lat" not in call["params"]  # Detail-Endpunkt nimmt keine Koordinaten
     assert "secret" not in call["url"]
 
 
 def test_masked_alert_url_hides_key():
     client = OneCallClient("super-secret", units="metric", lang="de")
-    url = client.masked_alert_url(48.2, 16.3)
-    assert url.endswith("/alert?lat=48.2&lon=16.3&appid=***&units=metric&lang=de")
+    url = client.masked_alert_url("ID-A")
+    assert url.endswith("/alert/ID-A?appid=***&lang=de")
     assert "super-secret" not in url
+    # Ohne ID wird das Endpunkt-Muster gezeigt (kein Koordinaten-Parameter mehr).
+    assert client.masked_alert_url().endswith("/alert/{id}?appid=***&lang=de")

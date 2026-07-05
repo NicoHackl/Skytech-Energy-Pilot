@@ -53,9 +53,14 @@ def parse_timeline(resolution: str, payload: dict) -> OneCallTimeline:
     bei 15min/1h Punktwerte. Nur energierelevante Felder werden behalten.
     """
     slots: list[OneCallSlot] = []
+    alert_ids: list[str] = []
     for entry in payload.get("data") or []:
         if not isinstance(entry, dict):
             continue
+        # `data[].alerts` trägt in 4.0 nur die Alert-IDs (Strings); Details separat je ID.
+        for aid in entry.get("alerts") or []:
+            if isinstance(aid, str) and aid and aid not in alert_ids:
+                alert_ids.append(aid)
         temp_raw = entry.get("temp")
         if isinstance(temp_raw, dict):  # daily
             temp = _num(temp_raw.get("day"))
@@ -93,31 +98,26 @@ def parse_timeline(resolution: str, payload: dict) -> OneCallTimeline:
         lon=_num(payload.get("lon")),
         timezone_offset_s=_int(payload.get("timezone_offset")),
         slots=slots,
+        alert_ids=alert_ids,
     )
 
 
-def parse_alerts(payload: dict) -> list[OneCallAlert]:
-    """Normalisiert die `alerts`-Liste einer One-Call-Antwort auf `OneCallAlert` (O3).
+def parse_alert(payload: dict) -> OneCallAlert:
+    """Normalisiert **eine** Alert-Detail-Antwort (`/alert/{id}`) auf `OneCallAlert` (O3).
 
-    Tolerant gegenüber fehlenden Feldern: Einträge ohne sinnvolle Daten werden übersprungen,
-    eine fehlende `alerts`-Liste ergibt eine leere Liste (kein Fehler – Iron Rule 8).
+    Der Alert-Detail-Endpunkt der One Call API 4.0 liefert ein **einzelnes** Objekt
+    (`id`, `sender_name`, `event`, `start`, `end`, `description`; `tags` optional). Tolerant
+    gegenüber fehlenden Feldern (Iron Rule 8).
     """
-    alerts: list[OneCallAlert] = []
-    for entry in payload.get("alerts") or []:
-        if not isinstance(entry, dict):
-            continue
-        tags = entry.get("tags")
-        alerts.append(
-            OneCallAlert(
-                sender_name=str(entry["sender_name"]) if entry.get("sender_name") else None,
-                event=str(entry["event"]) if entry.get("event") else None,
-                start=_int(entry.get("start")),
-                end=_int(entry.get("end")),
-                description=str(entry["description"]) if entry.get("description") else None,
-                tags=[str(t) for t in tags] if isinstance(tags, list) else [],
-            )
-        )
-    return alerts
+    tags = payload.get("tags")
+    return OneCallAlert(
+        sender_name=str(payload["sender_name"]) if payload.get("sender_name") else None,
+        event=str(payload["event"]) if payload.get("event") else None,
+        start=_int(payload.get("start")),
+        end=_int(payload.get("end")),
+        description=str(payload["description"]) if payload.get("description") else None,
+        tags=[str(t) for t in tags] if isinstance(tags, list) else [],
+    )
 
 
 class OneCallClient:
@@ -155,8 +155,9 @@ class OneCallClient:
     def _endpoint(self, resolution: str) -> str:
         return f"{self.base_url}/timeline/{resolution}"
 
-    def _alert_endpoint(self) -> str:
-        return f"{self.base_url}/alert"
+    def _alert_endpoint(self, alert_id: str) -> str:
+        # One Call 4.0: die Warnung wird je ID über den Detail-Endpunkt aufgelöst.
+        return f"{self.base_url}/alert/{alert_id}"
 
     def _base_params(self, lat: float, lon: float) -> dict[str, str]:
         # appid bewusst als params-Eintrag → erscheint in keinem von uns geloggten String.
@@ -175,12 +176,13 @@ class OneCallClient:
             f"&appid=***&units={self.units}&lang={self.lang}"
         )
 
-    def masked_alert_url(self, lat: float, lon: float) -> str:
-        """Alert-Request-URL mit maskiertem Schlüssel (Transparenz-Anzeige)."""
-        return (
-            f"{self._alert_endpoint()}?lat={lat}&lon={lon}"
-            f"&appid=***&units={self.units}&lang={self.lang}"
-        )
+    def masked_alert_url(self, alert_id: str | None = None) -> str:
+        """Alert-Detail-Request-URL mit maskiertem Schlüssel (Transparenz-Anzeige).
+
+        Ohne konkrete ID wird das Endpunkt-Muster (`/alert/{id}`) gezeigt – der Detail-Endpunkt
+        nimmt keine Koordinaten, nur die Alert-ID im Pfad.
+        """
+        return f"{self._alert_endpoint(alert_id or '{id}')}?appid=***&lang={self.lang}"
 
     async def _get(self, url: str, params: dict[str, str]) -> dict:
         """Ein GET mit OWM-Fehlerbehandlung; liefert das JSON-Objekt (schlüsselfrei im Log)."""
@@ -225,12 +227,13 @@ class OneCallClient:
             next_url = payload.get("next")
         return replace(timeline, slots=slots), calls_used
 
-    async def fetch_alerts(self, lat: float, lon: float) -> list[OneCallAlert]:
-        """Holt die behördlichen Unwetterwarnungen (O3); ein bezahlter Call.
+    async def fetch_alert(self, alert_id: str) -> OneCallAlert:
+        """Holt die Detaildaten **einer** behördlichen Unwetterwarnung (O3); ein bezahlter Call.
 
-        Tolerant: liefert die `alerts`-Liste der Antwort normalisiert; meldet API-Fehler als
-        `WeatherClientError`. Der genaue Endpunkt/Shape der „One Call by Call"-Alerts ist gegen
-        die OWM-Doku zu bestätigen – `parse_alerts` toleriert abweichende/fehlende Felder.
+        Die Alert-ID stammt aus den `data[].alerts`-Feldern einer Timeline-Antwort
+        (`OneCallTimeline.alert_ids`); der Detail-Endpunkt (`/alert/{id}`) nimmt keine Koordinaten,
+        nur `appid`/`lang`. API-Fehler werden als `WeatherClientError` (schlüsselfrei) gemeldet.
         """
-        payload = await self._get(self._alert_endpoint(), self._base_params(lat, lon))
-        return parse_alerts(payload)
+        params = {"appid": self._api_key, "lang": self.lang}
+        payload = await self._get(self._alert_endpoint(alert_id), params)
+        return parse_alert(payload)

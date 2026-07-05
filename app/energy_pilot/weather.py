@@ -357,6 +357,9 @@ class OneCallTimeline:
     lon: float | None
     timezone_offset_s: int | None
     slots: list[OneCallSlot] = field(default_factory=list)
+    # Aktive Alert-IDs aus den `data[].alerts`-Feldern der Antwort (One Call 4.0). Die
+    # eigentlichen Warnungen werden je ID separat über den Alert-Detail-Endpunkt aufgelöst.
+    alert_ids: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -365,4 +368,5 @@ class OneCallTimeline:
             "lon": self.lon,
             "timezone_offset_s": self.timezone_offset_s,
             "slots": [slot.as_dict() for slot in self.slots],
+            "alert_ids": list(self.alert_ids),
         }

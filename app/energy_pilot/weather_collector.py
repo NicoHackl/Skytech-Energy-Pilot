@@ -261,7 +261,7 @@ class OneCallCollector:
         for res in due:
             await self._fetch_timeline(res, coords, now)
         if alerts_due:
-            await self._fetch_alerts(coords, now)
+            await self._fetch_alerts(now)
 
     async def test_fetch(self, now: float | None = None) -> dict:
         """Einmaliger Live-Abruf je aktivierter Timeline + Alerts (umgeht den Refresh-Guard).
@@ -320,24 +320,17 @@ class OneCallCollector:
 
         alerts_result: dict | None = None
         if oc.enable_alerts:
-            alert_url = self.client.masked_alert_url(coords[0], coords[1])
-            if self._budget_remaining() <= 0:
-                self._note_budget_exhausted()
+            if not oc.enabled_timelines:
+                # Alert-IDs stammen aus Timeline-Daten → ohne aktive Timeline nicht ermittelbar.
                 alerts_result = {
-                    "ok": False, "reason": "Tages-Call-Budget erschöpft", "request_url": alert_url,
+                    "ok": False,
+                    "reason": "Alerts benötigen mind. eine aktive Timeline",
+                    "request_url": self.client.masked_alert_url(),
                 }
             else:
-                try:
-                    alerts = await self.client.fetch_alerts(coords[0], coords[1])
-                    onecall_budget.consume(self.db, 1)
-                    self._alerts = alerts
-                    self._alerts_last_fetch_ts = now
-                    self._alerts_last_error = None
+                alerts_result = await self._resolve_alerts(self._collected_alert_ids(), now)
+                if alerts_result["ok"]:
                     any_ok = True
-                    alerts_result = {"ok": True, "count": len(alerts), "request_url": alert_url}
-                except WeatherClientError as exc:
-                    self._alerts_last_error = str(exc)
-                    alerts_result = {"ok": False, "reason": str(exc), "request_url": alert_url}
 
         return {
             "ok": any_ok,
@@ -376,27 +369,73 @@ class OneCallCollector:
                 log(self.logger, "warning", "One-Call-Abruf fehlgeschlagen",
                     context={"resolution": resolution, "error": str(exc)})
 
-    async def _fetch_alerts(self, coords: tuple[float, float], now: float) -> None:
-        """Holt die Unwetterwarnungen (O3); ein bezahlter Call gegen dasselbe Tagesbudget."""
+    def _collected_alert_ids(self) -> list[str]:
+        """Vereinigt die Alert-IDs aller zuletzt geholten Timelines (stabile Reihenfolge, unique).
+
+        In One Call 4.0 gibt es keinen Koordinaten-Alert-Endpunkt: die aktiven Warnungen stehen
+        als IDs in den Timeline-Antworten (`data[].alerts`) und werden je ID separat aufgelöst.
+        """
+        ids: list[str] = []
+        for st in self._timelines.values():
+            tl = st["timeline"]
+            if tl is None:
+                continue
+            for aid in tl.alert_ids:
+                if aid not in ids:
+                    ids.append(aid)
+        return ids
+
+    async def _resolve_alerts(self, ids: list[str], now: float) -> dict:
+        """Löst die Alert-IDs zu Detail-Warnungen auf – je ID ein bezahlter Detail-Call (O3).
+
+        Ohne aktive Warnungen (leere ID-Liste) fällt **kein** Call an → `count 0`, kein Fehler
+        (Iron Rule 8). Jeder Detail-Call wird gegen dasselbe Tagesbudget geprüft/abgebucht; bei
+        Budget-Erschöpfung wird das Teilergebnis behalten und als budgetbegrenzt gemeldet.
+        """
         assert self.client is not None  # durch enabled garantiert
-        if self._budget_remaining() <= 0:
-            self._note_budget_exhausted()
-            return
-        try:
-            alerts = await self.client.fetch_alerts(coords[0], coords[1])
-            onecall_budget.consume(self.db, 1)
-            self._alerts = alerts
+        request_url = self.client.masked_alert_url(ids[0] if ids else None)
+        if not ids:
+            self._alerts = []
             self._alerts_last_fetch_ts = now
             self._alerts_last_error = None
-            if self.logger:
+            return {"ok": True, "count": 0, "request_url": request_url}
+        collected: list[OneCallAlert] = []
+        for aid in ids:
+            if self._budget_remaining() <= 0:
+                self._note_budget_exhausted()
+                self._alerts = collected
+                self._alerts_last_fetch_ts = now
+                self._alerts_last_error = "Tages-Call-Budget erschöpft"
+                return {"ok": False, "count": len(collected),
+                        "reason": "Tages-Call-Budget erschöpft", "request_url": request_url}
+            try:
+                collected.append(await self.client.fetch_alert(aid))
+                onecall_budget.consume(self.db, 1)
+            except WeatherClientError as exc:
+                self._alerts = collected
+                self._alerts_last_error = str(exc)
+                return {"ok": False, "count": len(collected),
+                        "reason": str(exc), "request_url": request_url}
+        self._alerts = collected
+        self._alerts_last_fetch_ts = now
+        self._alerts_last_error = None
+        return {"ok": True, "count": len(collected), "request_url": request_url}
+
+    async def _fetch_alerts(self, now: float) -> None:
+        """Löst die aus den Timelines bekannten Alert-IDs zu Warnungen auf (O3, collect-Pfad)."""
+        if not self.config.onecall.enabled_timelines:
+            # Ohne aktive Timeline sind keine Alert-IDs verfügbar → klarer Hinweis statt stiller 0.
+            self._alerts_last_error = "Alerts benötigen mind. eine aktive Timeline"
+            return
+        result = await self._resolve_alerts(self._collected_alert_ids(), now)
+        if self.logger:
+            if result["ok"]:
                 log(self.logger, "info", "One-Call-Alerts aktualisiert",
-                    context={"alerts": len(alerts)})
-        except WeatherClientError as exc:
-            self._alerts_last_error = str(exc)
-            self.last_error = str(exc)
-            if self.logger:
+                    context={"alerts": result["count"]})
+            else:
+                self.last_error = result.get("reason")
                 log(self.logger, "warning", "One-Call-Alert-Abruf fehlgeschlagen",
-                    context={"error": str(exc)})
+                    context={"error": result.get("reason")})
 
     def _refresh_due(self, resolution: str, now: float) -> bool:
         st = self._timelines[resolution]

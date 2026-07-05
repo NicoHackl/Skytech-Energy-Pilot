@@ -6,6 +6,23 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.43] - 2026-07-05
+
+### Behoben
+- **One-Call-4.0-Unwetterwarnungen: falscher Endpunkt behoben (Wetter-Test-Fehler
+  „OpenWeatherMap: Koordinaten nicht gefunden (HTTP 404): Internal error").** Die Alerts wurden
+  über einen nicht existierenden Koordinaten-Endpunkt `…/onecall/alert?lat=&lon=` abgerufen → OWM
+  antwortet mit HTTP 404. In der One Call API 4.0 gibt es **keinen** Koordinaten-Alert-Endpunkt:
+  die aktiven Warnungen stehen als **Alert-IDs** in den Timeline-Antworten (`data[].alerts`) und
+  werden je ID über den **Detail-Endpunkt** `…/onecall/alert/{id}` (nur `appid`/`lang`) aufgelöst.
+  - `parse_timeline` sammelt jetzt die Alert-IDs je Timeline (`OneCallTimeline.alert_ids`,
+    dedupliziert über alle Seiten).
+  - Neuer Client-Aufruf `fetch_alert(alert_id)` + `parse_alert` (einzelnes Objekt statt Liste);
+    `masked_alert_url` zeigt das ID-Muster ohne Koordinaten.
+  - Der `OneCallCollector` löst die aus den Timelines bekannten IDs auf (je ID ein bezahlter
+    Detail-Call gegen dasselbe Tagesbudget). **Ohne aktive Warnung** fällt kein Call an
+    (`Alerts ✅ 0`); ohne aktive Timeline ein klarer Hinweis statt eines HTTP-Fehlers.
+
 ## [0.0.42] - 2026-07-05
 
 ### Geändert
