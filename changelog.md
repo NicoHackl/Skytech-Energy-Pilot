@@ -6,6 +6,18 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.45] - 2026-07-08
+
+### Behoben
+- **Plan-Rückkopplung (HEMS-Tab): „Geschützte Mindestleistung" zeigte den effektiven Schutz statt
+  des Rohwerts.** Die Spalte HEMS-Ist verglich den EP-Vorschlag gegen `schutz_w`/`schutz_a` des
+  HEMS-Status – das ist aber der **effektive** Schutz (`geschützte Mindestleistung + reserve_w +
+  global_puffer_w`, geklemmt), nicht der rohe Sockel. Folge: bei einem Helferwert von z.B. 600 W
+  erschien 900 W, und der Vergleich meldete fälschlich „abweichend". EP vergleicht/zeigt jetzt den
+  rohen HEMS-Wert `geschuetzte_mindestleistung_w`/`_a` (setzt den entsprechenden HEMS-Zusatz im
+  Status voraus). Fehlt das Feld (älterer HEMS-Stand), bleibt der Status sicher „unbekannt" statt
+  auf den falschen `schutz_w` zurückzufallen. Betrifft Watt **und** Ampere (Wallbox).
+
 ## [0.0.44] - 2026-07-05
 
 ### Geändert

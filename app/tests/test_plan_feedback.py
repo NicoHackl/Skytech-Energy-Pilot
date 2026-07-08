@@ -63,8 +63,11 @@ def test_conform_when_priority_and_schutz_match():
         ]
     )
     hems = _hems(
+        # geschuetzte_mindestleistung_w (roher Sockel) matcht den Vorschlag; schutz_w (effektiv,
+        # = Sockel + Reserve + Puffer) ist bewusst abweichend gesetzt und MUSS ignoriert werden.
         [{"type": "controllable", "id": "heizstab", "label": "Heizstab",
-          "priority": 10, "eligible": True, "schutz_w": 800.4}]
+          "priority": 10, "eligible": True,
+          "geschuetzte_mindestleistung_w": 800.4, "schutz_w": 1100.0}]
     )
     fb = derive_plan_feedback(latest, DEVICES, hems, now=NOW)
     assert fb["overall"] == KONFORM
@@ -74,17 +77,21 @@ def test_conform_when_priority_and_schutz_match():
     statuses = {f["feld"]: f["status"] for f in dev["fields"]}
     assert statuses["prio_vorschlag"] == "match"
     assert statuses["geschutzte_mindestleistung_w_vorschlag"] == "match"
+    # HEMS-Ist ist der Rohwert (nicht der effektive schutz_w).
+    ist = {f["feld"]: f["ist"] for f in dev["fields"]}
+    assert ist["geschutzte_mindestleistung_w_vorschlag"] == 800.4
 
 
 def test_conform_when_ampere_schutz_matches():
     # Regression: Ampere-Geräte (Wallbox) vergleichen geschutzte_mindestleistung_a_vorschlag
-    # gegen den HEMS-schutz_a – früher fiel das auf „unbekannt" (nur _w wurde behandelt).
+    # gegen den rohen HEMS-Wert geschuetzte_mindestleistung_a – der effektive schutz_a
+    # (Sockel + Reserve + Puffer) ist bewusst abweichend und MUSS ignoriert werden.
     devices = [Device("wallbox", "Wallbox", "wallbox", CONTROLLABLE, "ampere")]
     latest = _latest([{"name": "wallbox", "geschutzte_mindestleistung_a_vorschlag": 6.0}])
     hems = _hems(
         [{"type": "controllable", "id": "wallbox", "label": "Wallbox",
           "priority": 5, "eligible": True, "output_unit": "ampere",
-          "schutz_w": 1380.0, "schutz_a": 6.03}]
+          "geschuetzte_mindestleistung_a": 6.03, "schutz_w": 1380.0, "schutz_a": 9.0}]
     )
     fb = derive_plan_feedback(latest, devices, hems, now=NOW)
     dev = fb["devices"][0]
@@ -100,7 +107,7 @@ def test_ampere_schutz_divergent_beyond_tolerance():
     hems = _hems(
         [{"type": "controllable", "id": "wallbox", "label": "Wallbox",
           "priority": 5, "eligible": True, "output_unit": "ampere",
-          "schutz_w": 2300.0, "schutz_a": 10.0}]
+          "geschuetzte_mindestleistung_a": 10.0, "schutz_w": 2300.0, "schutz_a": 10.0}]
     )
     fb = derive_plan_feedback(latest, devices, hems, now=NOW)
     statuses = {f["feld"]: f["status"] for f in fb["devices"][0]["fields"]}

@@ -13,9 +13,10 @@ wiederverwenden kann.
 
 Feld-Mapping (EP-Vorschlag ↔ HEMS-`to_status_dict`):
 - `prio_vorschlag` ↔ `priority` (Gleichheit),
-- `geschutzte_mindestleistung_w_vorschlag` ↔ `schutz_w` (Toleranz ±1 W),
-- `geschutzte_mindestleistung_a_vorschlag` ↔ `schutz_a` (Ampere-Schutz, Toleranz ±0.1 A;
-  HEMS rechnet `schutz_w` über Phasen×Spannung nach Ampere um und liefert `schutz_a`),
+- `geschutzte_mindestleistung_w_vorschlag` ↔ `geschuetzte_mindestleistung_w` (roher
+  Schutz-Sockel, Toleranz ±1 W) — **nicht** `schutz_w` (= Sockel + Reserve + Puffer, geklemmt),
+- `geschutzte_mindestleistung_a_vorschlag` ↔ `geschuetzte_mindestleistung_a` (roher
+  Schutz-Sockel in Ampere, Toleranz ±0.1 A),
 - `freigabe_vorschlag` ↔ `eligible` (weich: HEMS-`eligible` umfasst zusätzlich
   technische Freigabe + Modus, daher „Vorschlag frei, HEMS nicht eligible" = unbekannt).
 Felder ohne HEMS-Pendant (Heizstab-`max_temperatur` D-035) sind nur
@@ -102,11 +103,17 @@ def _compare(field: str, suggested: object, hd: dict) -> tuple[str, object]:
         return ("abweichend", ist) if ist is not None else ("unbekannt", None)
 
     if field.startswith("geschutzte_mindestleistung"):
-        # HEMS liefert den effektiven Schutz je Einheit: schutz_w (Watt) bzw. schutz_a
-        # (Ampere, HEMS-seitig aus schutz_w über Phasen×Spannung umgerechnet). Ohne den
-        # Ampere-Zweig blieb der Wallbox-Schutz früher fälschlich „unbekannt".
+        # Vergleich gegen den ROHEN Schutz-Sockel je Einheit (geschuetzte_mindestleistung_w
+        # bzw. _a) – NICHT gegen den effektiven HEMS-Schutz schutz_w/schutz_a. schutz_w =
+        # Sockel + reserve_w + global_puffer_w (geklemmt); ein Vergleich dagegen meldete
+        # fälschlich „abweichend" und zeigte einen anderen Wert als der User im Helfer sieht.
+        # Fehlt das Rohfeld (älterer HEMS-Stand) -> None -> „unbekannt" (kein Rückfall auf schutz_w).
         is_ampere = field.endswith("_a_vorschlag")
-        ist = hd.get("schutz_a") if is_ampere else hd.get("schutz_w")
+        ist = (
+            hd.get("geschuetzte_mindestleistung_a")
+            if is_ampere
+            else hd.get("geschuetzte_mindestleistung_w")
+        )
         tolerance = AMP_TOLERANCE_A if is_ampere else POWER_TOLERANCE_W
         if _is_number(ist):
             if abs(float(ist) - float(suggested)) <= tolerance:
