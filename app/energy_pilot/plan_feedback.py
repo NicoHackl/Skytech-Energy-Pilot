@@ -107,7 +107,8 @@ def _compare(field: str, suggested: object, hd: dict) -> tuple[str, object]:
         # bzw. _a) – NICHT gegen den effektiven HEMS-Schutz schutz_w/schutz_a. schutz_w =
         # Sockel + reserve_w + global_puffer_w (geklemmt); ein Vergleich dagegen meldete
         # fälschlich „abweichend" und zeigte einen anderen Wert als der User im Helfer sieht.
-        # Fehlt das Rohfeld (älterer HEMS-Stand) -> None -> „unbekannt" (kein Rückfall auf schutz_w).
+        # Fehlt das Rohfeld (älterer HEMS-Stand) -> None -> „unbekannt"
+        # (bewusst kein Rückfall auf schutz_w, sonst wäre der Bug zurück).
         is_ampere = field.endswith("_a_vorschlag")
         ist = (
             hd.get("geschuetzte_mindestleistung_a")
