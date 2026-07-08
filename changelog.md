@@ -6,6 +6,21 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.46] - 2026-07-08
+
+### Behoben
+- **HEMS-Tab: „Geschützte Mindestleistung" zeigte gar keinen HEMS-Ist-Wert mehr.** Nach 0.0.45
+  liest EP den rohen Sockel `geschuetzte_mindestleistung_w`/`_a` aus dem HEMS-Status – ältere
+  HEMS-Stände liefern dieses Feld aber noch nicht, wodurch die Spalte leer blieb (Status
+  „unbekannt"). EP trägt den Wert jetzt **hilfsweise** direkt aus dem HA-Helfer
+  `input_number.ems_<gerät>_geschutzte_mindestleistung_<w|a>` nach, wenn das HEMS ihn nicht
+  liefert. Sobald ein HEMS mit dem Feld läuft, hat dessen Wert Vorrang (kanonisch, wird nie
+  überschrieben). Damit funktioniert die Anzeige unabhängig von der HEMS-Version.
+- **HEMS-Tab: „Aktualisieren" holte die HEMS-Ist-Werte nicht neu ab.** Der Button spiegelte nur
+  den gedrosselten Zwischenstand des Collectors (Abruf alle `interval_s`). Er erzwingt jetzt über
+  `GET /api/hems/status?refresh=1` einen **Live-Abruf** des HEMS (`collect_once(force=True)`, umgeht
+  die Drosselung); der reguläre Auto-Poll (alle 10 s) bleibt unverändert leichtgewichtig.
+
 ## [0.0.45] - 2026-07-08
 
 ### Behoben

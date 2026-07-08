@@ -655,10 +655,20 @@ async def weather_test(request: web.Request) -> web.Response:
 
 
 async def hems_status_get(request: web.Request) -> web.Response:
-    """Liefert den HEMS-Zustand + die abgeleitete Plan-Rückkopplung (M3, read-only)."""
+    """Liefert den HEMS-Zustand + die abgeleitete Plan-Rückkopplung (M3, read-only).
+
+    Mit `?refresh=1` wird zuvor ein **Live-Abruf** des HEMS erzwungen (umgeht die Drosselung
+    des Collectors) – so holt der „Aktualisieren"-Button die HEMS-Ist-Werte wirklich neu, statt
+    nur den gedrosselten Zwischenstand zu spiegeln. Der reguläre Auto-Poll ruft ohne `refresh`.
+    """
     collector = request.app.get("hems_status_collector")
     if collector is None:
         return web.json_response({"configured": False, "online": False, "feedback": None})
+    if request.query.get("refresh") and hasattr(collector, "collect_once"):
+        try:
+            await collector.collect_once(force=True)
+        except Exception:  # Live-Refresh best effort – danach wird ohnehin der Snapshot geliefert
+            pass
     payload = collector.snapshot()
     payload["feedback"] = getattr(collector, "last_feedback", None)
     return web.json_response(payload)

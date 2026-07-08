@@ -902,6 +902,18 @@ function PlanPublished({ pub }) {
 function HemsTab() {
   const [data, reload] = usePoll(() => api("api/hems/status"), true);
   const [status, setStatus] = useState("");
+  // „Aktualisieren" erzwingt einen Live-HEMS-Abruf (?refresh=1), sonst zeigt der Button nur den
+  // gedrosselten Zwischenstand des Collectors – die HEMS-Ist-Werte blieben dann unverändert.
+  const refresh = async () => {
+    setStatus(" … aktualisiere HEMS …");
+    try {
+      await api("api/hems/status?refresh=1");
+      setStatus("");
+    } catch (e) {
+      setStatus(" ❌ " + e);
+    }
+    reload();
+  };
   const testHems = async () => {
     setStatus(" … prüfe HEMS …");
     try {
@@ -928,7 +940,7 @@ function HemsTab() {
   };
   return html`<div class="ha-card">
     <div class="card-title">HEMS-Rückkopplung<div class="card-actions">
-      <button onClick=${reload}>Aktualisieren</button>
+      <button onClick=${refresh}>Aktualisieren</button>
       <button onClick=${testHems}>Jetzt prüfen</button>
       <button onClick=${syncDevices}>Geräte von HEMS neu laden</button>
     </div></div>
