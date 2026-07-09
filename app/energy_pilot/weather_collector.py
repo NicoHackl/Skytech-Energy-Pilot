@@ -500,6 +500,8 @@ class OneCallCollector:
                 "pages": oc.pages_for(res),
                 "last_fetch_ts": st["last_fetch_ts"],
                 "last_error": st["last_error"],
+                # Ortszeit-Offset der Zone (für das stündliche Tagesfenster im KI-Kontext, D-053).
+                "timezone_offset_s": timeline.timezone_offset_s if timeline else None,
                 "slots": [s.as_dict() for s in timeline.slots] if timeline else [],
             }
         remaining = self._budget_remaining()

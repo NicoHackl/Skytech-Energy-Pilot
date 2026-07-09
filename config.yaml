@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.46"
+version: "0.0.47"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -75,7 +75,9 @@ options:
     #   eigener bezahlter Call). daily_call_budget: harte Tagesobergrenze ALLER bezahlten One-Call-
     #   Anfragen (Timelines + Alerts), UTC-Tag; schützt vor Überschreiten des Kontingents (Default
     #   1000 = OWM-Freikontingent). enable_alerts/refresh_alerts: behördliche Unwetterwarnungen.
-    # llm_timeline: welche Timeline (15min|1h|1day) in den KI-Kontext fließt.
+    # llm_timeline: Auflösung der STÜNDLICHEN KI-Reihe (15min|1h). Der KI-Kontext bekommt bei
+    #   onecall immer zweierlei: die stündliche Reihe für HEUTE (ab jetzt, frühestens 6 Uhr, bis
+    #   21 Uhr Ortszeit) plus einen Tagesausblick der nächsten 5 Tage (1day, ab morgen).
     onecall:
       enable_15min: false
       enable_1h: true

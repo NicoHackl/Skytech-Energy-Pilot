@@ -288,8 +288,11 @@ async def test_onecall_collect_fetches_only_enabled_timelines():
     assert snap["llm_timeline"] == "1h"
     assert len(snap["timelines"]["1h"]["slots"]) == 3
     assert len(snap["timelines"]["1day"]["slots"]) == 2
+    # Ortszeit-Offset der Zone wandert in den Snapshot (fürs stündliche KI-Tagesfenster, D-053).
+    assert snap["timelines"]["1h"]["timezone_offset_s"] == 7200
     assert snap["timelines"]["15min"]["enabled"] is False
     assert snap["timelines"]["15min"]["slots"] == []
+    assert snap["timelines"]["15min"]["timezone_offset_s"] is None  # nie abgerufen
 
 
 async def test_onecall_per_timeline_refresh_gating():
