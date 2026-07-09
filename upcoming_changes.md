@@ -1,0 +1,2 @@
+- Anpassung der übergebenen Stündliche Wettervorhersage Daten, es sollen nur noch vom aktuellen Zeitpunkt (aber frühestens ab 6 Uhr) bis 21 Uhr die Stündlichen Wetterdaten übergeben werden -> Wenn z.b. 22 Uhr stündliche vorhersage bleibt leer, wenn 11:30 -> 12:00 - 21 uhr
+- Zustäzlich Tägliche Vorhersage der nächsten 5 Tage (z.b. heute = 10.7 dann bekommt er vom 11.7 - 15.7 die Daten, denn die vom 10.7 werden ja über die stündliche meldung übergeben)
