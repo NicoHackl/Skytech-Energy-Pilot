@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import UTC, datetime, timedelta, timezone
 
 from energy_pilot.constraints import DeviceConstraint
 from energy_pilot.devices import BINARY
@@ -59,63 +60,161 @@ def _condense_forecast(forecast: dict) -> dict:
     }
 
 
-# OWM liefert die Prognose in 3-Stunden-Schritten; daraus folgt die Schrittzahl je Horizont.
+# OWM liefert die forecast3h-Prognose in 3-Stunden-Schritten; daraus folgt die Schrittzahl
+# je Horizont für den kompakten LLM-Auszug.
 _FORECAST_STEP_H = 3
-# Schrittweite je One-Call-Timeline (Minuten) – für die Kürzung auf den Planungshorizont.
-_ONECALL_STEP_MIN = {"15min": 15, "1h": 60, "1day": 24 * 60}
+
+# --- One-Call-Auszug für die KI (upcoming_changes.md) ---------------------------------------
+# Stündliche Prognose ans LLM: nur der heutige Tag ab „jetzt", frühestens ab 6 Uhr, bis 21 Uhr
+# Ortszeit (nach 21 Uhr bleibt die Stundenreihe leer).
+HOURLY_WINDOW_START_HOUR = 6
+HOURLY_WINDOW_END_HOUR = 21
+# Tagesprognose ans LLM: die nächsten 5 Tage ab morgen (heute deckt bereits die Stundenreihe ab).
+DAILY_FORECAST_DAYS = 5
+# Auflösungen, die sich als stündliches Tagesfenster eignen (1day ist die Tagesebene).
+_INTRADAY_TIMELINES = ("15min", "1h")
 
 
-def _condense_onecall(weather: dict, *, horizon_h: int) -> dict:
-    """Verdichtet die in `weather.llm_timeline` gewählte One-Call-Timeline für den KI-Kontext.
+def _offset_seconds(value: object) -> int:
+    """OWM-`timezone_offset` (Sekunden ggü. UTC) defensiv als int; fehlend/ungültig → 0 (=UTC)."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    return 0
 
-    Es geht **genau eine** Timeline ans LLM (Token-Budget): 15min/1h werden auf
-    `forecast_horizon_h` gekürzt, `1day` komplett übernommen. Behalten werden nur
-    energierelevante Felder (Temperatur, Bewölkung, Regenwahrscheinlichkeit; bei `1day`
-    zusätzlich Min/Max). Leer, wenn die gewählte Timeline keine Schritte hat.
+
+def _local_dt(dt_unix: int, offset_s: int) -> datetime:
+    """Ortszeit eines Unix-UTC-Zeitstempels anhand des OWM-`timezone_offset` der Wetter-Zone."""
+    return datetime.fromtimestamp(dt_unix, tz=timezone(timedelta(seconds=offset_s)))
+
+
+def _slot_dt(slot: dict) -> int | None:
+    """Liest den Unix-UTC-Zeitstempel (`dt`) eines Slots defensiv; ungültig → None."""
+    dt = slot.get("dt")
+    if isinstance(dt, bool) or not isinstance(dt, (int, float)):
+        return None
+    return int(dt)
+
+
+def _hourly_window_slots(slots: list, *, offset_s: int, now: datetime) -> list[dict]:
+    """Stündliche Slots auf [max(jetzt, 6 Uhr) .. 21 Uhr] des heutigen Tages (Ortszeit) begrenzen.
+
+    Fenstergrenzen als echte Ortszeit-Zeitpunkte: Start = max(jetzt, heute 6 Uhr), Ende = heute
+    21 Uhr. Liegt „jetzt" nach 21 Uhr, bleibt die Reihe leer; Folgetage liegen hinter dem Ende
+    und gehören in die Tagesprognose (upcoming_changes.md).
     """
-    timeline = weather.get("llm_timeline") or "1h"
-    tl = (weather.get("timelines") or {}).get(timeline) or {}
-    slots = tl.get("slots") or []
-    if not slots:
-        return {}
-    if timeline == "1day":
-        chosen = slots
-    else:
-        step_min = _ONECALL_STEP_MIN.get(timeline, 60)
-        max_steps = max(1, math.ceil(horizon_h * 60 / step_min))
-        chosen = slots[:max_steps]
-    out_slots: list[dict] = []
-    for s in chosen:
-        item = {
-            "time": s.get("time"),
+    tz = timezone(timedelta(seconds=offset_s))
+    now_local = now.astimezone(tz)
+    day_start = now_local.replace(
+        hour=HOURLY_WINDOW_START_HOUR, minute=0, second=0, microsecond=0
+    )
+    window_start = max(now_local, day_start)
+    window_end = now_local.replace(hour=HOURLY_WINDOW_END_HOUR, minute=0, second=0, microsecond=0)
+    out: list[dict] = []
+    for s in slots:
+        dt = _slot_dt(s)
+        if dt is None:
+            continue
+        local = _local_dt(dt, offset_s)
+        if window_start <= local <= window_end:
+            out.append({
+                "time": local.strftime("%Y-%m-%d %H:%M"),
+                "temp": s.get("temp"),
+                "clouds": s.get("clouds"),
+                "pop": s.get("pop"),
+            })
+    return out
+
+
+def _daily_next_days_slots(slots: list, *, offset_s: int, now: datetime) -> list[dict]:
+    """Tages-Slots auf die nächsten `DAILY_FORECAST_DAYS` Tage ab morgen (Ortszeit) begrenzen.
+
+    Der heutige Tag wird übersprungen (er steckt bereits in der Stundenreihe); es werden
+    höchstens 5 Folgetage übernommen (energierelevante Felder inkl. Tages-Min/Max).
+    """
+    tz = timezone(timedelta(seconds=offset_s))
+    today = now.astimezone(tz).date()
+    out: list[dict] = []
+    for s in slots:
+        dt = _slot_dt(s)
+        if dt is None:
+            continue
+        local = _local_dt(dt, offset_s)
+        if local.date() <= today:
+            continue
+        out.append({
+            "time": local.strftime("%Y-%m-%d"),
             "temp": s.get("temp"),
+            "temp_min": s.get("temp_min"),
+            "temp_max": s.get("temp_max"),
             "clouds": s.get("clouds"),
             "pop": s.get("pop"),
+        })
+        if len(out) >= DAILY_FORECAST_DAYS:
+            break
+    return out
+
+
+def _condense_onecall(weather: dict, *, now: datetime) -> dict:
+    """Verdichtet die One-Call-Prognose für die KI: stündliches Tagesfenster + 5-Tage-Ausblick.
+
+    - `hourly`: die intraday-Timeline (`llm_timeline`, sonst `1h`) nur für heute von „jetzt"
+      (frühestens 6 Uhr) bis 21 Uhr Ortszeit — nach 21 Uhr leer (upcoming_changes.md).
+    - `daily`: die `1day`-Timeline für die nächsten 5 Tage ab morgen.
+    Behalten werden nur energierelevante Felder (Temperatur, Bewölkung, Regenwahrscheinlichkeit;
+    daily zusätzlich Min/Max). Leer, wenn weder Stunden- noch Tages-Timeline Daten haben.
+    """
+    timelines = weather.get("timelines") or {}
+    intra_res = weather.get("llm_timeline")
+    if intra_res not in _INTRADAY_TIMELINES:
+        intra_res = "1h"
+    intra_tl = timelines.get(intra_res) or {}
+    daily_tl = timelines.get("1day") or {}
+    intra_raw = intra_tl.get("slots") or []
+    daily_raw = daily_tl.get("slots") or []
+    if not intra_raw and not daily_raw:
+        return {}
+
+    out: dict[str, object] = {"source": "onecall", "units": weather.get("units")}
+    if intra_raw:
+        out["hourly"] = {
+            "resolution": intra_res,
+            "hinweis": "Stündlich für heute ab jetzt (frühestens 6 Uhr) bis 21 Uhr Ortszeit; "
+                       "nach 21 Uhr leer.",
+            "slots": _hourly_window_slots(
+                intra_raw, offset_s=_offset_seconds(intra_tl.get("timezone_offset_s")), now=now
+            ),
         }
-        if timeline == "1day":
-            item["temp_min"] = s.get("temp_min")
-            item["temp_max"] = s.get("temp_max")
-        out_slots.append(item)
-    return {
-        "source": "onecall",
-        "timeline": timeline,
-        "units": weather.get("units"),
-        "slots": out_slots,
-    }
+    if daily_raw:
+        out["daily"] = {
+            "hinweis": f"Tagesprognose der nächsten {DAILY_FORECAST_DAYS} Tage ab morgen.",
+            "slots": _daily_next_days_slots(
+                daily_raw, offset_s=_offset_seconds(daily_tl.get("timezone_offset_s")), now=now
+            ),
+        }
+    return out
 
 
-def _condense_weather(weather: dict, *, horizon_h: int, detail: str) -> dict:
+def _condense_weather(
+    weather: dict, *, horizon_h: int, detail: str, now: datetime | None = None
+) -> dict:
     """Verdichtet die OWM-Wetterprognose für den KI-Kontext (quellen-/detailabhängig).
 
-    Bei `source="onecall"` geht die konfigurierte Timeline (`llm_timeline`) ein (siehe
-    `_condense_onecall`). Sonst (forecast3h): `compact` (Default) = Temperatur/Bewölkung/
-    Regenwahrscheinlichkeit je 3-Stunden-Schritt bis zum Planungshorizont (Datenminimum,
-    Iron Rule 7); `full` = komplette 5-Tage-Prognose mit allen Feldern. Leer ohne Prognose.
+    Bei `source="onecall"` gehen eine **stündliche** Reihe für heute (bis 21 Uhr Ortszeit) und
+    ein **Tagesausblick** der nächsten 5 Tage ein (siehe `_condense_onecall`). Sonst (forecast3h):
+    `compact` (Default) = Temperatur/Bewölkung/Regenwahrscheinlichkeit je 3-Stunden-Schritt bis
+    zum Planungshorizont (Datenminimum, Iron Rule 7); `full` = komplette 5-Tage-Prognose mit allen
+    Feldern. Leer ohne Prognose.
     """
     if not weather:
         return {}
     if weather.get("source") == "onecall":
-        return _condense_onecall(weather, horizon_h=horizon_h)
+        if now is None:
+            now = datetime.now(UTC)
+        elif now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        return _condense_onecall(weather, now=now)
     forecast = weather.get("forecast")
     if not forecast:
         return {}
@@ -235,14 +334,21 @@ def build_context(
     weather: dict | None = None,
     horizon_h: int = 24,
     weather_detail: str = "compact",
+    now: datetime | None = None,
 ) -> dict:
-    """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, Iron Rule 7)."""
+    """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, Iron Rule 7).
+
+    `now` (UTC) steuert das stündliche Wetter-Tagesfenster der One-Call-Quelle; ohne Angabe
+    gilt die aktuelle Zeit.
+    """
     return {
         "valid_from": valid_from,
         "valid_until": valid_until,
         "state": _condense_state(state),
         "forecast": _condense_forecast(forecast),
-        "weather": _condense_weather(weather or {}, horizon_h=horizon_h, detail=weather_detail),
+        "weather": _condense_weather(
+            weather or {}, horizon_h=horizon_h, detail=weather_detail, now=now
+        ),
         "devices": [_condense_constraint(c) for c in constraints],
         "objectives": [
             {"key": o.key, "label": o.label, "weight": o.weight} for o in objectives
@@ -271,9 +377,11 @@ DEFAULT_PLANNING_PROMPT = (
     "Mindest-Ladeleistung vor.\n"
     "- Erfinde keine Geräte; verwende exakt die `name`-Werte aus `devices`.\n"
     "- Gewichte die weichen Ziele gemäß `objectives` (0–100 %).\n"
-    "- Beziehe die Wetterprognose (`weather`) in die Planung ein: hohe Bewölkung "
-    "(`clouds`) und Regenwahrscheinlichkeit (`pop`) senken die erwartete PV-Erzeugung, "
-    "niedrige Temperaturen erhöhen tendenziell den Heizbedarf.\n"
+    "- Beziehe die Wetterprognose (`weather`) in die Planung ein: sie kann eine stündliche "
+    "Reihe für den heutigen Tag (`hourly`, bis 21 Uhr Ortszeit) und einen Tagesausblick der "
+    "Folgetage (`daily`) enthalten. Hohe Bewölkung (`clouds`) und Regenwahrscheinlichkeit "
+    "(`pop`) senken die erwartete PV-Erzeugung, niedrige Temperaturen erhöhen tendenziell den "
+    "Heizbedarf.\n"
     "- Beachte `zusatzwerte` je Gerät: der aktuelle Wert und der `hinweis` erklären dir "
     "dessen Bedeutung. Hat ein Zusatzwert `suggest=true`, liefere deinen Vorschlag exakt "
     "unter dem Feldnamen aus `vorschlagsfeld` (nur diese Felder sind in `allowed_fields`).\n"

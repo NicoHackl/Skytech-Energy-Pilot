@@ -6,6 +6,23 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.47] - 2026-07-09
+
+### Geändert
+- **Wetter an die KI (One Call): stündliche Reihe auf den heutigen Tag begrenzt + Tagesausblick
+  der nächsten 5 Tage ergänzt (`upcoming_changes.md`).** Bislang floss **eine** One-Call-Timeline
+  ungefenstert (auf den Planungshorizont gekürzt) in den Planungskontext. Jetzt bekommt die KI bei
+  `weather.source: onecall` **zweierlei**:
+  - **`hourly`** – die stündliche Reihe **nur für heute**, vom aktuellen Zeitpunkt (frühestens ab
+    **6 Uhr**) bis **21 Uhr Ortszeit**. Beispiele: um 11:30 → 12:00–21:00; vor 6 Uhr → ab 6:00;
+    nach 21 Uhr bleibt die Stundenreihe **leer**. Die Ortszeit kommt aus dem OWM-`timezone_offset`
+    der Wetter-Zone.
+  - **`daily`** – ein **Tagesausblick der nächsten 5 Tage ab morgen** (Temperatur inkl. Tages-Min/
+    Max, Bewölkung, Regenwahrscheinlichkeit); der heutige Tag steckt bereits in der Stundenreihe.
+  - `weather.onecall.llm_timeline` wählt nun die **Auflösung der Stundenreihe** (`15min`/`1h`); die
+    Tagesreihe kommt fest aus der `1day`-Timeline. Der `OneCallCollector`-Snapshot trägt je Timeline
+    zusätzlich den `timezone_offset_s` (fürs Ortszeit-Fenster). UI-Anzeige und HEMS-Weg unverändert.
+
 ## [0.0.46] - 2026-07-08
 
 ### Behoben

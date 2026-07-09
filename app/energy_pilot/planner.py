@@ -143,6 +143,7 @@ class Planner:
             weather=weather,
             horizon_h=int(self.config.forecast_horizon_h),
             weather_detail=weather_detail,
+            now=now,
         )
         run_id = uuid4().hex[:12]
 

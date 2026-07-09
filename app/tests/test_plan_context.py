@@ -1,5 +1,7 @@
 """Tests für den KI-Kontext-, Prompt- und Antwort-Schema-Aufbau (Datenminimum)."""
 
+from datetime import UTC, datetime, timedelta, timezone
+
 from energy_pilot.constraints import build_constraints
 from energy_pilot.devices import BINARY, CONTROLLABLE, Device, DeviceExtra
 from energy_pilot.objectives import objectives_from_config
@@ -271,14 +273,38 @@ def test_build_context_includes_weather():
     assert len(ctx["weather"]["slots"]) == 4
 
 
-def _onecall_snapshot(llm_timeline="1h", n_15min=12, n_1h=30, n_1day=8):
-    # OneCallCollector.snapshot()-Form: timelines je Auflösung mit slots[].
-    def slot(i, daily=False):
-        d = {"time": f"t{i}", "temp": 20.0 + i, "clouds": 10.0, "pop": 0.1}
-        if daily:
-            d["temp_min"] = 10.0 + i
-            d["temp_max"] = 25.0 + i
-        return d
+# Fester Bezugszeitpunkt für die One-Call-Tests: 10.07.2026, 09:30 UTC = 11:30 Ortszeit (+2 h).
+_OC_OFFSET_S = 7200
+_OC_NOW = datetime(2026, 7, 10, 9, 30, tzinfo=UTC)
+
+
+def _onecall_snapshot(now=_OC_NOW, *, offset_s=_OC_OFFSET_S, llm_timeline="1h",
+                      n_days=8, with_15min=False):
+    """OneCallCollector.snapshot()-Form mit echten Unix-Zeitstempeln relativ zu `now`.
+
+    Stündliche/15-min-Slots liegen dicht um `now` (~2 Tage voraus), Tages-Slots ab heute
+    (Ortszeit) für `n_days` Tage.
+    """
+    tz = timezone(timedelta(seconds=offset_s))
+    now_local = now.astimezone(tz)
+
+    def entry(t, **extra):
+        return {
+            "dt": int(t.timestamp()),
+            "time": t.astimezone(UTC).strftime("%Y-%m-%d %H:%M"),
+            "temp": 20.0, "clouds": 10.0, "pop": 0.1, **extra,
+        }
+
+    base_h = now_local.replace(minute=0, second=0, microsecond=0)
+    hourly = [entry(base_h + timedelta(hours=k)) for k in range(-6, 43)]
+
+    q = now_local.replace(second=0, microsecond=0)
+    q -= timedelta(minutes=q.minute % 15)
+    q15 = [entry(q + timedelta(minutes=15 * k)) for k in range(-8, 4 * 24)] if with_15min else []
+
+    midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    daily = [entry(midnight + timedelta(days=k), temp_min=10.0 + k, temp_max=25.0 + k)
+             for k in range(n_days)]
 
     return {
         "enabled": True,
@@ -286,48 +312,79 @@ def _onecall_snapshot(llm_timeline="1h", n_15min=12, n_1h=30, n_1day=8):
         "units": "metric",
         "llm_timeline": llm_timeline,
         "timelines": {
-            "15min": {"enabled": True, "slots": [slot(i) for i in range(n_15min)]},
-            "1h": {"enabled": True, "slots": [slot(i) for i in range(n_1h)]},
-            "1day": {"enabled": True, "slots": [slot(i, daily=True) for i in range(n_1day)]},
+            "15min": {"enabled": with_15min, "timezone_offset_s": offset_s, "slots": q15},
+            "1h": {"enabled": True, "timezone_offset_s": offset_s, "slots": hourly},
+            "1day": {"enabled": True, "timezone_offset_s": offset_s, "slots": daily},
         },
     }
 
 
-def test_condense_weather_onecall_1h_trims_to_horizon():
-    out = _condense_weather(_onecall_snapshot("1h"), horizon_h=24, detail="compact")
+def test_condense_weather_onecall_hourly_window_today_until_21():
+    # 11:30 Ortszeit → Stundenreihe 12:00 … 21:00 des heutigen Tages (upcoming_changes.md).
+    out = _condense_weather(_onecall_snapshot(), horizon_h=24, detail="compact", now=_OC_NOW)
     assert out["source"] == "onecall"
-    assert out["timeline"] == "1h"
-    assert len(out["slots"]) == 24  # 24 h / 1-h-Schritte
-    assert set(out["slots"][0].keys()) == {"time", "temp", "clouds", "pop"}
+    times = [s["time"] for s in out["hourly"]["slots"]]
+    assert times[0] == "2026-07-10 12:00"
+    assert times[-1] == "2026-07-10 21:00"
+    assert len(times) == 10
+    assert set(out["hourly"]["slots"][0].keys()) == {"time", "temp", "clouds", "pop"}
 
 
-def test_condense_weather_onecall_15min_trims_to_horizon():
-    out = _condense_weather(_onecall_snapshot("15min"), horizon_h=2, detail="compact")
-    assert out["timeline"] == "15min"
-    assert len(out["slots"]) == 8  # 2 h * 60 / 15 min
+def test_condense_weather_onecall_hourly_empty_after_21():
+    # 22:30 Ortszeit → keine stündlichen Slots mehr heute; Tagesausblick bleibt bestehen.
+    now = datetime(2026, 7, 10, 20, 30, tzinfo=UTC)
+    out = _condense_weather(_onecall_snapshot(now), horizon_h=24, detail="compact", now=now)
+    assert out["hourly"]["slots"] == []
+    assert len(out["daily"]["slots"]) == 5
 
 
-def test_condense_weather_onecall_1day_full_with_minmax():
-    out = _condense_weather(_onecall_snapshot("1day"), horizon_h=24, detail="compact")
-    assert out["timeline"] == "1day"
-    assert len(out["slots"]) == 8  # Tages-Timeline wird nicht gekürzt
-    assert "temp_min" in out["slots"][0]
-    assert "temp_max" in out["slots"][0]
+def test_condense_weather_onecall_hourly_starts_at_six_when_early():
+    # 04:00 Ortszeit → Start frühestens 6 Uhr, bis 21 Uhr.
+    now = datetime(2026, 7, 10, 2, 0, tzinfo=UTC)
+    out = _condense_weather(_onecall_snapshot(now), horizon_h=24, detail="compact", now=now)
+    times = [s["time"] for s in out["hourly"]["slots"]]
+    assert times[0] == "2026-07-10 06:00"
+    assert times[-1] == "2026-07-10 21:00"
+    assert len(times) == 16  # 06:00 … 21:00 inklusiv
 
 
-def test_condense_weather_onecall_empty_timeline():
-    snap = _onecall_snapshot("1h", n_1h=0)
-    assert _condense_weather(snap, horizon_h=24, detail="compact") == {}
+def test_condense_weather_onecall_daily_next_five_days_from_tomorrow():
+    # Heute 10.07. → Tagesprognose 11.07.–15.07. (heute deckt bereits die Stundenreihe ab).
+    out = _condense_weather(_onecall_snapshot(), horizon_h=24, detail="compact", now=_OC_NOW)
+    days = [s["time"] for s in out["daily"]["slots"]]
+    assert days == ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15"]
+    assert "temp_min" in out["daily"]["slots"][0]
+    assert "temp_max" in out["daily"]["slots"][0]
+
+
+def test_condense_weather_onecall_15min_intraday_when_selected():
+    # llm_timeline=15min → das Tagesfenster nutzt die 15-min-Auflösung (bis exakt 21:00).
+    out = _condense_weather(
+        _onecall_snapshot(llm_timeline="15min", with_15min=True),
+        horizon_h=24, detail="compact", now=_OC_NOW,
+    )
+    assert out["hourly"]["resolution"] == "15min"
+    times = [s["time"] for s in out["hourly"]["slots"]]
+    assert times[0] == "2026-07-10 11:30"  # nächster 15-min-Schritt ab 11:30
+    assert times[-1] == "2026-07-10 21:00"  # 21:15 liegt bereits hinter dem Fenster
+
+
+def test_condense_weather_onecall_empty_without_any_timeline_data():
+    snap = _onecall_snapshot()
+    for res in ("15min", "1h", "1day"):
+        snap["timelines"][res]["slots"] = []
+    assert _condense_weather(snap, horizon_h=24, detail="compact", now=_OC_NOW) == {}
 
 
 def test_build_context_includes_onecall_weather():
     ctx = build_context(
         {}, {}, _constraints(), objectives_from_config({}),
         valid_from="A", valid_until="B",
-        weather=_onecall_snapshot("1day"), horizon_h=24,
+        weather=_onecall_snapshot(), horizon_h=24, now=_OC_NOW,
     )
     assert ctx["weather"]["source"] == "onecall"
-    assert ctx["weather"]["timeline"] == "1day"
+    assert len(ctx["weather"]["hourly"]["slots"]) == 10
+    assert len(ctx["weather"]["daily"]["slots"]) == 5
 
 
 def test_build_context_includes_device_funktion_only_when_set():
