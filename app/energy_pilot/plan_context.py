@@ -17,6 +17,7 @@ from energy_pilot.constraints import DeviceConstraint
 from energy_pilot.devices import BINARY
 from energy_pilot.objectives import Objective
 from energy_pilot.plan_schema import suggestion_keys
+from energy_pilot.weather import ONECALL_TIMELINES
 
 # Zusatz-Entität-Typ (D-048) -> Gemini-Antwort-Schema-Typ (OpenAPI-Subset, Großschreibung).
 _KIND_TO_GEMINI: dict[str, str] = {
@@ -73,6 +74,8 @@ HOURLY_WINDOW_END_HOUR = 21
 DAILY_FORECAST_DAYS = 5
 # Auflösungen, die sich als stündliches Tagesfenster eignen (1day ist die Tagesebene).
 _INTRADAY_TIMELINES = ("15min", "1h")
+# Sprechende Labels der Vorhersagemodelle für den KI-Kontext.
+_ONECALL_MODEL_LABEL = {"15min": "15-Minuten", "1h": "stündlich", "1day": "täglich"}
 
 
 def _offset_seconds(value: object) -> int:
@@ -157,43 +160,37 @@ def _daily_next_days_slots(slots: list, *, offset_s: int, now: datetime) -> list
 
 
 def _condense_onecall(weather: dict, *, now: datetime) -> dict:
-    """Verdichtet die One-Call-Prognose für die KI: stündliches Tagesfenster + 5-Tage-Ausblick.
+    """Verdichtet ALLE aktiven One-Call-Vorhersagemodelle für die KI (Kombination frei wählbar).
 
-    - `hourly`: die intraday-Timeline (`llm_timeline`, sonst `1h`) nur für heute von „jetzt"
-      (frühestens 6 Uhr) bis 21 Uhr Ortszeit — nach 21 Uhr leer (upcoming_changes.md).
-    - `daily`: die `1day`-Timeline für die nächsten 5 Tage ab morgen.
+    Jedes in der Addon-Config aktivierte Modell (15min/1h/1day) fließt eigenständig in den Kontext
+    unter `weather.models[<res>]` (D-054) — der User wählt per Schalter eine beliebige Kombination.
+    Die intraday-Modelle (15min/1h) werden auf das heutige Fenster von „jetzt" (frühestens 6 Uhr)
+    bis 21 Uhr Ortszeit begrenzt, das Tagesmodell (1day) auf die nächsten 5 Tage ab morgen.
     Behalten werden nur energierelevante Felder (Temperatur, Bewölkung, Regenwahrscheinlichkeit;
-    daily zusätzlich Min/Max). Leer, wenn weder Stunden- noch Tages-Timeline Daten haben.
+    daily zusätzlich Min/Max). Leer, wenn kein aktives Modell Daten hat.
     """
     timelines = weather.get("timelines") or {}
-    intra_res = weather.get("llm_timeline")
-    if intra_res not in _INTRADAY_TIMELINES:
-        intra_res = "1h"
-    intra_tl = timelines.get(intra_res) or {}
-    daily_tl = timelines.get("1day") or {}
-    intra_raw = intra_tl.get("slots") or []
-    daily_raw = daily_tl.get("slots") or []
-    if not intra_raw and not daily_raw:
+    models: dict[str, object] = {}
+    for res in ONECALL_TIMELINES:  # feste Reihenfolge fein → grob
+        tl = timelines.get(res) or {}
+        raw = tl.get("slots") or []
+        if not tl.get("enabled") or not raw:  # nur aktive UND abgerufene Modelle
+            continue
+        offset_s = _offset_seconds(tl.get("timezone_offset_s"))
+        if res in _INTRADAY_TIMELINES:
+            slots = _hourly_window_slots(raw, offset_s=offset_s, now=now)
+            zeitraum = "heute ab jetzt (frühestens 6 Uhr) bis 21 Uhr Ortszeit; nach 21 Uhr leer"
+        else:
+            slots = _daily_next_days_slots(raw, offset_s=offset_s, now=now)
+            zeitraum = f"nächste {DAILY_FORECAST_DAYS} Tage ab morgen"
+        models[res] = {
+            "aufloesung": _ONECALL_MODEL_LABEL.get(res, res),
+            "zeitraum": zeitraum,
+            "slots": slots,
+        }
+    if not models:
         return {}
-
-    out: dict[str, object] = {"source": "onecall", "units": weather.get("units")}
-    if intra_raw:
-        out["hourly"] = {
-            "resolution": intra_res,
-            "hinweis": "Stündlich für heute ab jetzt (frühestens 6 Uhr) bis 21 Uhr Ortszeit; "
-                       "nach 21 Uhr leer.",
-            "slots": _hourly_window_slots(
-                intra_raw, offset_s=_offset_seconds(intra_tl.get("timezone_offset_s")), now=now
-            ),
-        }
-    if daily_raw:
-        out["daily"] = {
-            "hinweis": f"Tagesprognose der nächsten {DAILY_FORECAST_DAYS} Tage ab morgen.",
-            "slots": _daily_next_days_slots(
-                daily_raw, offset_s=_offset_seconds(daily_tl.get("timezone_offset_s")), now=now
-            ),
-        }
-    return out
+    return {"source": "onecall", "units": weather.get("units"), "models": models}
 
 
 def _condense_weather(
@@ -201,8 +198,9 @@ def _condense_weather(
 ) -> dict:
     """Verdichtet die OWM-Wetterprognose für den KI-Kontext (quellen-/detailabhängig).
 
-    Bei `source="onecall"` gehen eine **stündliche** Reihe für heute (bis 21 Uhr Ortszeit) und
-    ein **Tagesausblick** der nächsten 5 Tage ein (siehe `_condense_onecall`). Sonst (forecast3h):
+    Bei `source="onecall"` geht **jedes aktivierte Vorhersagemodell** ein (`weather.models`, siehe
+    `_condense_onecall`): intraday für heute (bis 21 Uhr Ortszeit), täglich für die Folgetage.
+    Sonst (forecast3h):
     `compact` (Default) = Temperatur/Bewölkung/Regenwahrscheinlichkeit je 3-Stunden-Schritt bis
     zum Planungshorizont (Datenminimum, Iron Rule 7); `full` = komplette 5-Tage-Prognose mit allen
     Feldern. Leer ohne Prognose.
@@ -377,11 +375,11 @@ DEFAULT_PLANNING_PROMPT = (
     "Mindest-Ladeleistung vor.\n"
     "- Erfinde keine Geräte; verwende exakt die `name`-Werte aus `devices`.\n"
     "- Gewichte die weichen Ziele gemäß `objectives` (0–100 %).\n"
-    "- Beziehe die Wetterprognose (`weather`) in die Planung ein: sie kann eine stündliche "
-    "Reihe für den heutigen Tag (`hourly`, bis 21 Uhr Ortszeit) und einen Tagesausblick der "
-    "Folgetage (`daily`) enthalten. Hohe Bewölkung (`clouds`) und Regenwahrscheinlichkeit "
-    "(`pop`) senken die erwartete PV-Erzeugung, niedrige Temperaturen erhöhen tendenziell den "
-    "Heizbedarf.\n"
+    "- Beziehe die Wetterprognose (`weather`) in die Planung ein: bei One Call enthält "
+    "`weather.models` je aktiviertem Vorhersagemodell eine Reihe (stündlich/15-Minuten für heute "
+    "bis 21 Uhr Ortszeit, täglich für die Folgetage); jeder Eintrag nennt seinen `zeitraum`. "
+    "Hohe Bewölkung (`clouds`) und Regenwahrscheinlichkeit (`pop`) senken die erwartete "
+    "PV-Erzeugung, niedrige Temperaturen erhöhen tendenziell den Heizbedarf.\n"
     "- Beachte `zusatzwerte` je Gerät: der aktuelle Wert und der `hinweis` erklären dir "
     "dessen Bedeutung. Hat ein Zusatzwert `suggest=true`, liefere deinen Vorschlag exakt "
     "unter dem Feldnamen aus `vorschlagsfeld` (nur diese Felder sind in `allowed_fields`).\n"

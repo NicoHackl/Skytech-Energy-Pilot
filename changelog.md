@@ -6,6 +6,22 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.48] - 2026-07-09
+
+### Geändert
+- **One Call 4.0: freie Kombination der Vorhersagemodelle statt Einzel-Auswahl für die KI.** Die
+  drei Modelle **15min / 1h / 1day** sind in der Addon-Config je per **Schalter** (`enable_*`)
+  aktivierbar; **jedes aktive Modell wird abgerufen UND fließt gemeinsam in den KI-Kontext**. Man
+  muss sich also **nicht mehr für ein einzelnes Vorhersagemodell entscheiden** — jede gewünschte
+  Kombination ist möglich.
+  - Das bisherige Einzel-Select **`weather.onecall.llm_timeline` ist entfallen** (aus Optionen +
+    Schema entfernt; ein evtl. noch gespeicherter Wert wird ignoriert).
+  - Der KI-Kontext hat jetzt `weather.models` mit einem Eintrag je aktivem Modell: intraday
+    (15min/1h) für **heute** ab jetzt (frühestens 6 Uhr) bis 21 Uhr Ortszeit, das Tagesmodell
+    (1day) für die **nächsten 5 Tage ab morgen**. Jeder Eintrag nennt Auflösung + `zeitraum`.
+  - Wetter-Tab: die Zeile zeigt statt „KI-Timeline: 1h" jetzt „KI nutzt: <aktive Modelle>"
+    (`snapshot.ai_models`).
+
 ## [0.0.47] - 2026-07-09
 
 ### Geändert

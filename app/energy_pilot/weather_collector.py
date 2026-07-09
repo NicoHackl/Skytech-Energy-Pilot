@@ -510,7 +510,8 @@ class OneCallCollector:
             "source": "onecall",
             "zone_entity": self.config.zone_entity,
             "units": self.config.units,
-            "llm_timeline": oc.llm_timeline,
+            # Aktive Vorhersagemodelle = die ans LLM gehende Kombination (D-054, kein Einzel-Select)
+            "ai_models": list(oc.enabled_timelines),
             "coords": (
                 {"lat": self.coords[0], "lon": self.coords[1]} if self.coords else None
             ),

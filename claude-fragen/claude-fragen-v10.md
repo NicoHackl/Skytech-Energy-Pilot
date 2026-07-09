@@ -2,9 +2,9 @@
 
 > **STATUS:** v9 verarbeitet — **O2/O3 → Decision Log D-045** umgesetzt (v0.0.22): Pagination 1–5
 > je Timeline + **verpflichtender Tages-Call-Budget-Schutz** (≤1000/Tag, UTC, persistent) sowie
-> **Unwetter-Alerts** (vorerst nur Daten/Anzeige). **O4 → D-053** umgesetzt (v0.0.47: Stundenreihe
-> heute bis 21 Uhr + 5-Tage-Ausblick ans LLM); **O1/O5** bleiben **für die Zukunft geparkt**
-> (siehe unten, Abschnitt Z). Die **B-Fragen aus [claude-fragen-v6.md](claude-fragen-v6.md)
+> **Unwetter-Alerts** (vorerst nur Daten/Anzeige). **O4 → D-053/D-054** umgesetzt (v0.0.47–0.0.48:
+> Stundenreihe heute bis 21 Uhr + 5-Tage-Ausblick ans LLM; freie Modell-Kombination per Schalter,
+> `llm_timeline` entfallen); **O1/O5** bleiben **für die Zukunft geparkt** (siehe unten, Abschnitt Z). Die **B-Fragen aus [claude-fragen-v6.md](claude-fragen-v6.md)
 > (B1–B4)** bleiben **weiterhin offen** und laufen hier unter B weiter.
 > Format wie gehabt: Antwort direkt unter die Frage; ich übernehme sie danach nach
 > [../plan/entscheidungen.md](../plan/entscheidungen.md) und entferne sie in v11.
@@ -50,8 +50,10 @@ Antwort:
 > Frage**. Wenn einer davon konkret wird, kommt er als eigene Frage zurück.
 
 - **O1 — `current`-Ist-Wetter:** vorerst **nicht** implementieren, für die Zukunft im Hinterkopf behalten.
-- **O4 — mehrere Timelines gleichzeitig ans LLM:** ✅ **umgesetzt → D-053** (v0.0.47): stündliche
-  Reihe **nur heute** (ab jetzt, frühestens 6 Uhr, bis 21 Uhr Ortszeit) **plus** Tagesausblick der
-  **nächsten 5 Tage** (`1day`, ab morgen). `llm_timeline` wählt die Auflösung der Stundenreihe.
+- **O4 — mehrere Timelines gleichzeitig ans LLM:** ✅ **umgesetzt → D-053/D-054** (v0.0.47–0.0.48):
+  stündliche Reihe **nur heute** (ab jetzt, frühestens 6 Uhr, bis 21 Uhr Ortszeit) **plus**
+  Tagesausblick der **nächsten 5 Tage** (`1day`, ab morgen). Mit **D-054** entfällt das Einzel-Select
+  `llm_timeline` ganz: **jedes aktivierte Modell** (Schalter `enable_*`) geht an die KI — freie
+  Kombination.
 - **O5 — historische Daten (47 Jahre) für PV-Kalibrierung:** im aktuellen Scope **kein** Thema
   (geringer Einfluss); für **V2+** vorstellbar.

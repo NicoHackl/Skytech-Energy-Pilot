@@ -59,8 +59,9 @@ DEFAULTS: dict[str, object] = {
         # Detailgrad ans LLM (nur forecast3h): "compact" (Bewölkung/Regen/Temp bis Horizont)
         # oder "full" (volle 5 Tage, alle Felder).
         "llm_detail": "compact",
-        # One Call API 4.0: je Timeline (15min/1h/1day) aktivierbar mit eigenem Refresh-Intervall.
-        # Jede Timeline ist ein eigener bezahlter Call. llm_timeline = welche Timeline ans LLM geht.
+        # One Call API 4.0: je Vorhersagemodell (15min/1h/1day) per Schalter aktivierbar mit
+        # eigenem Refresh-Intervall. Jedes aktivierte Modell ist ein eigener bezahlter Call UND
+        # fließt in den KI-Kontext (D-054) — beliebige Kombination wählbar, kein Einzel-Select.
         "onecall": {
             "enable_15min": False,
             "enable_1h": True,
@@ -68,7 +69,6 @@ DEFAULTS: dict[str, object] = {
             "refresh_15min": 15,
             "refresh_1h": 60,
             "refresh_1day": 180,
-            "llm_timeline": "1h",
         },
     },
     # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus info.md §7 (objectives.py).
