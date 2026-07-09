@@ -1,7 +1,6 @@
 """Tests für das Wetter-Config-Parsing und die Normalisierungs-Dataclasses."""
 
 from energy_pilot.weather import (
-    DEFAULT_LLM_TIMELINE,
     DEFAULT_REFRESH_MIN,
     DEFAULT_SOURCE,
     DEFAULT_ZONE_ENTITY,
@@ -96,7 +95,7 @@ def test_onecall_config_defaults():
     assert oc.refresh_15min == 15
     assert oc.refresh_1h == 60
     assert oc.refresh_1day == 180
-    assert oc.llm_timeline == DEFAULT_LLM_TIMELINE == "1h"
+    # Aktive Modelle = die ans LLM gehende Kombination (D-054, kein Einzel-Select mehr).
     assert oc.enabled_timelines == ("1h", "1day")
 
 
@@ -109,7 +108,6 @@ def test_onecall_config_overrides_and_validation():
                     "enable_1h": False,
                     "refresh_15min": 5,
                     "refresh_1day": 0,  # ungültig (<1) → Default 180
-                    "llm_timeline": "15MIN",  # normalisiert auf Kleinschreibung
                 }
             }
         }
@@ -118,15 +116,10 @@ def test_onecall_config_overrides_and_validation():
     assert oc.enable_1h is False
     assert oc.refresh_15min == 5
     assert oc.refresh_1day == 180
-    assert oc.llm_timeline == "15min"
+    # Beliebige Kombination: hier 15min + 1day aktiv.
     assert oc.enabled_timelines == ("15min", "1day")
     assert oc.is_enabled("1h") is False
     assert oc.refresh_for("15min") == 5
-
-
-def test_onecall_invalid_llm_timeline_falls_back():
-    oc = weather_config_from_options({"weather": {"onecall": {"llm_timeline": "xxl"}}}).onecall
-    assert oc.llm_timeline == "1h"
 
 
 def test_onecall_pages_defaults_and_clamping():

@@ -598,9 +598,14 @@ function WeatherOneCall({ data }) {
   const labels = { "15min": "15-Minuten", "1h": "Stündlich", "1day": "Täglich" };
   const tl = data.timelines || {};
   const active = ["15min", "1h", "1day"].filter((res) => tl[res] && tl[res].enabled);
+  // Jedes aktive Modell fließt in den KI-Kontext (D-054, kein Einzel-Select mehr).
+  const aiModels = (data.ai_models && data.ai_models.length ? data.ai_models : active).map(
+    (r) => labels[r] || r
+  );
+  const aiInfo = aiModels.length ? aiModels.join(", ") : "keine";
   return html`<${Fragment}>
     <div class="hint">Quelle: <code>One Call API 4.0</code> · Zone: <code>${data.zone_entity}</code> (${coords})
-      · KI-Timeline: <code>${data.llm_timeline}</code> · Stand: ${tsDE(data.last_fetch_ts)}${budget}${data.last_error
+      · KI nutzt: <code>${aiInfo}</code> · Stand: ${tsDE(data.last_fetch_ts)}${budget}${data.last_error
         ? " · ⚠️ " + data.last_error
         : ""}</div>
     ${active.length

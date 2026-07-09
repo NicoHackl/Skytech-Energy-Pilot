@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot
-version: "0.0.47"
+version: "0.0.48"
 slug: skytech_energy_pilot
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -69,15 +69,15 @@ options:
     # Detailgrad der Wetterdaten ans LLM (nur forecast3h): compact (Bewölkung/Regen/Temp bis
     # Planungshorizont, spart Tokens) oder full (volle 5-Tage-Prognose, genauer aber mehr Tokens).
     llm_detail: compact
-    # One Call API 4.0: je Timeline (15min/1h/1day) einzeln aktivierbar mit eigenem Refresh-Intervall
-    # (Minuten). Jede Timeline ist ein eigener bezahlter Call.
-    # pages_*: 1–5 paginierte Seiten je Timeline und Refresh (mehr Horizont, aber je Seite ein
+    # One Call API 4.0: je Vorhersagemodell (15min/1h/1day) per Schalter (enable_*) aktivierbar mit
+    # eigenem Refresh-Intervall (Minuten). Jedes AKTIVE Modell ist ein eigener bezahlter Call UND
+    # fließt in den KI-Kontext — beliebige Kombination wählbar (kein Einzel-Select mehr). Ans LLM
+    # gehen: aktive intraday-Modelle (15min/1h) für HEUTE ab jetzt (frühestens 6 Uhr) bis 21 Uhr
+    # Ortszeit, das Tagesmodell (1day) für die nächsten 5 Tage ab morgen.
+    # pages_*: 1–5 paginierte Seiten je Modell und Refresh (mehr Horizont, aber je Seite ein
     #   eigener bezahlter Call). daily_call_budget: harte Tagesobergrenze ALLER bezahlten One-Call-
-    #   Anfragen (Timelines + Alerts), UTC-Tag; schützt vor Überschreiten des Kontingents (Default
+    #   Anfragen (Modelle + Alerts), UTC-Tag; schützt vor Überschreiten des Kontingents (Default
     #   1000 = OWM-Freikontingent). enable_alerts/refresh_alerts: behördliche Unwetterwarnungen.
-    # llm_timeline: Auflösung der STÜNDLICHEN KI-Reihe (15min|1h). Der KI-Kontext bekommt bei
-    #   onecall immer zweierlei: die stündliche Reihe für HEUTE (ab jetzt, frühestens 6 Uhr, bis
-    #   21 Uhr Ortszeit) plus einen Tagesausblick der nächsten 5 Tage (1day, ab morgen).
     onecall:
       enable_15min: false
       enable_1h: true
@@ -91,7 +91,6 @@ options:
       daily_call_budget: 1000
       enable_alerts: true
       refresh_alerts: 30
-      llm_timeline: "1h"
   # Weiche Zielgewichte (Prozent 0–100, D-011). Initialwerte aus info.md §7.
   # Harte Grenzen sind nicht hier, sondern werden aus den ems_*-Werten abgeleitet (constraints.py).
   objective_weights:
@@ -160,7 +159,6 @@ schema:
       daily_call_budget: int(1,100000)?
       enable_alerts: bool?
       refresh_alerts: int(1,1440)?
-      llm_timeline: list(15min|1h|1day)?
   objective_weights:
     versorgungssicherheit: int(0,100)?
     eauto_ladeziel: int(0,100)?
