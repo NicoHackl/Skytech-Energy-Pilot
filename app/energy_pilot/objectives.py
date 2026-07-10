@@ -1,8 +1,8 @@
 """User-Objective-Manager: weiche Zielgewichte (Decision D-011).
 
-Die weichen Ziele aus info.md §7 sind gegeneinander abwägbare Gewichte (0–100 %).
-Sie sind in der Addon-Config unter `objective_weights` pflegbar und werden initial
-mit den info.md-Werten vorbelegt (D-011). Harte Grenzen liegen dagegen im
+Die weichen Ziele (siehe doc/configuration.md) sind gegeneinander abwägbare Gewichte
+(0–100 %). Sie sind in der Addon-Config unter `objective_weights` pflegbar und werden
+initial mit den unten stehenden Defaultwerten vorbelegt (D-011). Harte Grenzen liegen dagegen im
 Constraint-Model (constraints.py) und sind **nie** durch die KI änderbar.
 """
 
@@ -20,7 +20,7 @@ class Objective:
     weight: int
 
 
-# Reihenfolge + Default-Gewichte aus info.md §7 (D-011).
+# Reihenfolge + Default-Gewichte (D-011, siehe doc/configuration.md).
 DEFAULT_OBJECTIVES: tuple[Objective, ...] = (
     Objective("versorgungssicherheit", "Versorgungssicherheit", 100),
     Objective("eauto_ladeziel", "E-Auto-Ladeziel", 100),

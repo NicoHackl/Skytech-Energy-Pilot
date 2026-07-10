@@ -6,6 +6,30 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.49] - 2026-07-10
+
+### Geändert
+- **Alte Doku ersetzt durch neuen Ordner `doc/`.** `info.md`, `plan/*.md`,
+  `user-regeln.md` und `user-fragen.md` wurden vom User gelöscht (Commit `ad48b23`).
+  Neu geschrieben, diesmal am **tatsächlichen Code** verifiziert statt an der
+  ursprünglichen Planung: `doc/architecture.md`, `entity-naming.md`, `control-modes.md`,
+  `devices.md`, `planning-engine.md`, `validation-safety.md`, `configuration.md`,
+  `api-reference.md`, `data-model.md`, `known-gaps-and-pitfalls.md`, `decisions-log.md`
+  (verdichtetes D-001…D-052), `roadmap.md`, `contributing.md`. `known-gaps-and-pitfalls.md`
+  hält u. a. fest, dass es **keinen automatischen Planungs-Scheduler** gibt und die
+  Validator-Stufen 4–6 (Frische/Delta-Limit/Mindestkonfidenz) fehlen — bislang nirgends
+  schriftlich festgehalten. `CLAUDE.md` verweist jetzt auf `doc/` statt auf die
+  gelöschten Dateien.
+- **Tote Doku-Verweise im Code bereinigt.** Kommentare/Docstrings, die auf
+  `info.md §…`, `plan/*.md` oder `user-regeln.md §…` verwiesen, zeigen jetzt auf die
+  passende `doc/*.md`-Datei (`roles.py`, `ai_provider.py`, `config.py`, `database.py`,
+  `constraints.py`, `objectives.py`, `allowlist.py`, `gemini_provider.py`,
+  `logging_setup.py`). Der `hems_client.py`-Docstring behauptete zusätzlich fälschlich
+  einen Addon-Config-Fallback bei der Geräte-Discovery, den es seit D-046 nicht mehr
+  gibt — korrigiert.
+- **Grenzen-&-Ziele-Tab:** Der Hinweistext zu den Zielgewichten verwies auf das
+  gelöschte `info.md §7` — jetzt ohne toten Verweis.
+
 ## [0.0.48] - 2026-07-09
 
 ### Geändert

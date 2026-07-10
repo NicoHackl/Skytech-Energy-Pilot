@@ -1,7 +1,7 @@
 """SQLite-Initialisierung mit einfachem, versioniertem Migrations-Mechanismus.
 
-Vollständiges Zielschema siehe plan/05-daten-und-speicherung.md. M0 legt nur die
-Kerntabellen plus die Migrationsverwaltung an; weitere Tabellen folgen versioniert.
+Vollständiges Schema siehe doc/data-model.md. M0 legt nur die Kerntabellen plus die
+Migrationsverwaltung an; weitere Tabellen folgen versioniert.
 """
 
 from __future__ import annotations

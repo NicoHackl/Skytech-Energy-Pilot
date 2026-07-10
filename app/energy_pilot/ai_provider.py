@@ -1,6 +1,6 @@
 """Abstrakte KI-Provider-Schnittstelle + Hilfen (Rate-Limit, Fehlerklassen).
 
-Die KI ist **Orchestrator**, nicht Regler (info.md §12). Provider sind über diese
+Die KI ist **Orchestrator**, nicht Regler (siehe doc/validation-safety.md). Provider sind über diese
 abstrakte Basis austauschbar (D-007/D-041): Eingabe = Prompt + Antwort-Schema,
 Ausgabe = **strukturiertes JSON**. Freitext wird nie als Steuerbefehl verwendet
 (Iron Rule 5). Der konkrete Gemini-Provider liegt in `gemini_provider.py`.

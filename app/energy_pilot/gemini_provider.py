@@ -3,7 +3,7 @@
 Direkter REST-Aufruf via aiohttp (Muster wie `hems_client.py`) – bewusst **ohne**
 schweres SDK. Single-Shot: ein Prompt + `responseSchema` → ein strukturiertes
 JSON-Objekt. Der API-Schlüssel steht ausschließlich in der Addon-Config, wird per
-Header (nicht in der URL) gesendet und nie geloggt (Doc 04, info.md §13).
+Header (nicht in der URL) gesendet und nie geloggt (siehe doc/validation-safety.md).
 """
 
 from __future__ import annotations

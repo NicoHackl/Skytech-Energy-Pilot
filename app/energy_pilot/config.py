@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass
 
-# Standardwerte gemäß Decision Log (siehe plan/entscheidungen.md).
+# Standardwerte gemäß Decision Log (siehe doc/decisions-log.md).
 DEFAULTS: dict[str, object] = {
     "log_level": "info",
     "provider": "gemini",
@@ -71,7 +71,8 @@ DEFAULTS: dict[str, object] = {
             "refresh_1day": 180,
         },
     },
-    # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus info.md §7 (objectives.py).
+    # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus objectives.py.
+    # Siehe doc/configuration.md.
     "objective_weights": {},
 }
 

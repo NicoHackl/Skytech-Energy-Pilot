@@ -673,7 +673,7 @@ function GrenzenTab() {
     </div>
     <div class="ha-card">
       <div class="card-title">Weiche Zielgewichte</div>
-      <p class="hint">Gewichte (0–100 %) aus info.md §7, in der Addon-Config unter <code>objective_weights</code> pflegbar.</p>
+      <p class="hint">Gewichte (0–100 %), in der Addon-Config unter <code>objective_weights</code> pflegbar (siehe doc/configuration.md).</p>
       <div class="table-wrap"><table>
         <thead><tr><th>Ziel</th><th class="num">Gewicht</th></tr></thead>
         <tbody>${((obj && obj.objectives) || []).map(

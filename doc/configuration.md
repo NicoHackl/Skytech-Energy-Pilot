@@ -1,0 +1,87 @@
+# Addon-Konfiguration
+
+Leitprinzip: so gut wie **alles** ist in der Addon-Config einstellbar. Defaults
+kommen von Claude, sind aber immer überschreibbar. `config.py: AddonConfig.load()`
+legt `/data/options.json` (von HA Supervisor geschrieben) über `DEFAULTS`, überspringt
+`None`-Werte; `LOG_LEVEL`-Env-Var kann `log_level` zusätzlich überschreiben (Dev-Zweck).
+Zugriff im Code über `__getattr__` (`config.model`, `config.hems_base_url`, …) bzw.
+`config.values[key]` für verschachtelte Gruppen.
+
+`config.py`s `DEFAULTS`-Dict ist 1:1 konsistent mit `config.yaml`s `options:`-Block —
+bei Änderungen **beide** synchron halten.
+
+## Allgemein
+
+| Option | Default | Bereich | Zweck |
+|---|---|---|---|
+| `log_level` | `info` | debug\|info\|warning\|error | Log-Verbosität |
+| `provider` | `gemini` | gemini\|openai | KI-Provider — **`openai` ist im Schema erlaubt, aber nicht implementiert** |
+| `model` | `gemini-2.5-flash` | frei | siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#gemini-35-flash-hang) |
+| `api_key` | leer | Passwort, nie geloggt | leer = KI-Planung deaktiviert |
+| `ai_request_timeout_s` | 30 | 5–600 | Timeout je KI-Aufruf |
+| `ai_rate_limit_per_min` | 10 | 1–60 | Wartedrossel (Gemini-Free ~10/min) |
+| `ai_temperature` | 0.0 | 0–2 | Determinismus, siehe [planning-engine.md](planning-engine.md) |
+| `ai_seed` | 42 | frei | Determinismus |
+| `ai_repair_missing` | true | bool | Nachforder-Aufruf bei fehlenden Pflichtfeldern |
+| `planning_interval_min` | 60 | 15–60 | **Config existiert, wird nicht ausgewertet** (kein Scheduler) |
+| `plan_update_interval_min` | 15 | 5–60 | **Config existiert, wird nicht ausgewertet** |
+| `forecast_horizon_h` | 24 | 12–48 | Planungshorizont |
+| `min_confidence_percent` | 70 | 0–100 | **Config existiert, Validator-Stufe 6 nicht implementiert** |
+| `collect_interval_s` | 30 | 5–300 | Haupt-Poll-Takt (Mess-Rollen, Geräte, Prognose) |
+| `publish_suggestions` | true | bool | `sensor.ep_*_vorschlag` nach HA schreiben; `false` = reiner Beobachten-Modus |
+| `hems_base_url` | leer | frei | leer = keine HEMS-Anbindung, keine Geräte-Discovery |
+| `hems_status_interval_s` | 60 | 10–3600 | eigener Poll-Takt für HEMS-Status-Rückkopplung |
+| `publish_status` | true | bool | `sensor.ep_plan_status`/`sensor.ep_hems_verbindung` schreiben |
+
+## PV-Prognose
+
+`pv_forecast` — Liste von `{label, current_hour, next_hour, remaining_today, tomorrow}`,
+je Ausrichtung ein Eintrag; EP summiert Werte über alle Ausrichtungen. `pv_forecast_unit`
+(Default `kWh`). Jeder Wert liegt im **State** des jeweiligen Sensors, nicht im Attribut.
+
+## Wetter (`weather`-Gruppe)
+
+| Option | Default | Zweck |
+|---|---|---|
+| `weather.api_key` | leer | leer = Wetterabruf aus |
+| `weather.zone_entity` | `zone.home` | Koordinatenquelle (Attribute `latitude`/`longitude`) |
+| `weather.units` | `metric` | metric\|imperial\|standard |
+| `weather.lang` | `de` | OWM-Sprachcode |
+| `weather.source` | `forecast3h` | forecast3h (kostenlos) \| onecall (Abo-pflichtig) |
+| `weather.refresh_min` | 60 | Mindestabstand der Abrufe (forecast3h) |
+| `weather.llm_detail` | `compact` | compact (Bewölkung/Regen/Temp bis Horizont) \| full (komplette 5-Tage-Prognose) |
+
+**One Call API 4.0** (`weather.onecall`, nur bei `source: onecall`): `enable_15min`
+(false)/`enable_1h`/`enable_1day` (beide true) — **jedes aktive Modell wird abgerufen
+UND fließt in den KI-Kontext**, beliebige Kombination möglich (kein Einzel-Select
+mehr, seit D-054-ähnlicher Änderung — `translations/de.yaml` hat dazu noch einen
+veralteten Eintrag, siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#veraltete-übersetzung)).
+`refresh_15min/1h/1day` (15/60/180 min), `pages_15min/1h/1day` (1–5, mehr Horizont
+= mehr bezahlte Calls). `daily_call_budget` (Default 1000 = OWM-Freikontingent) —
+harte Tagesobergrenze **aller** bezahlten One-Call-Aufrufe, UTC-Tag, überlebt
+Neustarts (in der DB persistiert). `enable_alerts`/`refresh_alerts` — Unwetterwarnungen,
+aktuell nur Anzeige, **nicht** in die Planung eingespeist.
+
+## Zielgewichte (`objective_weights`)
+
+8 feste weiche Ziele, Gewicht 0–100 %: `versorgungssicherheit` (100),
+`eauto_ladeziel` (100), `warmwasserkomfort` (100), `netzbezug` (90),
+`stromkosten` (85), `eigenverbrauch` (80), `einspeisung` (70),
+`batterieschonung` (50). Harte Grenzen sind **nicht** hier, sondern werden aus den
+`ems_*`-Werten abgeleitet (`constraints.py`).
+
+## Sensor-Zuordnung (`sensoren`)
+
+`entity_pv_power`, `entity_house_load`, `entity_grid_power`, `entity_grid_import`,
+`entity_grid_export`, `entity_battery_power`, `entity_battery_soc` — Mapping der 7
+festen Mess-Rollen ([roles.py](../app/energy_pilot/roles.py)) auf reale HA-Entity-IDs.
+Änderung erfordert Addon-Neustart (Mapping wird beim Boot geladen).
+
+## DB-gestützte Laufzeit-Einstellungen (`settings.py`, **nicht** Addon-Config)
+
+Getrennter Key-Value-Store in der `config`-SQLite-Tabelle für Werte, die zur
+Laufzeit über die UI geändert werden und Neustarts/Addon-Updates überleben müssen,
+ohne Git-Push:
+
+- **Planungs-Prompt** (`PLANNING_PROMPT_KEY`) — editierbar im Plan-Tab.
+- **OneCall-Tagesbudget-Zähler** (`onecall_budget.py`).
