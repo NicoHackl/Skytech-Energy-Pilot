@@ -6,6 +6,39 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.48] - 2026-07-09
+
+### Geändert
+- **One Call 4.0: freie Kombination der Vorhersagemodelle statt Einzel-Auswahl für die KI.** Die
+  drei Modelle **15min / 1h / 1day** sind in der Addon-Config je per **Schalter** (`enable_*`)
+  aktivierbar; **jedes aktive Modell wird abgerufen UND fließt gemeinsam in den KI-Kontext**. Man
+  muss sich also **nicht mehr für ein einzelnes Vorhersagemodell entscheiden** — jede gewünschte
+  Kombination ist möglich.
+  - Das bisherige Einzel-Select **`weather.onecall.llm_timeline` ist entfallen** (aus Optionen +
+    Schema entfernt; ein evtl. noch gespeicherter Wert wird ignoriert).
+  - Der KI-Kontext hat jetzt `weather.models` mit einem Eintrag je aktivem Modell: intraday
+    (15min/1h) für **heute** ab jetzt (frühestens 6 Uhr) bis 21 Uhr Ortszeit, das Tagesmodell
+    (1day) für die **nächsten 5 Tage ab morgen**. Jeder Eintrag nennt Auflösung + `zeitraum`.
+  - Wetter-Tab: die Zeile zeigt statt „KI-Timeline: 1h" jetzt „KI nutzt: <aktive Modelle>"
+    (`snapshot.ai_models`).
+
+## [0.0.47] - 2026-07-09
+
+### Geändert
+- **Wetter an die KI (One Call): stündliche Reihe auf den heutigen Tag begrenzt + Tagesausblick
+  der nächsten 5 Tage ergänzt (`upcoming_changes.md`).** Bislang floss **eine** One-Call-Timeline
+  ungefenstert (auf den Planungshorizont gekürzt) in den Planungskontext. Jetzt bekommt die KI bei
+  `weather.source: onecall` **zweierlei**:
+  - **`hourly`** – die stündliche Reihe **nur für heute**, vom aktuellen Zeitpunkt (frühestens ab
+    **6 Uhr**) bis **21 Uhr Ortszeit**. Beispiele: um 11:30 → 12:00–21:00; vor 6 Uhr → ab 6:00;
+    nach 21 Uhr bleibt die Stundenreihe **leer**. Die Ortszeit kommt aus dem OWM-`timezone_offset`
+    der Wetter-Zone.
+  - **`daily`** – ein **Tagesausblick der nächsten 5 Tage ab morgen** (Temperatur inkl. Tages-Min/
+    Max, Bewölkung, Regenwahrscheinlichkeit); der heutige Tag steckt bereits in der Stundenreihe.
+  - `weather.onecall.llm_timeline` wählt nun die **Auflösung der Stundenreihe** (`15min`/`1h`); die
+    Tagesreihe kommt fest aus der `1day`-Timeline. Der `OneCallCollector`-Snapshot trägt je Timeline
+    zusätzlich den `timezone_offset_s` (fürs Ortszeit-Fenster). UI-Anzeige und HEMS-Weg unverändert.
+
 ## [0.0.46] - 2026-07-08
 
 ### Behoben

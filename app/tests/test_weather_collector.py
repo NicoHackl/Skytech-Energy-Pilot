@@ -225,7 +225,7 @@ class _FakeOneCallClient:
 
 
 def _oc_cfg(api_key="key", *, enable_15min=False, enable_1h=True, enable_1day=True,
-            refresh_15min=15, refresh_1h=60, refresh_1day=180, llm_timeline="1h",
+            refresh_15min=15, refresh_1h=60, refresh_1day=180,
             pages_15min=1, pages_1h=1, pages_1day=1, daily_call_budget=1000,
             enable_alerts=True, refresh_alerts=30):
     return WeatherConfig(
@@ -234,7 +234,7 @@ def _oc_cfg(api_key="key", *, enable_15min=False, enable_1h=True, enable_1day=Tr
         onecall=OneCallConfig(
             enable_15min=enable_15min, enable_1h=enable_1h, enable_1day=enable_1day,
             refresh_15min=refresh_15min, refresh_1h=refresh_1h, refresh_1day=refresh_1day,
-            llm_timeline=llm_timeline, pages_15min=pages_15min, pages_1h=pages_1h,
+            pages_15min=pages_15min, pages_1h=pages_1h,
             pages_1day=pages_1day, daily_call_budget=daily_call_budget,
             enable_alerts=enable_alerts, refresh_alerts=refresh_alerts,
         ),
@@ -285,11 +285,15 @@ async def test_onecall_collect_fetches_only_enabled_timelines():
     assert snap["source"] == "onecall"
     assert snap["enabled"] is True
     assert snap["coords"] == {"lat": 48.2, "lon": 16.3}
-    assert snap["llm_timeline"] == "1h"
+    # Aktive Modelle = die ans LLM gehende Kombination (D-054, kein Einzel-Select mehr).
+    assert snap["ai_models"] == ["1h", "1day"]
     assert len(snap["timelines"]["1h"]["slots"]) == 3
     assert len(snap["timelines"]["1day"]["slots"]) == 2
+    # Ortszeit-Offset der Zone wandert in den Snapshot (fürs stündliche KI-Tagesfenster, D-053).
+    assert snap["timelines"]["1h"]["timezone_offset_s"] == 7200
     assert snap["timelines"]["15min"]["enabled"] is False
     assert snap["timelines"]["15min"]["slots"] == []
+    assert snap["timelines"]["15min"]["timezone_offset_s"] is None  # nie abgerufen
 
 
 async def test_onecall_per_timeline_refresh_gating():
