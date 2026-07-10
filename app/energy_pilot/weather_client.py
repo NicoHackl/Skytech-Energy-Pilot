@@ -10,10 +10,9 @@ vollständige Request-URL.
 
 from __future__ import annotations
 
-import json
-
 import aiohttp
 
+from energy_pilot.http_errors import read_error_body
 from energy_pilot.weather import WeatherForecast, WeatherSlot
 
 DEFAULT_BASE_URL = "https://api.openweathermap.org/data/2.5"
@@ -21,20 +20,13 @@ DEFAULT_TIMEOUT_S = 15.0
 
 
 async def _error_message(resp: aiohttp.ClientResponse) -> str:
-    """Holt den OWM-Originalgrund aus dem Fehler-Body.
+    """Holt den OWM-Originalgrund aus dem Fehler-Body (gemeinsamer Body-Leser).
 
-    OWM antwortet bei Fehlern mit `{"cod":<n>,"message":"…"}`; wir reichen genau diese
-    `message` durch, damit der echte Grund sichtbar wird (z.B. „Invalid API key…").
+    OWM antwortet bei Fehlern mit `{"cod":<n>,"message":"…"}`; `read_error_body` reicht genau
+    diese `message` durch, damit der echte Grund sichtbar wird (z.B. „Invalid API key…").
     Der Body enthält **nie** den Schlüssel → Iron Rule 6 bleibt gewahrt.
     """
-    text = await resp.text()
-    try:
-        data = json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return text[:200]
-    if isinstance(data, dict) and data.get("message"):
-        return str(data["message"])
-    return text[:200]
+    return await read_error_body(resp)
 
 
 class WeatherClientError(Exception):

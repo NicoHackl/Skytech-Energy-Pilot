@@ -1,13 +1,25 @@
+# Display names/descriptions for the add-on configuration (HA form).
+# Technical key (config.yaml) <-> display name here. Nested groups/lists are
+# labelled via `fields:` (Home Assistant mechanism).
 configuration:
   log_level:
     name: Log level
     description: Verbosity of logging (debug, info, warning, error).
   provider:
     name: AI provider
-    description: Provider of the language model used for planning.
+    description: Provider of the language model used for planning (Gemini or OpenAI).
   model:
     name: Model
     description: Concrete model of the selected provider (default gemini-2.5-flash).
+  api_key:
+    name: AI API key
+    description: Key of the AI provider. Leave empty to disable AI planning. Never logged.
+  ai_request_timeout_s:
+    name: AI timeout (seconds)
+    description: Maximum wait time per AI call before it is aborted.
+  ai_rate_limit_per_min:
+    name: AI rate limit (calls/minute)
+    description: Maximum number of AI calls per minute (Gemini free tier around 10).
   ai_temperature:
     name: AI temperature
     description: Sampling temperature of the AI call (0 = deterministic). Low values make the same context return the same suggestion fields instead of varying per run.
@@ -34,52 +46,156 @@ configuration:
     description: Interval at which live values are read from Home Assistant.
   publish_suggestions:
     name: Publish suggestions to HA
-    description: Write validated suggestion values as sensor.ep_*_vorschlag into Home Assistant. Off => observe-only mode (no HA sensors).
-  entity_pv_power:
-    name: Entity PV power
-    description: HA entity for current PV power (e.g. sensor.e3dc_leistung_pv).
-  entity_house_load:
-    name: Entity house load
-    description: HA entity for current house consumption (e.g. sensor.e3dc_leistung_haus).
-  entity_grid_power:
-    name: Entity grid power
-    description: HA entity for power at the grid connection point.
-  entity_grid_import:
-    name: Entity grid import
-    description: HA entity for grid import.
-  entity_grid_export:
-    name: Entity grid export
-    description: HA entity for grid export.
-  entity_battery_power:
-    name: Entity battery power
-    description: HA entity for current battery power.
-  entity_battery_soc:
-    name: Entity battery SOC
-    description: HA entity for the battery state of charge in percent.
-  entity_water_temperature:
-    name: Entity water temperature
-    description: HA entity for the domestic hot water temperature.
-  fallback_pv_power:
-    name: Fallback PV power
-    description: Fallback value if no valid entity is found.
-  fallback_house_load:
-    name: Fallback house load
-    description: Fallback value if no valid entity is found.
-  fallback_grid_power:
-    name: Fallback grid power
-    description: Fallback value if no valid entity is found.
-  fallback_grid_import:
-    name: Fallback grid import
-    description: Fallback value if no valid entity is found.
-  fallback_grid_export:
-    name: Fallback grid export
-    description: Fallback value if no valid entity is found.
-  fallback_battery_power:
-    name: Fallback battery power
-    description: Fallback value if no valid entity is found.
-  fallback_battery_soc:
-    name: Fallback battery SOC
-    description: Fallback value if no valid entity is found.
-  fallback_water_temperature:
-    name: Fallback water temperature
-    description: Fallback value if no valid entity is found.
+    description: Write validated suggestion values as sensor.ep_*_vorschlag into Home Assistant. Off means observe-only mode without HA sensors.
+  hems_base_url:
+    name: HEMS base URL
+    description: Address of the Skytech HEMS add-on for device discovery and status feedback, e.g. http://local_skytech_hems:8099. Leave empty to disable the HEMS connection.
+  hems_status_interval_s:
+    name: HEMS status interval (seconds)
+    description: Interval at which EP polls the HEMS status and derives the observed plan match.
+  publish_status:
+    name: Publish plan/HEMS status to HA
+    description: Write plan and HEMS status as sensor.ep_plan_status / sensor.ep_hems_verbindung into HA. Off means visible only in UI/DB.
+  pv_forecast_unit:
+    name: PV forecast unit
+    description: Unit of the PV forecast values (e.g. kWh or W).
+  pv_forecast:
+    name: PV forecast orientations
+    description: Up to four forecast sensors per PV orientation. EP sums each value across all orientations.
+    fields:
+      label:
+        name: Label
+        description: Display name of the orientation (e.g. Roof South).
+      current_hour:
+        name: Sensor current hour
+        description: Sensor entity with the forecast energy for the current hour.
+      next_hour:
+        name: Sensor next hour
+        description: Sensor entity with the forecast energy for the next hour.
+      remaining_today:
+        name: Sensor remaining today
+        description: Sensor entity with the remaining forecast energy for today.
+      tomorrow:
+        name: Sensor tomorrow
+        description: Sensor entity with the forecast energy for tomorrow.
+  weather:
+    name: Weather (OpenWeatherMap)
+    description: Weather forecast fetched directly in EP via OpenWeatherMap. Coordinates come from the HA zone.
+    fields:
+      api_key:
+        name: OpenWeatherMap API key
+        description: Key for OpenWeatherMap. Leave empty to disable the weather fetch.
+      zone_entity:
+        name: Zone entity
+        description: HA zone whose attributes (latitude/longitude) provide the coordinates (default zone.home).
+      units:
+        name: Units
+        description: Unit system (metric, imperial or standard).
+      lang:
+        name: Language
+        description: OpenWeatherMap language code for the weather descriptions (e.g. de).
+      source:
+        name: Data source
+        description: forecast3h (5 day / 3 hour, default) or onecall (One Call API 4.0, subscription required).
+      refresh_min:
+        name: Refresh interval (minutes)
+        description: Minimum interval between two weather fetches.
+      llm_detail:
+        name: Detail level for the AI
+        description: Amount of weather data passed to the AI (forecast3h only). compact saves tokens, full is more accurate.
+      onecall:
+        name: One Call API 4.0
+        description: One Call API settings (source onecall only). Each enabled timeline is a separate paid call.
+        fields:
+          enable_15min:
+            name: 15-minute timeline enabled
+            description: Fetch the high-resolution 15-minute forecast.
+          enable_1h:
+            name: Hourly timeline enabled
+            description: Fetch the hourly forecast.
+          enable_1day:
+            name: Daily timeline enabled
+            description: Fetch the daily forecast.
+          refresh_15min:
+            name: Refresh 15-minute (minutes)
+            description: Interval of the 15-minute fetches.
+          refresh_1h:
+            name: Refresh hourly (minutes)
+            description: Interval of the hourly fetches.
+          refresh_1day:
+            name: Refresh daily (minutes)
+            description: Interval of the daily fetches.
+          pages_15min:
+            name: Pages 15-minute
+            description: Paginated pages per 15-minute fetch (1-5). More horizon, but one paid call per page.
+          pages_1h:
+            name: Pages hourly
+            description: Paginated pages per hourly fetch (1-5).
+          pages_1day:
+            name: Pages daily
+            description: Paginated pages per daily fetch (1-5).
+          daily_call_budget:
+            name: Daily call budget
+            description: Hard cap of all paid One Call requests per UTC day (default 1000 = free quota).
+          enable_alerts:
+            name: Weather alerts enabled
+            description: Fetch official severe-weather alerts.
+          refresh_alerts:
+            name: Refresh alerts (minutes)
+            description: Interval of the alert fetches.
+          llm_timeline:
+            name: AI timeline
+            description: Which timeline (15min, 1h or 1day) feeds into the AI context.
+  objective_weights:
+    name: Objective weights
+    description: Soft objective weights (0-100 %), weighed against each other. Hard limits are unaffected.
+    fields:
+      versorgungssicherheit:
+        name: Supply security
+        description: Weight of supply security.
+      eauto_ladeziel:
+        name: EV charge target
+        description: Weight of the EV charge target.
+      warmwasserkomfort:
+        name: Hot-water comfort
+        description: Weight of hot-water comfort.
+      netzbezug:
+        name: Minimize grid import
+        description: Weight of grid-import minimization.
+      stromkosten:
+        name: Minimize energy cost
+        description: Weight of energy-cost minimization.
+      eigenverbrauch:
+        name: Maximize self-consumption
+        description: Weight of self-consumption maximization.
+      einspeisung:
+        name: Reduce feed-in
+        description: Weight of feed-in reduction.
+      batterieschonung:
+        name: Battery preservation
+        description: Weight of battery preservation.
+  sensoren:
+    name: Sensor mapping
+    description: Mapping of the measured quantities to Home Assistant entities.
+    fields:
+      entity_pv_power:
+        name: PV power
+        description: HA entity for current PV power (e.g. sensor.e3dc_leistung_pv).
+      entity_house_load:
+        name: House load
+        description: HA entity for current house consumption (e.g. sensor.e3dc_leistung_haus).
+      entity_grid_power:
+        name: Grid power
+        description: HA entity for power at the grid connection point.
+      entity_grid_import:
+        name: Grid import
+        description: HA entity for grid import.
+      entity_grid_export:
+        name: Grid export
+        description: HA entity for grid export.
+      entity_battery_power:
+        name: Battery power
+        description: HA entity for current battery power.
+      entity_battery_soc:
+        name: Battery state of charge (SOC)
+        description: HA entity for the battery state of charge in percent.

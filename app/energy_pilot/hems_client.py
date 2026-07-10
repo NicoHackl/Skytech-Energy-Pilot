@@ -13,6 +13,8 @@ from typing import Any
 
 import aiohttp
 
+from energy_pilot.http_errors import raise_for_status
+
 # Kurzer Timeout: EP soll nie auf ein langsames/abwesendes HEMS warten.
 DEFAULT_TIMEOUT_S = 10.0
 
@@ -69,5 +71,5 @@ class HEMSClient:
         """Gemeinsamer GET-Helfer: Session sicherstellen, Status prüfen, JSON liefern."""
         session = await self._ensure_session()
         async with session.get(f"{self.base_url}{path}", timeout=self._timeout) as resp:
-            resp.raise_for_status()
+            await raise_for_status(resp, service="HEMS")
             return await resp.json()

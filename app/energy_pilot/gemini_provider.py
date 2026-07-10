@@ -19,6 +19,7 @@ from energy_pilot.ai_provider import (
     ProviderResponse,
     RateLimitError,
 )
+from energy_pilot.http_errors import read_error_body
 
 # Öffentliche Gemini-REST-Basis; im Konstruktor überschreibbar (Tests/OpenAI-kompatibel).
 DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -90,10 +91,14 @@ class GeminiProvider(AIProvider):
                 url, json=body, headers=headers, timeout=self._timeout
             ) as resp:
                 if resp.status == 429:
-                    raise RateLimitError("Gemini-Rate-Limit erreicht (HTTP 429)")
+                    detail = await read_error_body(resp)
+                    suffix = f": {detail}" if detail else ""
+                    raise RateLimitError(f"Gemini-Rate-Limit erreicht (HTTP 429){suffix}")
                 if resp.status >= 400:
-                    text = await resp.text()
-                    raise ProviderError(f"Gemini-Fehler HTTP {resp.status}: {text[:200]}")
+                    # Original-Grund aus dem Body (Gemini: {"error": {"message": …}}) mitnehmen.
+                    detail = await read_error_body(resp)
+                    suffix = f": {detail}" if detail else ""
+                    raise ProviderError(f"Gemini-Fehler HTTP {resp.status}{suffix}")
                 payload = await resp.json()
         except TimeoutError as exc:
             # aiohttp meldet den total-Timeout als asyncio.TimeoutError (= TimeoutError) –

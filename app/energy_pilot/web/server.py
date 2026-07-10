@@ -43,6 +43,7 @@ from energy_pilot.settings import (
 )
 
 TEMPLATES = Path(__file__).parent / "templates"
+STATIC = Path(__file__).parent / "static"
 
 # Auto-Retry der Geräte-Discovery (D-046): HA garantiert keine Addon-Startreihenfolge,
 # daher kann das HEMS beim EP-Start noch nicht erreichbar sein. Ohne Config-Fallback liefe
@@ -91,6 +92,9 @@ def create_app(
     app.add_routes(
         [
             web.get("/", index),
+            # Vendored Frontend-Assets (Preact/htm + app.js). Relativer Pfad `static/…`
+            # löst hinter dem HA-Ingress korrekt auf (wie im HEMS-Addon).
+            web.static("/static", STATIC),
             web.get("/api/health", health),
             web.get("/api/logs", logs),
             web.get("/api/logs/export", logs_export),
@@ -409,7 +413,6 @@ async def entities_get(request: web.Request) -> web.Response:
                 "unit": role.unit,
                 "averaged": role.averaged,
                 "entity_id": current.entity_id if current else None,
-                "fallback_value": current.fallback_value if current else None,
             }
         )
     return web.json_response(payload)
@@ -439,7 +442,8 @@ def _extras_payload(device_collector: object, device_name: str) -> list[dict]:
                 "plan_field": ex.plan_field,
                 "suggestion_entity_id": ex.suggestion_entity_id if ex.ai_suggestion else None,
                 # D-052: rohes Flag + Helfer-Fähigkeit + effektiver Original-Schreibweg (fürs UI:
-                # Checkbox nur bei is_writable_helper anzeigbar, wirksam nur bei should_write_original).
+                # Checkbox nur bei is_writable_helper anzeigbar, wirksam nur bei
+                # should_write_original).
                 "write_original": ex.write_original,
                 "is_writable_helper": ex.is_writable_helper,
                 "should_write_original": ex.should_write_original,
@@ -651,10 +655,20 @@ async def weather_test(request: web.Request) -> web.Response:
 
 
 async def hems_status_get(request: web.Request) -> web.Response:
-    """Liefert den HEMS-Zustand + die abgeleitete Plan-Rückkopplung (M3, read-only)."""
+    """Liefert den HEMS-Zustand + die abgeleitete Plan-Rückkopplung (M3, read-only).
+
+    Mit `?refresh=1` wird zuvor ein **Live-Abruf** des HEMS erzwungen (umgeht die Drosselung
+    des Collectors) – so holt der „Aktualisieren"-Button die HEMS-Ist-Werte wirklich neu, statt
+    nur den gedrosselten Zwischenstand zu spiegeln. Der reguläre Auto-Poll ruft ohne `refresh`.
+    """
     collector = request.app.get("hems_status_collector")
     if collector is None:
         return web.json_response({"configured": False, "online": False, "feedback": None})
+    if request.query.get("refresh") and hasattr(collector, "collect_once"):
+        try:
+            await collector.collect_once(force=True)
+        except Exception:  # Live-Refresh best effort – danach wird ohnehin der Snapshot geliefert
+            pass
     payload = collector.snapshot()
     payload["feedback"] = getattr(collector, "last_feedback", None)
     return web.json_response(payload)

@@ -179,12 +179,15 @@ async def test_test_fetch_missing_coords_returns_reason():
 
 class _FakeOneCallClient:
     def __init__(self, slots_by_res=None, error=None, *, pages_by_res=None,
-                 alerts=None, alerts_error=None):
+                 alert_ids_by_res=None, alert_details=None, alert_error=None):
         self._slots = slots_by_res or {}
         self._pages = pages_by_res or {}  # wie viele Seiten je Timeline verfügbar sind
         self._error = error
-        self._alerts = alerts or []
-        self._alerts_error = alerts_error
+        # Alert-IDs, die die jeweilige Timeline-Antwort in `data[].alerts` mitträgt.
+        self._alert_ids = alert_ids_by_res or {}
+        # ID → Detail-Alert (One Call 4.0 löst je ID separat auf).
+        self._alert_details = alert_details or {}
+        self._alert_error = alert_error
         self.calls = []
         self.alert_calls = []
 
@@ -203,25 +206,26 @@ class _FakeOneCallClient:
             for i in range(per_page * pages)
         ]
         timeline = OneCallTimeline(
-            resolution=resolution, lat=lat, lon=lon, timezone_offset_s=7200, slots=slots
+            resolution=resolution, lat=lat, lon=lon, timezone_offset_s=7200, slots=slots,
+            alert_ids=list(self._alert_ids.get(resolution, [])),
         )
         return timeline, pages
 
-    async def fetch_alerts(self, lat, lon):
-        self.alert_calls.append((lat, lon))
-        if self._alerts_error is not None:
-            raise self._alerts_error
-        return list(self._alerts)
+    async def fetch_alert(self, alert_id):
+        self.alert_calls.append(alert_id)
+        if self._alert_error is not None:
+            raise self._alert_error
+        return self._alert_details[alert_id]
 
     def masked_request_url(self, resolution, lat, lon):
         return f"https://owm/timeline/{resolution}?lat={lat}&lon={lon}&appid=***&units=metric&lang=de"
 
-    def masked_alert_url(self, lat, lon):
-        return f"https://owm/alert?lat={lat}&lon={lon}&appid=***&units=metric&lang=de"
+    def masked_alert_url(self, alert_id=None):
+        return f"https://owm/alert/{alert_id or '{id}'}?appid=***&lang=de"
 
 
 def _oc_cfg(api_key="key", *, enable_15min=False, enable_1h=True, enable_1day=True,
-            refresh_15min=15, refresh_1h=60, refresh_1day=180, llm_timeline="1h",
+            refresh_15min=15, refresh_1h=60, refresh_1day=180,
             pages_15min=1, pages_1h=1, pages_1day=1, daily_call_budget=1000,
             enable_alerts=True, refresh_alerts=30):
     return WeatherConfig(
@@ -230,7 +234,7 @@ def _oc_cfg(api_key="key", *, enable_15min=False, enable_1h=True, enable_1day=Tr
         onecall=OneCallConfig(
             enable_15min=enable_15min, enable_1h=enable_1h, enable_1day=enable_1day,
             refresh_15min=refresh_15min, refresh_1h=refresh_1h, refresh_1day=refresh_1day,
-            llm_timeline=llm_timeline, pages_15min=pages_15min, pages_1h=pages_1h,
+            pages_15min=pages_15min, pages_1h=pages_1h,
             pages_1day=pages_1day, daily_call_budget=daily_call_budget,
             enable_alerts=enable_alerts, refresh_alerts=refresh_alerts,
         ),
@@ -281,11 +285,15 @@ async def test_onecall_collect_fetches_only_enabled_timelines():
     assert snap["source"] == "onecall"
     assert snap["enabled"] is True
     assert snap["coords"] == {"lat": 48.2, "lon": 16.3}
-    assert snap["llm_timeline"] == "1h"
+    # Aktive Modelle = die ans LLM gehende Kombination (D-054, kein Einzel-Select mehr).
+    assert snap["ai_models"] == ["1h", "1day"]
     assert len(snap["timelines"]["1h"]["slots"]) == 3
     assert len(snap["timelines"]["1day"]["slots"]) == 2
+    # Ortszeit-Offset der Zone wandert in den Snapshot (fürs stündliche KI-Tagesfenster, D-053).
+    assert snap["timelines"]["1h"]["timezone_offset_s"] == 7200
     assert snap["timelines"]["15min"]["enabled"] is False
     assert snap["timelines"]["15min"]["slots"] == []
+    assert snap["timelines"]["15min"]["timezone_offset_s"] is None  # nie abgerufen
 
 
 async def test_onecall_per_timeline_refresh_gating():
@@ -414,44 +422,86 @@ async def test_onecall_budget_survives_fresh_connection(tmp_path):
 
 # --- O3: Unwetter-Alerts ---------------------------------------------------------------------
 
-async def test_onecall_collect_fetches_alerts_into_snapshot():
+async def test_onecall_collect_resolves_alert_ids_into_details():
+    # Alert-IDs stammen aus der Timeline-Antwort; je ID ein Detail-Call (One Call 4.0).
     db = init_db(":memory:")
-    alerts = [OneCallAlert(sender_name="DWD", event="Sturm", start=1, end=2,
-                           description="Sturmböen", tags=["Wind"])]
-    client = _FakeOneCallClient(alerts=alerts)
-    cfg = _oc_cfg(enable_1h=False, enable_1day=False, enable_alerts=True, daily_call_budget=100)
+    client = _FakeOneCallClient(
+        slots_by_res={"1h": 1},
+        alert_ids_by_res={"1h": ["ID-A", "ID-B"]},
+        alert_details={
+            "ID-A": OneCallAlert("DWD", "Sturm", 1, 2, "Sturmböen", ["Wind"]),
+            "ID-B": OneCallAlert("DWD", "Hitze", 3, 4, "Hitzewelle", []),
+        },
+    )
+    cfg = _oc_cfg(enable_1day=False, enable_alerts=True, daily_call_budget=100)
     collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
 
     await collector.collect_once(now=1000.0)
 
-    assert client.alert_calls == [(48.2, 16.3)]
+    assert client.alert_calls == ["ID-A", "ID-B"]
     snap = collector.snapshot()
     assert snap["alerts_enabled"] is True
-    assert len(snap["alerts"]) == 1
-    assert snap["alerts"][0]["event"] == "Sturm"
-    assert snap["calls_today"] == 1  # Alert-Abruf zählt gegen dasselbe Budget
+    assert [a["event"] for a in snap["alerts"]] == ["Sturm", "Hitze"]
+    # 1 Timeline-Call + 2 Alert-Detail-Calls gegen dasselbe Budget.
+    assert snap["calls_today"] == 3
+
+
+async def test_onecall_no_active_alerts_makes_no_detail_call():
+    # Timeline ohne Alert-IDs → keine aktiven Warnungen, kein Detail-Call, kein Fehler.
+    db = init_db(":memory:")
+    client = _FakeOneCallClient(slots_by_res={"1h": 1}, alert_ids_by_res={"1h": []})
+    cfg = _oc_cfg(enable_1day=False, enable_alerts=True, daily_call_budget=100)
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
+
+    await collector.collect_once(now=1000.0)
+
+    assert client.alert_calls == []
+    snap = collector.snapshot()
+    assert snap["alerts"] == []
+    assert snap["alerts_last_error"] is None
+    assert snap["calls_today"] == 1  # nur der Timeline-Call
 
 
 async def test_onecall_alerts_skipped_when_budget_exhausted():
     db = init_db(":memory:")
-    client = _FakeOneCallClient(slots_by_res={"1h": 1}, alerts=[
-        OneCallAlert(None, "Sturm", 1, 2, None, [])
-    ])
+    client = _FakeOneCallClient(
+        slots_by_res={"1h": 1}, alert_ids_by_res={"1h": ["ID-A"]},
+        alert_details={"ID-A": OneCallAlert(None, "Sturm", 1, 2, None, [])},
+    )
     cfg = _oc_cfg(enable_1day=False, enable_alerts=True, daily_call_budget=1)
     collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
 
     await collector.collect_once(now=1000.0)
 
-    # 1h verbraucht das eine erlaubte Call → Alerts werden übersprungen.
+    # 1h verbraucht das eine erlaubte Call → Alert-Detail-Call wird übersprungen.
     assert client.alert_calls == []
     assert collector.snapshot()["alerts"] == []
 
 
+async def test_onecall_alerts_need_active_timeline():
+    # Alerts an, aber keine Timeline aktiv → keine Alert-IDs ermittelbar (klarer Hinweis).
+    db = init_db(":memory:")
+    client = _FakeOneCallClient()
+    cfg = _oc_cfg(enable_1h=False, enable_1day=False, enable_alerts=True)
+    collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
+
+    await collector.collect_once(now=1000.0)
+
+    assert client.alert_calls == []
+    snap = collector.snapshot()
+    assert "Timeline" in (snap["alerts_last_error"] or "")
+
+    result = await collector.test_fetch(now=1000.0)
+    assert result["alerts"]["ok"] is False
+    assert "Timeline" in result["alerts"]["reason"]
+
+
 async def test_onecall_test_fetch_reports_alerts_and_budget():
     db = init_db(":memory:")
-    client = _FakeOneCallClient(slots_by_res={"1h": 2, "1day": 2}, alerts=[
-        OneCallAlert(None, "Hitze", 1, 2, None, [])
-    ])
+    client = _FakeOneCallClient(
+        slots_by_res={"1h": 2, "1day": 2}, alert_ids_by_res={"1h": ["ID-A"]},
+        alert_details={"ID-A": OneCallAlert(None, "Hitze", 1, 2, None, [])},
+    )
     cfg = _oc_cfg(daily_call_budget=1, enable_alerts=True)
     collector = OneCallCollector(_FakeHAClient(_zone_state()), cfg, client, db=db)
 

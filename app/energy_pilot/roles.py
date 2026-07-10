@@ -30,7 +30,6 @@ MEASUREMENT_ROLES: tuple[Role, ...] = (
     Role("grid_export", "Einspeisung", averaged=True, unit="W"),
     Role("battery_power", "Batterieleistung", averaged=True, unit="W"),
     Role("battery_soc", "Batterie-SOC", averaged=False, unit="%"),
-    Role("water_temperature", "Warmwassertemperatur", averaged=False, unit="°C"),
 )
 
 ROLES_BY_KEY: dict[str, Role] = {role.key: role for role in MEASUREMENT_ROLES}

@@ -18,9 +18,51 @@ import logging
 import sqlite3
 import time
 
+from energy_pilot.conversion import safe_float
+from energy_pilot.devices import CONTROLLABLE
 from energy_pilot.logging_setup import log
-from energy_pilot.plan_feedback import derive_plan_feedback
+from energy_pilot.plan_feedback import _match_hems_device, derive_plan_feedback
 from energy_pilot.status_publisher import publish_status
+
+
+async def _enrich_raw_min(ha_client: object | None, devices: list, status: object) -> None:
+    """Ergänzt den rohen Schutz-Sockel (`geschuetzte_mindestleistung_w`/`_a`) im HEMS-Status.
+
+    Ältere HEMS-Stände liefern in `/api/status` nur den **effektiven** Schutz (`schutz_w`/
+    `schutz_a` = Sockel + Reserve + Puffer, geklemmt), nicht den rohen, vom User gepflegten
+    Sockel. Damit die Plan-Rückkopplung „Geschützte Mindestleistung" dann nicht auf „unbekannt"
+    fällt, liest EP den Wert hilfsweise direkt aus dem HA-Helfer
+    `input_number.ems_<prefix>_geschutzte_mindestleistung_<w|a>` und trägt ihn in das passende
+    HEMS-Gerät nach. **Kanonisch bleibt der HEMS-Wert:** ist er schon vorhanden, wird er nie
+    überschrieben (nur neuere HEMS-Stände liefern ihn und haben Vorrang – auch im Automatik-Modus,
+    wo HEMS den Sockel aus dem EP-Vorschlag setzt und der Helfer ihn nicht mehr spiegelt).
+    """
+    if ha_client is None or not hasattr(ha_client, "get_state") or not isinstance(status, dict):
+        return
+    inner = status.get("status")
+    hems_devices = inner.get("devices") if isinstance(inner, dict) else None
+    if not isinstance(hems_devices, list) or not hems_devices:
+        return
+    for device in devices or []:
+        if getattr(device, "device_class", None) != CONTROLLABLE:
+            continue
+        hd = _match_hems_device(
+            getattr(device, "label", ""), getattr(device, "name", ""), hems_devices
+        )
+        if hd is None:
+            continue
+        unit = "a" if getattr(device, "output_unit", "watt") == "ampere" else "w"
+        key = f"geschuetzte_mindestleistung_{unit}"
+        if hd.get(key) is not None:
+            continue  # HEMS liefert den Rohwert bereits → kanonisch, nicht überschreiben
+        entity_id = f"input_number.ems_{device.entity_prefix}_geschutzte_mindestleistung_{unit}"
+        try:
+            state = await ha_client.get_state(entity_id)
+        except Exception:  # Helfer fehlt / HA-Fehler → Feld bleibt offen (Status „unbekannt")
+            continue
+        value = safe_float(state.get("state") if isinstance(state, dict) else None)
+        if value is not None:
+            hd[key] = value
 
 
 class HEMSStatusCollector:
@@ -58,12 +100,14 @@ class HEMSStatusCollector:
     def configured(self) -> bool:
         return self.hems_client is not None
 
-    async def collect_once(self, now: float | None = None) -> None:
-        """Ein Poll-Zyklus (selbst gedrosselt auf `interval_s`)."""
+    async def collect_once(self, now: float | None = None, *, force: bool = False) -> None:
+        """Ein Poll-Zyklus. Selbst gedrosselt auf `interval_s`; `force=True` umgeht die
+        Drosselung (z.B. für den „Aktualisieren"-Button, der einen Live-Abruf erzwingt)."""
         now = time.time() if now is None else now
         if self.hems_client is None:
             return
-        if self._last_run_ts is not None and (now - self._last_run_ts) < self.interval_s:
+        throttled = self._last_run_ts is not None and (now - self._last_run_ts) < self.interval_s
+        if not force and throttled:
             return
         self._last_run_ts = now
 
@@ -82,6 +126,9 @@ class HEMSStatusCollector:
         # Plan-Rückkopplung immer ableiten; offline ⇒ kein HEMS-Status ⇒ „unbekannt".
         latest = self.planner.latest_plan() if self.planner is not None else None
         devices = getattr(self.device_collector, "devices", []) if self.device_collector else []
+        if self.online:
+            # Rohen Schutz-Sockel nachtragen, falls das HEMS ihn (noch) nicht liefert.
+            await _enrich_raw_min(self.ha_client, devices, self.last_status)
         feedback = derive_plan_feedback(
             latest, devices, self.last_status if self.online else None
         )
@@ -103,6 +150,7 @@ class HEMSStatusCollector:
             return {"ok": False, "reason": str(exc).strip() or exc.__class__.__name__}
         latest = self.planner.latest_plan() if self.planner is not None else None
         devices = getattr(self.device_collector, "devices", []) if self.device_collector else []
+        await _enrich_raw_min(self.ha_client, devices, status)
         feedback = derive_plan_feedback(latest, devices, status)
         inner = status.get("status") if isinstance(status, dict) else {}
         inner = inner if isinstance(inner, dict) else {}

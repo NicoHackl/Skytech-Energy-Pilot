@@ -39,9 +39,9 @@ SOURCE_CHOICES = (SOURCE_FORECAST3H, SOURCE_ONECALL)
 
 # One-Call-Timelines (Auflösungen) der 4.0-API. Reihenfolge = fein → grob.
 ONECALL_TIMELINES = ("15min", "1h", "1day")
-# Default: 1h+1day aktiv, 15min opt-in (spart bezahlte Calls/Tokens). Welche Timeline ins LLM geht,
-# ist konfigurierbar; Default 1h (entspricht dem bisherigen compact-Horizontverhalten).
-DEFAULT_LLM_TIMELINE = "1h"
+# Default: 1h+1day aktiv, 15min opt-in (spart bezahlte Calls/Tokens). Jedes aktivierte Modell wird
+# abgerufen UND fließt in den KI-Kontext (D-054): der User wählt per Schalter eine beliebige
+# Kombination der Vorhersagemodelle, statt sich für genau eines entscheiden zu müssen.
 # Default-Refresh je Timeline (Minuten); jede Timeline ist ein eigener bezahlter Call.
 DEFAULT_ONECALL_REFRESH = {"15min": 15, "1h": 60, "1day": 180}
 # Paginierte Calls je Timeline (O2, D-045): wie viele Seiten je Refresh geholt werden.
@@ -108,7 +108,6 @@ class OneCallConfig:
     refresh_15min: int = DEFAULT_ONECALL_REFRESH["15min"]
     refresh_1h: int = DEFAULT_ONECALL_REFRESH["1h"]
     refresh_1day: int = DEFAULT_ONECALL_REFRESH["1day"]
-    llm_timeline: str = DEFAULT_LLM_TIMELINE
     # Paginierte Calls je Timeline (1–5, O2): wie viele Seiten je Refresh geholt werden.
     pages_15min: int = DEFAULT_PAGES
     pages_1h: int = DEFAULT_PAGES
@@ -171,9 +170,6 @@ def _onecall_config_from_options(cfg: dict) -> OneCallConfig:
     raw = cfg.get("onecall")
     oc = raw if isinstance(raw, dict) else {}
     defaults = OneCallConfig()
-    llm_timeline = str(oc.get("llm_timeline") or "").strip().lower()
-    if llm_timeline not in ONECALL_TIMELINES:
-        llm_timeline = DEFAULT_LLM_TIMELINE
     return OneCallConfig(
         enable_15min=_parse_bool(oc.get("enable_15min"), defaults.enable_15min),
         enable_1h=_parse_bool(oc.get("enable_1h"), defaults.enable_1h),
@@ -181,7 +177,6 @@ def _onecall_config_from_options(cfg: dict) -> OneCallConfig:
         refresh_15min=_parse_refresh(oc.get("refresh_15min"), defaults.refresh_15min),
         refresh_1h=_parse_refresh(oc.get("refresh_1h"), defaults.refresh_1h),
         refresh_1day=_parse_refresh(oc.get("refresh_1day"), defaults.refresh_1day),
-        llm_timeline=llm_timeline,
         pages_15min=_parse_pages(oc.get("pages_15min"), defaults.pages_15min),
         pages_1h=_parse_pages(oc.get("pages_1h"), defaults.pages_1h),
         pages_1day=_parse_pages(oc.get("pages_1day"), defaults.pages_1day),
@@ -357,6 +352,9 @@ class OneCallTimeline:
     lon: float | None
     timezone_offset_s: int | None
     slots: list[OneCallSlot] = field(default_factory=list)
+    # Aktive Alert-IDs aus den `data[].alerts`-Feldern der Antwort (One Call 4.0). Die
+    # eigentlichen Warnungen werden je ID separat über den Alert-Detail-Endpunkt aufgelöst.
+    alert_ids: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -365,4 +363,5 @@ class OneCallTimeline:
             "lon": self.lon,
             "timezone_offset_s": self.timezone_offset_s,
             "slots": [slot.as_dict() for slot in self.slots],
+            "alert_ids": list(self.alert_ids),
         }

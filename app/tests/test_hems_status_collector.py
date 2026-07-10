@@ -60,6 +60,24 @@ class _FakeHA:
         self.calls.append((entity_id, state, attributes))
 
 
+class _FakeHAState:
+    """HA-Client-Fake mit get_state (für die Roh-Sockel-Anreicherung) + set_state."""
+
+    def __init__(self, states):
+        self.states = states  # entity_id -> Zustands-String
+        self.get_calls = []
+        self.set_calls = []
+
+    async def get_state(self, entity_id):
+        self.get_calls.append(entity_id)
+        if entity_id in self.states:
+            return {"state": self.states[entity_id]}
+        raise RuntimeError(f"not found: {entity_id}")
+
+    async def set_state(self, entity_id, state, attributes=None):
+        self.set_calls.append((entity_id, state, attributes))
+
+
 def _latest():
     now = datetime.now(UTC)
     return {
@@ -164,3 +182,44 @@ async def test_test_fetch_online():
     assert result["ok"] is True
     assert result["cycle_count"] == 5
     assert result["feedback"]["overall"] == "beobachtet_konform"
+
+
+def _payload_raw(*, raw=None, schutz_w=999.0):
+    """HEMS-Payload mit abweichendem schutz_w; `raw` = optionaler roher Sockel im Status."""
+    dev = {"type": "controllable", "id": "heizstab", "label": "Heizstab",
+           "priority": 10, "eligible": True, "schutz_w": schutz_w}
+    if raw is not None:
+        dev["geschuetzte_mindestleistung_w"] = raw
+    return {"status": {"pool_w": 1.0, "devices": [dev]}, "cycle_count": 1}
+
+
+async def test_enrich_reads_helper_when_hems_lacks_raw_field():
+    # HEMS liefert nur schutz_w (999, abweichend), keinen Rohwert → EP liest den HA-Helfer (800).
+    # Vorschlag ist 800 (siehe _latest); ohne Anreicherung wäre es „unbekannt", mit schutz_w
+    # fälschlich „abweichend“. Erwartung: match gegen den Helferwert.
+    ha = _FakeHAState({"input_number.ems_heizstab_geschutzte_mindestleistung_w": "800.0"})
+    coll = _collector(_FakeHEMS(payload=_payload_raw()), ha=ha)
+    await coll.collect_once(now=100.0)
+    st = {f["feld"]: (f["status"], f["ist"]) for f in coll.last_feedback["devices"][0]["fields"]}
+    assert st["geschutzte_mindestleistung_w_vorschlag"] == ("match", 800.0)
+    assert "input_number.ems_heizstab_geschutzte_mindestleistung_w" in ha.get_calls
+
+
+async def test_enrich_does_not_overwrite_hems_raw_field():
+    # HEMS liefert den Rohwert bereits (800) → kanonisch; abweichender Helfer (111) wird ignoriert.
+    ha = _FakeHAState({"input_number.ems_heizstab_geschutzte_mindestleistung_w": "111.0"})
+    coll = _collector(_FakeHEMS(payload=_payload_raw(raw=800.0)), ha=ha)
+    await coll.collect_once(now=100.0)
+    ist = {f["feld"]: f["ist"] for f in coll.last_feedback["devices"][0]["fields"]}
+    assert ist["geschutzte_mindestleistung_w_vorschlag"] == 800.0
+    assert ha.get_calls == []  # Rohwert vorhanden → kein Helfer-Read nötig
+
+
+async def test_collect_force_bypasses_throttle():
+    hems = _FakeHEMS(payload=_status_payload())
+    coll = _collector(hems, ha=_FakeHA(), interval=60.0)
+    await coll.collect_once(now=100.0)
+    await coll.collect_once(now=110.0)  # < interval, kein force → übersprungen
+    assert hems.calls == 1
+    await coll.collect_once(now=115.0, force=True)  # force → trotz Drosselung erneut
+    assert hems.calls == 2

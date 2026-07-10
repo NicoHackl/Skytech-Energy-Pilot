@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
+from energy_pilot.http_errors import raise_for_status
+
 if TYPE_CHECKING:
     from energy_pilot.allowlist import EntityAllowlist
 
@@ -61,7 +63,7 @@ class HAClient:
         """Prüft die Verbindung über GET /api/ und liefert die Statusmeldung."""
         session = await self._ensure_session()
         async with session.get(f"{self.base_url}/", headers=self.headers) as resp:
-            resp.raise_for_status()
+            await raise_for_status(resp, service="Home Assistant")
             return await resp.json()
 
     async def get_state(self, entity_id: str) -> dict[str, Any]:
@@ -77,7 +79,7 @@ class HAClient:
         async with session.get(
             f"{self.base_url}/states/{entity_id}", headers=self.headers
         ) as resp:
-            resp.raise_for_status()
+            await raise_for_status(resp, service="Home Assistant")
             return await resp.json()
 
     async def set_state(
@@ -96,7 +98,7 @@ class HAClient:
         async with session.post(
             f"{self.base_url}/states/{entity_id}", headers=self.headers, json=body
         ) as resp:
-            resp.raise_for_status()
+            await raise_for_status(resp, service="Home Assistant")
             return await resp.json()
 
     async def call_service(
@@ -114,7 +116,7 @@ class HAClient:
         async with session.post(
             f"{self.base_url}/services/{domain}/{service}", headers=self.headers, json=body
         ) as resp:
-            resp.raise_for_status()
+            await raise_for_status(resp, service="Home Assistant")
             return await resp.json()
 
     async def open_websocket(self) -> aiohttp.ClientWebSocketResponse:

@@ -37,6 +37,30 @@ async def test_index_serves_spa(aiohttp_client, app):
     assert "Skytech Energy Pilot" in await resp.text()
 
 
+async def test_static_serves_frontend_assets(aiohttp_client, app):
+    # SPA lädt Preact/htm + app.js relativ (Ingress-tauglich, ohne führenden Slash).
+    client = await aiohttp_client(app)
+    index = await (await client.get("/")).text()
+    for ref in [
+        "static/vendor/preact.umd.js",
+        "static/vendor/hooks.umd.js",
+        "static/vendor/htm.umd.js",
+        "static/app.js",
+    ]:
+        assert ref in index, ref
+    # Die Static-Route liefert die vendored Assets + app.js aus.
+    for path in [
+        "/static/app.js",
+        "/static/vendor/preact.umd.js",
+        "/static/vendor/hooks.umd.js",
+        "/static/vendor/htm.umd.js",
+    ]:
+        res = await client.get(path)
+        assert res.status == 200, path
+    body = await (await client.get("/static/app.js")).text()
+    assert "render(" in body and "preactHooks" in body
+
+
 async def test_health_reports_config(aiohttp_client, app):
     client = await aiohttp_client(app)
     resp = await client.get("/api/health")
@@ -235,7 +259,9 @@ async def test_device_extra_post_rejects_suggestion_conflict(aiohttp_client, tmp
     assert res.status == 409
 
 
-async def test_device_extra_post_rejects_write_original_without_suggestion(aiohttp_client, tmp_path):
+async def test_device_extra_post_rejects_write_original_without_suggestion(
+    aiohttp_client, tmp_path
+):
     # D-052: "In Original schreiben" setzt einen aktiven KI-Vorschlag voraus.
     client, _ = await _discovered_client(aiohttp_client, tmp_path)
     res = await client.post("/api/devices/extras", json={

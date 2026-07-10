@@ -5,12 +5,21 @@ import pytest
 from energy_pilot.allowlist import SOURCE_MEASUREMENT, EntityAllowlist
 from energy_pilot.database import init_db
 from energy_pilot.ha_client import HAClient
+from energy_pilot.http_errors import HTTPStatusError
+
+
+class _FakeURL:
+    def __init__(self, path):
+        self.path = path
 
 
 class _FakeResponse:
-    def __init__(self, payload, status=200):
+    def __init__(self, payload, status=200, text="", reason="OK", path="/core/api/"):
         self._payload = payload
         self.status = status
+        self._text = text
+        self.reason = reason
+        self.url = _FakeURL(path)
 
     async def __aenter__(self):
         return self
@@ -18,28 +27,29 @@ class _FakeResponse:
     async def __aexit__(self, *exc):
         return False
 
-    def raise_for_status(self):
-        if self.status >= 400:
-            raise RuntimeError(f"HTTP {self.status}")
-
     async def json(self):
         return self._payload
 
+    async def text(self):
+        return self._text
+
 
 class _FakeSession:
-    def __init__(self, payload):
+    def __init__(self, payload, status=200, text=""):
         self._payload = payload
+        self._status = status
+        self._text = text
         self.urls = []
         self.posts = []
 
     def get(self, url, headers=None):
         self.urls.append(url)
-        return _FakeResponse(self._payload)
+        return _FakeResponse(self._payload, self._status, self._text, path=url)
 
     def post(self, url, headers=None, json=None):
         self.urls.append(url)
         self.posts.append({"url": url, "json": json})
-        return _FakeResponse(self._payload)
+        return _FakeResponse(self._payload, self._status, self._text, path=url)
 
 
 def test_headers_and_base_url_normalization():
@@ -57,6 +67,23 @@ async def test_test_connection_calls_api_root():
 
     assert result["message"] == "API running."
     assert session.urls[0].endswith("/api/")
+
+
+@pytest.mark.asyncio
+async def test_error_status_surfaces_server_message():
+    # 4XX mit JSON-Body: der Original-Grund landet in der Fehlermeldung (nicht nur „HTTP 400").
+    session = _FakeSession({}, status=400, text='{"message": "Entity not found."}')
+    client = HAClient(token="t", session=session)
+
+    with pytest.raises(HTTPStatusError) as exc:
+        await client.get_state("sensor.gibt_es_nicht")
+
+    assert exc.value.status == 400
+    assert exc.value.server_message == "Entity not found."
+    msg = str(exc.value)
+    assert "Home Assistant" in msg
+    assert "HTTP 400" in msg
+    assert "Entity not found." in msg
 
 
 @pytest.mark.asyncio

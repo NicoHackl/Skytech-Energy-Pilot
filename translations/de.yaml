@@ -1,22 +1,34 @@
+# Anzeigenamen/Beschreibungen der Addon-Konfiguration (HA-Formular).
+# Technischer Key (config.yaml) <-> deutscher Anzeigename hier. Verschachtelte
+# Gruppen/Listen werden über `fields:` beschriftet (Home-Assistant-Mechanismus).
 configuration:
   log_level:
-    name: Log-Level
+    name: Protokoll-Detailgrad
     description: Detailgrad der Protokollierung (debug, info, warning, error).
   provider:
     name: KI-Anbieter
-    description: Anbieter des Sprachmodells für die Planung.
+    description: Anbieter des Sprachmodells für die Planung (Gemini oder OpenAI).
   model:
     name: Modell
     description: Konkretes Modell des gewählten Anbieters (Standard gemini-2.5-flash).
+  api_key:
+    name: KI-API-Schlüssel
+    description: Schlüssel des KI-Anbieters. Leer lassen deaktiviert die KI-Planung. Wird niemals protokolliert.
+  ai_request_timeout_s:
+    name: KI-Zeitlimit (Sekunden)
+    description: Maximale Wartezeit je KI-Aufruf, bevor er abgebrochen wird.
+  ai_rate_limit_per_min:
+    name: KI-Ratenbegrenzung (Aufrufe/Minute)
+    description: Höchstzahl der KI-Aufrufe pro Minute (Gemini-Gratis rund 10).
   ai_temperature:
     name: KI-Temperatur
-    description: Sampling-Temperatur des KI-Aufrufs (0 = deterministisch). Niedrige Werte sorgen dafür, dass gleicher Kontext stabil dieselben Vorschlagsfelder liefert, statt je Lauf zu schwanken.
+    description: Sampling-Temperatur des KI-Aufrufs (0 = deterministisch). Niedrige Werte liefern bei gleichem Kontext stabil dieselben Vorschlagsfelder, statt je Lauf zu schwanken.
   ai_seed:
     name: KI-Seed
     description: Fester Zufalls-Seed für den KI-Aufruf – verstärkt reproduzierbare, stabile Ausgaben über mehrere Läufe.
   ai_repair_missing:
     name: Fehlende Felder nachfordern
-    description: Lässt das Modell fehlende Pflicht-Vorschlagsfelder aus, werden genau diese einmalig nachgefordert, bevor der Validator sie deterministisch aus dem Ist-Zustand auffüllt.
+    description: Lässt das Modell Pflicht-Vorschlagsfelder aus, werden genau diese einmalig nachgefordert, bevor der Validator sie deterministisch aus dem Ist-Zustand auffüllt.
   planning_interval_min:
     name: Planungsintervall (Minuten)
     description: Abstand der vollständigen Neuplanung (15–60 Minuten).
@@ -34,52 +46,156 @@ configuration:
     description: Abstand, in dem Live-Werte aus Home Assistant gelesen werden.
   publish_suggestions:
     name: Vorschläge nach HA schreiben
-    description: Validierte Vorschlagswerte als sensor.ep_*_vorschlag in Home Assistant schreiben. Aus => reiner Beobachten-Modus (keine HA-Sensoren).
-  entity_pv_power:
-    name: Entität PV-Leistung
-    description: HA-Entität für die aktuelle PV-Leistung (z.B. sensor.e3dc_leistung_pv).
-  entity_house_load:
-    name: Entität Hausverbrauch
-    description: HA-Entität für den aktuellen Hausverbrauch (z.B. sensor.e3dc_leistung_haus).
-  entity_grid_power:
-    name: Entität Netzleistung
-    description: HA-Entität für die Leistung am Netzübergabepunkt.
-  entity_grid_import:
-    name: Entität Netzbezug
-    description: HA-Entität für den Netzbezug.
-  entity_grid_export:
-    name: Entität Einspeisung
-    description: HA-Entität für die Netzeinspeisung.
-  entity_battery_power:
-    name: Entität Batterieleistung
-    description: HA-Entität für die aktuelle Batterieleistung.
-  entity_battery_soc:
-    name: Entität Batterie-SOC
-    description: HA-Entität für den Batterieladestand in Prozent.
-  entity_water_temperature:
-    name: Entität Warmwassertemperatur
-    description: HA-Entität für die Warmwassertemperatur.
-  fallback_pv_power:
-    name: Fallback PV-Leistung
-    description: Ersatzwert, falls keine gültige Entität gefunden wird.
-  fallback_house_load:
-    name: Fallback Hausverbrauch
-    description: Ersatzwert, falls keine gültige Entität gefunden wird.
-  fallback_grid_power:
-    name: Fallback Netzleistung
-    description: Ersatzwert, falls keine gültige Entität gefunden wird.
-  fallback_grid_import:
-    name: Fallback Netzbezug
-    description: Ersatzwert, falls keine gültige Entität gefunden wird.
-  fallback_grid_export:
-    name: Fallback Einspeisung
-    description: Ersatzwert, falls keine gültige Entität gefunden wird.
-  fallback_battery_power:
-    name: Fallback Batterieleistung
-    description: Ersatzwert, falls keine gültige Entität gefunden wird.
-  fallback_battery_soc:
-    name: Fallback Batterie-SOC
-    description: Ersatzwert, falls keine gültige Entität gefunden wird.
-  fallback_water_temperature:
-    name: Fallback Warmwassertemperatur
-    description: Ersatzwert, falls keine gültige Entität gefunden wird.
+    description: Validierte Vorschlagswerte als sensor.ep_*_vorschlag nach Home Assistant schreiben. Aus bedeutet reiner Beobachten-Modus ohne HA-Sensoren.
+  hems_base_url:
+    name: HEMS-Basis-URL
+    description: Adresse des Skytech-HEMS-Addons für Geräte-Erkennung und Status-Rückkopplung, z. B. http://local_skytech_hems:8099. Leer lassen deaktiviert die HEMS-Anbindung.
+  hems_status_interval_s:
+    name: HEMS-Statusintervall (Sekunden)
+    description: Abstand, in dem EP den HEMS-Status abruft und die beobachtete Plan-Übereinstimmung ableitet.
+  publish_status:
+    name: Plan-/HEMS-Status nach HA schreiben
+    description: Plan- und HEMS-Status als sensor.ep_plan_status / sensor.ep_hems_verbindung nach HA schreiben. Aus bedeutet nur in UI/DB sichtbar.
+  pv_forecast_unit:
+    name: Einheit der PV-Prognose
+    description: Einheit der PV-Prognosewerte (z. B. kWh oder W).
+  pv_forecast:
+    name: PV-Prognose-Ausrichtungen
+    description: Je PV-Ausrichtung bis zu vier Prognose-Sensoren. EP summiert jeden Wert über alle Ausrichtungen.
+    fields:
+      label:
+        name: Bezeichnung
+        description: Anzeigename der Ausrichtung (z. B. Dach Süd).
+      current_hour:
+        name: Sensor aktuelle Stunde
+        description: Sensor-Entität mit der Prognose-Energie der laufenden Stunde.
+      next_hour:
+        name: Sensor nächste Stunde
+        description: Sensor-Entität mit der Prognose-Energie der nächsten Stunde.
+      remaining_today:
+        name: Sensor Rest heute
+        description: Sensor-Entität mit der verbleibenden Prognose-Energie für heute.
+      tomorrow:
+        name: Sensor morgen
+        description: Sensor-Entität mit der Prognose-Energie für morgen.
+  weather:
+    name: Wetter (OpenWeatherMap)
+    description: Direkt im EP über OpenWeatherMap abgerufene Wetterprognose. Koordinaten stammen aus der HA-Zone.
+    fields:
+      api_key:
+        name: OpenWeatherMap-API-Schlüssel
+        description: Schlüssel für OpenWeatherMap. Leer lassen deaktiviert den Wetterabruf.
+      zone_entity:
+        name: Zonen-Entität
+        description: HA-Zone, aus deren Attributen (latitude/longitude) die Koordinaten stammen (Standard zone.home).
+      units:
+        name: Einheiten
+        description: Einheitensystem (metric, imperial oder standard).
+      lang:
+        name: Sprache
+        description: OpenWeatherMap-Sprachcode für die Wetterbeschreibungen (z. B. de).
+      source:
+        name: Datenquelle
+        description: forecast3h (5 Tage / 3 Stunden, Standard) oder onecall (One Call API 4.0, abopflichtig).
+      refresh_min:
+        name: Abrufintervall (Minuten)
+        description: Mindestabstand zwischen zwei Wetterabrufen.
+      llm_detail:
+        name: Detailgrad für die KI
+        description: Umfang der an die KI übergebenen Wetterdaten (nur forecast3h). compact spart Tokens, full ist genauer.
+      onecall:
+        name: One Call API 4.0
+        description: Einstellungen der One Call API (nur bei Quelle onecall). Jede aktivierte Timeline ist ein eigener bezahlter Aufruf.
+        fields:
+          enable_15min:
+            name: 15-Minuten-Timeline aktiv
+            description: Feinauflösende 15-Minuten-Prognose abrufen.
+          enable_1h:
+            name: Stündliche Timeline aktiv
+            description: Stündliche Prognose abrufen.
+          enable_1day:
+            name: Tägliche Timeline aktiv
+            description: Tägliche Prognose abrufen.
+          refresh_15min:
+            name: Abrufintervall 15 Minuten (Minuten)
+            description: Abstand der 15-Minuten-Abrufe.
+          refresh_1h:
+            name: Abrufintervall stündlich (Minuten)
+            description: Abstand der stündlichen Abrufe.
+          refresh_1day:
+            name: Abrufintervall täglich (Minuten)
+            description: Abstand der täglichen Abrufe.
+          pages_15min:
+            name: Seiten 15 Minuten
+            description: Paginierte Seiten je 15-Minuten-Abruf (1–5). Mehr Horizont, aber je Seite ein bezahlter Aufruf.
+          pages_1h:
+            name: Seiten stündlich
+            description: Paginierte Seiten je stündlichem Abruf (1–5).
+          pages_1day:
+            name: Seiten täglich
+            description: Paginierte Seiten je täglichem Abruf (1–5).
+          daily_call_budget:
+            name: Tages-Aufrufbudget
+            description: Harte Obergrenze aller bezahlten One-Call-Anfragen pro UTC-Tag (Standard 1000 = Gratiskontingent).
+          enable_alerts:
+            name: Unwetterwarnungen aktiv
+            description: Behördliche Unwetterwarnungen abrufen.
+          refresh_alerts:
+            name: Abrufintervall Warnungen (Minuten)
+            description: Abstand der Warnungs-Abrufe.
+          llm_timeline:
+            name: KI-Timeline
+            description: Welche Timeline (15min, 1h oder 1day) in den KI-Kontext fließt.
+  objective_weights:
+    name: Zielgewichte
+    description: Weiche Zielgewichte (0–100 %), gegeneinander abwägbar. Harte Grenzen sind davon unberührt.
+    fields:
+      versorgungssicherheit:
+        name: Versorgungssicherheit
+        description: Gewicht der Versorgungssicherheit.
+      eauto_ladeziel:
+        name: E-Auto-Ladeziel
+        description: Gewicht des E-Auto-Ladeziels.
+      warmwasserkomfort:
+        name: Warmwasserkomfort
+        description: Gewicht des Warmwasserkomforts.
+      netzbezug:
+        name: Netzbezug minimieren
+        description: Gewicht der Netzbezug-Minimierung.
+      stromkosten:
+        name: Stromkosten minimieren
+        description: Gewicht der Stromkosten-Minimierung.
+      eigenverbrauch:
+        name: Eigenverbrauch maximieren
+        description: Gewicht der Eigenverbrauch-Maximierung.
+      einspeisung:
+        name: Einspeisung reduzieren
+        description: Gewicht der Einspeise-Reduzierung.
+      batterieschonung:
+        name: Batterieschonung
+        description: Gewicht der Batterieschonung.
+  sensoren:
+    name: Sensor-Zuordnung
+    description: Zuordnung der Messgrößen zu Home-Assistant-Entitäten.
+    fields:
+      entity_pv_power:
+        name: PV-Leistung
+        description: HA-Entität für die aktuelle PV-Leistung (z. B. sensor.e3dc_leistung_pv).
+      entity_house_load:
+        name: Hausverbrauch
+        description: HA-Entität für den aktuellen Hausverbrauch (z. B. sensor.e3dc_leistung_haus).
+      entity_grid_power:
+        name: Netzleistung
+        description: HA-Entität für die Leistung am Netzübergabepunkt.
+      entity_grid_import:
+        name: Netzbezug
+        description: HA-Entität für den Netzbezug.
+      entity_grid_export:
+        name: Einspeisung
+        description: HA-Entität für die Netzeinspeisung.
+      entity_battery_power:
+        name: Batterieleistung
+        description: HA-Entität für die aktuelle Batterieleistung.
+      entity_battery_soc:
+        name: Batterie-Ladestand (SOC)
+        description: HA-Entität für den Batterieladestand in Prozent.

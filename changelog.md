@@ -6,6 +6,203 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.48] - 2026-07-09
+
+### Geändert
+- **One Call 4.0: freie Kombination der Vorhersagemodelle statt Einzel-Auswahl für die KI.** Die
+  drei Modelle **15min / 1h / 1day** sind in der Addon-Config je per **Schalter** (`enable_*`)
+  aktivierbar; **jedes aktive Modell wird abgerufen UND fließt gemeinsam in den KI-Kontext**. Man
+  muss sich also **nicht mehr für ein einzelnes Vorhersagemodell entscheiden** — jede gewünschte
+  Kombination ist möglich.
+  - Das bisherige Einzel-Select **`weather.onecall.llm_timeline` ist entfallen** (aus Optionen +
+    Schema entfernt; ein evtl. noch gespeicherter Wert wird ignoriert).
+  - Der KI-Kontext hat jetzt `weather.models` mit einem Eintrag je aktivem Modell: intraday
+    (15min/1h) für **heute** ab jetzt (frühestens 6 Uhr) bis 21 Uhr Ortszeit, das Tagesmodell
+    (1day) für die **nächsten 5 Tage ab morgen**. Jeder Eintrag nennt Auflösung + `zeitraum`.
+  - Wetter-Tab: die Zeile zeigt statt „KI-Timeline: 1h" jetzt „KI nutzt: <aktive Modelle>"
+    (`snapshot.ai_models`).
+
+## [0.0.47] - 2026-07-09
+
+### Geändert
+- **Wetter an die KI (One Call): stündliche Reihe auf den heutigen Tag begrenzt + Tagesausblick
+  der nächsten 5 Tage ergänzt (`upcoming_changes.md`).** Bislang floss **eine** One-Call-Timeline
+  ungefenstert (auf den Planungshorizont gekürzt) in den Planungskontext. Jetzt bekommt die KI bei
+  `weather.source: onecall` **zweierlei**:
+  - **`hourly`** – die stündliche Reihe **nur für heute**, vom aktuellen Zeitpunkt (frühestens ab
+    **6 Uhr**) bis **21 Uhr Ortszeit**. Beispiele: um 11:30 → 12:00–21:00; vor 6 Uhr → ab 6:00;
+    nach 21 Uhr bleibt die Stundenreihe **leer**. Die Ortszeit kommt aus dem OWM-`timezone_offset`
+    der Wetter-Zone.
+  - **`daily`** – ein **Tagesausblick der nächsten 5 Tage ab morgen** (Temperatur inkl. Tages-Min/
+    Max, Bewölkung, Regenwahrscheinlichkeit); der heutige Tag steckt bereits in der Stundenreihe.
+  - `weather.onecall.llm_timeline` wählt nun die **Auflösung der Stundenreihe** (`15min`/`1h`); die
+    Tagesreihe kommt fest aus der `1day`-Timeline. Der `OneCallCollector`-Snapshot trägt je Timeline
+    zusätzlich den `timezone_offset_s` (fürs Ortszeit-Fenster). UI-Anzeige und HEMS-Weg unverändert.
+
+## [0.0.46] - 2026-07-08
+
+### Behoben
+- **HEMS-Tab: „Geschützte Mindestleistung" zeigte gar keinen HEMS-Ist-Wert mehr.** Nach 0.0.45
+  liest EP den rohen Sockel `geschuetzte_mindestleistung_w`/`_a` aus dem HEMS-Status – ältere
+  HEMS-Stände liefern dieses Feld aber noch nicht, wodurch die Spalte leer blieb (Status
+  „unbekannt"). EP trägt den Wert jetzt **hilfsweise** direkt aus dem HA-Helfer
+  `input_number.ems_<gerät>_geschutzte_mindestleistung_<w|a>` nach, wenn das HEMS ihn nicht
+  liefert. Sobald ein HEMS mit dem Feld läuft, hat dessen Wert Vorrang (kanonisch, wird nie
+  überschrieben). Damit funktioniert die Anzeige unabhängig von der HEMS-Version.
+- **HEMS-Tab: „Aktualisieren" holte die HEMS-Ist-Werte nicht neu ab.** Der Button spiegelte nur
+  den gedrosselten Zwischenstand des Collectors (Abruf alle `interval_s`). Er erzwingt jetzt über
+  `GET /api/hems/status?refresh=1` einen **Live-Abruf** des HEMS (`collect_once(force=True)`, umgeht
+  die Drosselung); der reguläre Auto-Poll (alle 10 s) bleibt unverändert leichtgewichtig.
+
+## [0.0.45] - 2026-07-08
+
+### Behoben
+- **Plan-Rückkopplung (HEMS-Tab): „Geschützte Mindestleistung" zeigte den effektiven Schutz statt
+  des Rohwerts.** Die Spalte HEMS-Ist verglich den EP-Vorschlag gegen `schutz_w`/`schutz_a` des
+  HEMS-Status – das ist aber der **effektive** Schutz (`geschützte Mindestleistung + reserve_w +
+  global_puffer_w`, geklemmt), nicht der rohe Sockel. Folge: bei einem Helferwert von z.B. 600 W
+  erschien 900 W, und der Vergleich meldete fälschlich „abweichend". EP vergleicht/zeigt jetzt den
+  rohen HEMS-Wert `geschuetzte_mindestleistung_w`/`_a` (setzt den entsprechenden HEMS-Zusatz im
+  Status voraus). Fehlt das Feld (älterer HEMS-Stand), bleibt der Status sicher „unbekannt" statt
+  auf den falschen `schutz_w` zurückzufallen. Betrifft Watt **und** Ampere (Wallbox).
+
+## [0.0.44] - 2026-07-05
+
+### Geändert
+- **Logging: Original-Fehlermeldungen der Backends werden jetzt mitgeloggt.** Bislang gingen bei
+  HTTP-Fehlern (4XX/5XX) von Home Assistant und dem HEMS die eigentlichen Servergründe verloren,
+  weil `resp.raise_for_status()` nur „HTTP 400" o.ä. meldete und den Antwort-Body verwarf. Jetzt
+  wird der Body ausgelesen und der echte Grund (`{"message": …}` bzw. `{"error": {"message": …}}`)
+  in die Fehlermeldung gehoben – z.B. `Home Assistant: HTTP 404 Not Found (/api/states/…) – Entity
+  not found.` statt eines nichtssagenden „HTTP 404".
+  - **Neu:** gemeinsamer Helfer `http_errors.raise_for_status`/`read_error_body` + Ausnahme
+    `HTTPStatusError` (trägt Status, Reason, Servermeldung und Endpunkt-**Pfad** als strukturierte
+    Felder). Genutzt von HA-Client, HEMS-Client und (Body-Leser) OWM-/Gemini-Client.
+  - **Gemini:** 429- und 4XX/5XX-Fehler nehmen jetzt ebenfalls den Original-Grund aus dem Body
+    mit (vorher nur roher Textausschnitt bzw. beim Rate-Limit gar keine Server-Info).
+  - **Iron Rule 6 gewahrt:** es wird nur der Pfad ohne Query mitgeführt – kein als Query-Parameter
+    übergebener Schlüssel (z.B. OWM `appid`) kann in ein Log geraten.
+  - **Unerwartete Ausnahmen** im Sammellauf werden mit **Traceback** (`exc_info`) und dem Namen der
+    fehlgeschlagenen Komponente geloggt → maschinenlesbar im JSONL-Export (KI-Fehleranalyse,
+    user-regeln §02). `log()` akzeptiert dafür nun `exc_info`.
+
+## [0.0.43] - 2026-07-05
+
+### Behoben
+- **One-Call-4.0-Unwetterwarnungen: falscher Endpunkt behoben (Wetter-Test-Fehler
+  „OpenWeatherMap: Koordinaten nicht gefunden (HTTP 404): Internal error").** Die Alerts wurden
+  über einen nicht existierenden Koordinaten-Endpunkt `…/onecall/alert?lat=&lon=` abgerufen → OWM
+  antwortet mit HTTP 404. In der One Call API 4.0 gibt es **keinen** Koordinaten-Alert-Endpunkt:
+  die aktiven Warnungen stehen als **Alert-IDs** in den Timeline-Antworten (`data[].alerts`) und
+  werden je ID über den **Detail-Endpunkt** `…/onecall/alert/{id}` (nur `appid`/`lang`) aufgelöst.
+  - `parse_timeline` sammelt jetzt die Alert-IDs je Timeline (`OneCallTimeline.alert_ids`,
+    dedupliziert über alle Seiten).
+  - Neuer Client-Aufruf `fetch_alert(alert_id)` + `parse_alert` (einzelnes Objekt statt Liste);
+    `masked_alert_url` zeigt das ID-Muster ohne Koordinaten.
+  - Der `OneCallCollector` löst die aus den Timelines bekannten IDs auf (je ID ein bezahlter
+    Detail-Call gegen dasselbe Tagesbudget). **Ohne aktive Warnung** fällt kein Call an
+    (`Alerts ✅ 0`); ohne aktive Timeline ein klarer Hinweis statt eines HTTP-Fehlers.
+
+## [0.0.42] - 2026-07-05
+
+### Geändert
+- **Addon-Konfiguration vollständig deutsch beschriftet (HA-Formular).** Die
+  `translations/de.yaml` (und `en.yaml`) waren unvollständig und veraltet, wodurch viele
+  Felder im HA-Konfigurationsformular mit ihrem rohen technischen Schlüssel angezeigt wurden.
+  Jetzt hat **jede** Option einen lesbaren Anzeigenamen + Beschreibung:
+  - **Neu übersetzt (fehlten):** `api_key`, `ai_request_timeout_s`, `ai_rate_limit_per_min`,
+    `hems_base_url`, `hems_status_interval_s`, `publish_status`, `pv_forecast_unit`.
+  - **Verschachtelte Gruppen/Listen über `fields:`-Blöcke beschriftet** (HA-Mechanismus):
+    `sensoren` (entity_*), `objective_weights` (Zielgewichte), `weather` inkl. `weather.onecall`,
+    und die Listeneinträge von `pv_forecast`. So bekommt auch jedes Unterfeld einen deutschen
+    Namen statt des technischen Schlüssels.
+  - **Veraltete Einträge entfernt:** `fallback_*` (Feature in 0.0.40 entfernt) und
+    `entity_water_temperature` (Warmwassertemperatur ist gerätespezifisch, Geräte-Tab). Die
+    `entity_*`-Namen lagen zudem fälschlich top-level und greifen erst korrekt unter
+    `sensoren.fields`.
+  Der technische Schlüssel in `config.yaml`/`schema` bleibt unverändert – nur die Anzeige.
+
+## [0.0.41] - 2026-07-05
+
+### Geändert
+- **Durchgängig lesbare deutsche Anzeigetexte (UI-Audit).** Verbliebene technische/englische
+  Bezeichner in der Ingress-Oberfläche durch schön lesbare deutsche Namen ersetzt:
+  - HEMS-Tab: Spaltenkopf `Eligible` → `Freigegeben`; Spalte „Typ" zeigt statt der rohen
+    HEMS-Werte `binary`/`controllable` jetzt `binär`/`regelbar`.
+  - Plan-Tab: Geräte-Überschrift zeigt den technischen Gerätenamen (z. B. `heizstab`) jetzt
+    als lesbare Überschrift (`Heizstab`) statt in snake_case.
+  - Status-Tab: Karte „Systemstatus" beschriftet die Roh-Schlüssel jetzt deutsch
+    (`provider` → „KI-Anbieter", `model` → „Modell", `ha_configured` → „HA verbunden" …) und
+    zeigt Bool-Werte als Ja/Nein statt `true`/`false`; Diagnose-Zeilen ebenso (Ja/Nein).
+  - Spalten „Quelle" (Daten/Geräte/Prognose/Allowlist): technische Herkunftstoken lesbar
+    übersetzt (`live` → „Live", `none` → „keine", `weather` → „Wetter", `measurement`
+    → „Messwert", `device` → „Gerät", `forecast` → „Prognose"). CSS-Klassen unverändert.
+  - HEMS-Tab: „Globaler Modus" zeigt den Regelmodus-Wert lesbar (`nur_heizen` → „Nur Heizen"
+    usw.) statt in snake_case.
+- **HA-Helfer-Vorlage `input_select_ep.yaml`:** Auswahloptionen von technischem snake_case auf
+  lesbares Deutsch umgestellt (`eigenverbrauch_maximieren` → `Eigenverbrauch maximieren`,
+  `manuell` → `Manuell` usw.). Bei `input_select` ist der Options-Text zugleich der gespeicherte
+  Wert; die Optionen werden derzeit von keinem Code gelesen, daher rein anzeigeseitig.
+
+## [0.0.40] - 2026-07-05
+
+### Entfernt
+- **Sensor-Fallback-Werte komplett entfernt.** In der Addon-Konfiguration (Gruppe „Sensoren")
+  hatte jeder Sensor ein Feld `fallback_<rolle>`; fachlich sinnlos (ein statischer Ersatzwert
+  für eine Live-Messgröße). Felder aus `options`/`schema` in `config.yaml` entfernt, die
+  Fallback-Logik aus `entity_map.py` (Feld `EntityMapping.fallback_value`, DB-Spalte wird nicht
+  mehr gelesen/geschrieben), `collector.py` (Quelle `fallback` entfällt → nur noch `live`/`none`)
+  und der Anzeige-Spalte im Einstellungen-Tab (`app.js`, `web/server.py`) gezogen.
+- **Systemweite Warmwassertemperatur entfernt.** `entity_water_temperature`/`fallback_water_temperature`
+  gehörten nicht in die systemweite Sensor-Zuordnung, da die Warmwassertemperatur **gerätespezifisch**
+  ist. Rolle `water_temperature` aus `roles.py` und die Felder aus `config.yaml` entfernt; die
+  Konfiguration erfolgt künftig pro Gerät im Geräte-Tab (vgl. Zusatz-Entität „Max. Wassertemperatur", D-047).
+
+## [0.0.39] - 2026-07-04
+
+### Geändert
+- **Frontend-Architektur auf Preact + htm umgestellt (kein Build-Schritt).** Die Ingress-SPA wird
+  nicht mehr per Hand über `innerHTML`-Strings aufgebaut, sondern als Preact-Komponenten
+  (htm-Templates; Preact/htm vendored unter `web/static/vendor/`, keine externe CDN, kein Node-Build).
+  Löst die frühere Vanilla-JS-SPA ab (D-010: „später optional Framework, sobald die UI ausgebaut ist").
+  Reaktiver Komponenten-Zustand ersetzt die manuellen DOM-Hacks (Fokus-Erhalt beim Tippen,
+  Dropdown-Auswahl, Auto-Refresh nur des aktiven Tabs).
+  - **Verhalten/Endpunkte unverändert:** identische API-Pfade, Payloads, Tabs und Funktionen; das
+    HA-Design (Klassennamen/CSS) und die responsive Darstellung (0.0.38) bleiben erhalten.
+  - Neue aiohttp-`/static`-Route liefert die vendored Assets + `app.js` aus (Ingress-relativer Pfad
+    `static/…`, wie im HEMS-Addon).
+  - Verifiziert: `ruff`, 37 Web-Tests (inkl. neuem Static-Route-Test) sowie ein Headless-Render
+    (jsdom) aller neun Tabs mit leeren **und** realistischen Daten – ohne Render-Fehler.
+
+## [0.0.38] - 2026-07-04
+
+### Hinzugefügt
+- **Responsive Darstellung (Handy/Tablet).** Die Ingress-Oberfläche passt sich an kleine
+  Bildschirme an – **kein horizontales Scrollen mehr, nur vertikal**: breite Tabellen werden
+  am Handy (≤480 px) zu gestapelten Karten mit Spaltenbeschriftung, die Tab-Leiste bricht um
+  statt seitlich zu scrollen, das Zusatz-Entitäten-Formular wird einspaltig, lange Code-/JSON-
+  Blöcke brechen um. Tablet-Breakpoint (≤900 px) mit reduzierten Abständen; größere Touch-Ziele
+  auf Finger-Geräten.
+  - **Rein visuell/additiv:** Tabellenzellen erhalten ihre Spaltenüberschrift per
+    MutationObserver als `data-label` (fürs Karten-Layout). Alle Tabs, API-Aufrufe, IDs und
+    Event-Handler bleiben unverändert.
+
+## [0.0.37] - 2026-07-04
+
+### Geändert
+- **Weboberfläche im Home-Assistant-Design neu gestaltet.** Layout, Farben und Aufbau der
+  Ingress-Oberfläche sind jetzt stark an das HA-Standardtheme (Material Design) angelehnt:
+  blaue App-Bar (Primärfarbe `#03a9f4`) mit View-Tabs und Unterstrich-Indikator, abgerundete
+  `ha-card`-Karten (12 px, weiche Schatten), HA-typische Datentabellen, `mwc-button`-Anmutung
+  für Schaltflächen, HA-Textfelder für Eingaben sowie helles **und** dunkles Theme über
+  `prefers-color-scheme`. Der bisherige minimalistische Systemschrift-Look wurde ersetzt.
+  - **Rein visuell – keine funktionale Änderung:** sämtliche Tabs (Status, Daten, Geräte,
+    Prognose, Grenzen & Ziele, Plan, HEMS, Einstellungen, Logs), alle API-Aufrufe, IDs,
+    Event-Handler und das gesamte Frontend-`<script>` bleiben unverändert. Betrifft nur den
+    `<style>`-Block und die statische Markup-Struktur in `web/templates/index.html` (Kopfleiste,
+    Tab-Navigation, Karten-Wrapper); die per JavaScript erzeugten Inhalte werden über die
+    bestehenden Klassennamen HA-konform gestylt.
+
 ## [0.0.36] - 2026-07-03
 
 ### Hinzugefügt

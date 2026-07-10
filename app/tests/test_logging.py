@@ -45,3 +45,24 @@ def test_extra_fields_are_included():
     record = ring.records()[0]
     assert record["plan_id"] == "2026-06-16T14:00"
     assert record["provider"] == "gemini"
+
+
+def test_exc_info_attaches_traceback_for_machine_analysis():
+    # Unerwartete Ausnahmen: Traceback landet als `error`-Feld im Export (KI-Fehleranalyse).
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    try:
+        raise ValueError("kaputt")
+    except ValueError as exc:
+        log(logger, "error", "Sammellauf fehlgeschlagen", context={"x": 1}, exc_info=exc)
+
+    record = ring.records()[0]
+    assert "error" in record
+    assert "ValueError: kaputt" in record["error"]
+    assert "Traceback" in record["error"]
+
+
+def test_no_exc_info_leaves_no_error_field():
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    log(logger, "warning", "erwarteter Fehler", context={"error": "HTTP 404"})
+
+    assert "error" not in ring.records()[0]

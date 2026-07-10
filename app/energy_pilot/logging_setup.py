@@ -117,9 +117,16 @@ def log(
     message: str,
     *,
     context: dict | None = None,
+    exc_info: bool | BaseException | None = None,
     **fields: Any,
 ) -> None:
-    """Bequeme Hilfsfunktion für strukturiertes Logging mit Kontextfeldern."""
+    """Bequeme Hilfsfunktion für strukturiertes Logging mit Kontextfeldern.
+
+    `exc_info` hängt bei unerwarteten Ausnahmen den Traceback an (landet als `error`-Feld im
+    JSONL-Export → maschinenlesbare KI-Fehleranalyse, user-regeln §02). Bei erwarteten,
+    bereits sprechend formulierten Fehlern (z.B. `HTTPStatusError`) weglassen – dort genügt
+    die Meldung im `context`, ein Traceback wäre nur Rauschen.
+    """
     extra: dict[str, Any] = {"context": context}
     extra.update(fields)
-    logger.log(getattr(logging, level.upper()), message, extra=extra)
+    logger.log(getattr(logging, level.upper()), message, extra=extra, exc_info=exc_info)
