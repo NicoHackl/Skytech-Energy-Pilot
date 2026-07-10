@@ -33,5 +33,11 @@ Danach **HA neu starten** bzw. die YAML-Konfiguration neu laden.
 - **Fremddaten** (PV-Prognose, Strompreis) sind **nicht** hier — die trägst du als bestehende Sensor-Entitätsnamen direkt in der **Addon-Config** ein (D-006).
 - **Vorschlagswerte von EP** sind ebenfalls nicht hier — die stellt EP selbst als `sensor.ep_*_vorschlag`-Entitäten bereit (D-030).
 - Werte (min/max/Defaults) sind Vorschläge — an deine Anlage anpassen.
+- **KI-Übernahme wird im HEMS gesteuert (D-033), nicht hier.** Der HEMS-Helfer
+  `input_select.ems_regelmodus` (Werte `auto`/`manuell`/`nur_heizen`/`nur_laden`/`aus`)
+  entscheidet: **`auto` = alle Geräte übernehmen den EP-Vorschlag**, `manuell` = normale
+  HEMS-Regeln. Pro Gerät verfeinerbar über den bestehenden `input_select.ems_<gerät>_modus`
+  (`auto` = EP für dieses Gerät, `manuell` = normale Regeln, `aus` = aus). Diese Selektoren
+  sind **HEMS-Domäne** und existieren bereits — hier sind **keine** neuen `ep_*`-Helfer nötig.
 
 > Hinweis: Vorlage des Formats stammt aus [../user-beispiele/beispiel-config-yam.txt](../user-beispiele/beispiel-config-yam.txt).
