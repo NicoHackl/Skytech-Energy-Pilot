@@ -28,6 +28,20 @@ DEFAULTS: dict[str, object] = {
     "forecast_horizon_h": 24,
     "min_confidence_percent": 70,
     "collect_interval_s": 30,
+    # Anti-Flatter-Schicht (A2 / Validator Stufe 5, D-021): begrenzt Lauf-zu-Lauf-Sprünge.
+    # Delta-Clamp der geschützten Mindestleistung je Lauf (Prozent ggü. Vorplan; Batterie
+    # eigener, engerer Satz). Freigabe-Hysterese: Wechsel erst nach N konsistenten Läufen.
+    # Mindesthaltezeit: keine erneute Freigabe-Änderung innerhalb dieser Minuten.
+    "delta_limit_power_percent": 20,
+    "delta_limit_battery_percent": 10,
+    "freigabe_hysteresis_runs": 2,
+    "min_hold_minutes": 15,
+    # Eingangs-Quantisierung (A3): an die KI gegebene Werte auf grobe Stufen runden, damit
+    # kleine Sensor-Schwankungen den Prompt nicht verändern (nutzt ai_temperature=0/ai_seed).
+    "snap_power_w": 50,
+    "snap_soc_percent": 1,
+    "snap_amp_a": 0.1,
+    "snap_forecast_kwh": 0.1,
     # Vorschlagswerte als sensor.ep_*_vorschlag nach HA schreiben (M2-Schreibweg, D-008).
     # False => reiner Beobachten-Modus: Plan bleibt in UI/DB, EP schreibt nichts nach HA.
     "publish_suggestions": True,

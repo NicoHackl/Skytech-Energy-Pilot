@@ -6,6 +6,36 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.51] - 2026-07-11
+
+### Hinzugefügt
+- **Stabilitäts-Kern aus `plan/longterm_plan_claude.md` (A2/A3/A4/B2).** Deterministische
+  Ruhe über Läufe („Determinismus rahmt, KI füllt"):
+  - **A2 – Anti-Flatter (Validator Stufe 5).** Neue reine `smooth_plan()` in `validator.py`:
+    Delta-Limit der geschützten Mindestleistung je Lauf (±20 %, Batterie ±10 %, D-021),
+    Freigabe-Hysterese (Wechsel erst nach N=2 konsistenten Läufen), Mindesthaltezeit
+    (Default 15 min). **Sicherheit vor Stabilität:** eine technisch gesperrte Last wird nie
+    auf „frei" gehalten. Der Planner lädt/speichert den Pro-Gerät-Zustand (neue Tabelle
+    `device_plan_state`, Migration 9), glättet nur gültige Pläne und hängt die Glättungs-
+    Notizen an das Klemm-Log.
+  - **A3 – Eingangs-Quantisierung.** An die KI gegebene Werte werden gerundet (Leistung 50 W,
+    SOC 1 %, Ampere 0,1 A, PV-Prognose 0,1 kWh; Zeitstempel auf die Minute). So verändert
+    kleines Sensor-Rauschen den Prompt nicht mehr → gleicher Input → gleiche Antwort
+    (nutzt `ai_temperature=0`/`ai_seed=42` endlich aus).
+  - **A4 – Confidence-Gate (Validator Stufe 6).** `min_confidence_percent` (Default 70 %)
+    wird endlich gelesen: unsichere Pläne werden abgelehnt und **nicht** nach HA geschrieben;
+    der zuletzt gültige Sensorwert bleibt stehen.
+  - **B2 – Trend-Features.** Je Messgröße ein `trend` (steigend/fallend/stabil) aus kurz-
+    gegen langfristiges Mittel — die KI plant aus dem Verlauf statt aus einem Momentwert.
+  - **C1 – Tests.** Neue `test_stability.py` plus Confidence-/Quantisierungs-/Trend- und
+    Doppellauf-Hysterese-Tests (420 Tests grün).
+  - Neue Addon-Config-Keys: `delta_limit_power_percent`, `delta_limit_battery_percent`,
+    `freigabe_hysteresis_runs`, `min_hold_minutes`, `snap_power_w`, `snap_soc_percent`,
+    `snap_amp_a`, `snap_forecast_kwh` (Leitprinzip „alles konfigurierbar").
+- Bewusst zurückgestellt (Begründung in `plan/longterm_plan_claude.md`): A5 (Freshness,
+  braucht Collector-Zeitstempel), A6 (Basisplan), B1 (Feedback-Rückführung), B3 (Urgency-
+  Formel), B4 (Reason-Codes), B5 (Bilanz), C2/C3 (Shadow/KPI/Kritiker).
+
 ## [0.0.50] - 2026-07-11
 
 ### Hinzugefügt

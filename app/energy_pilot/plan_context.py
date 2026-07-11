@@ -28,34 +28,115 @@ _KIND_TO_GEMINI: dict[str, str] = {
 }
 
 
-def _condense_state(state: dict) -> list[dict]:
-    """Verdichtet den State-Snapshot je Rolle auf das Nötigste (Werte + Mittel)."""
+# --- A3: Eingangs-Quantisierung / Snapping ---------------------------------------------------
+# Default-Snap-Schritte je Größe; via Addon-Config (quantize-Dict) überschreibbar. Ziel: kleine
+# Sensor-Schwankungen verändern den Prompt nicht mehr → gleicher Input → gleiche KI-Antwort
+# (nutzt ai_temperature=0/ai_seed=42 endlich aus).
+SNAP_POWER_W = 50
+SNAP_SOC_PERCENT = 1
+SNAP_AMP_A = 0.1
+SNAP_FORECAST_KWH = 0.1
+_DEFAULT_QUANTIZE: dict[str, float] = {
+    "power_w": SNAP_POWER_W,
+    "soc_percent": SNAP_SOC_PERCENT,
+    "amp_a": SNAP_AMP_A,
+    "forecast_kwh": SNAP_FORECAST_KWH,
+}
+
+# --- B2: Trend-Features ---------------------------------------------------------------------
+# Trend aus kurz- vs. langfristigem Mittel. Relative Schwelle plus absoluter Boden (W) gegen
+# Rauschen nahe Null; darunter gilt der Verlauf als „stabil".
+TREND_REL = 0.05
+TREND_ABS_W = 25.0
+
+
+def _is_number(value: object) -> bool:
+    """True für echte Zahlen (bool zählt NICHT als Zahl)."""
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _snap(value: object, step: float) -> object:
+    """Rundet eine Zahl auf das nächste Vielfache von `step`; nicht-Zahlen bleiben unverändert."""
+    if not _is_number(value) or not step:
+        return value
+    return round(round(value / step) * step, 3)
+
+
+def _snap_by_unit(value: object, unit: str | None, q: dict) -> object:
+    """Rundet einheitengerecht: W/%/A auf grobe Stufen, sonst auf 2 Nachkommastellen."""
+    if not _is_number(value):
+        return value
+    if unit == "W":
+        return _snap(value, q.get("power_w", SNAP_POWER_W))
+    if unit == "%":
+        return _snap(value, q.get("soc_percent", SNAP_SOC_PERCENT))
+    if unit == "A":
+        return _snap(value, q.get("amp_a", SNAP_AMP_A))
+    return round(float(value), 2)
+
+
+def _trend(short: object, long: object) -> str | None:
+    """Verlauf aus kurz- (mean_1m) vs. langfristigem (mean_60m) Mittel; None, wenn eines fehlt."""
+    if not _is_number(short) or not _is_number(long):
+        return None
+    delta = float(short) - float(long)
+    threshold = max(TREND_ABS_W, TREND_REL * abs(float(long)))
+    if abs(delta) < threshold:
+        return "stabil"
+    return "steigend" if delta > 0 else "fallend"
+
+
+def _round_minute(ts: object) -> object:
+    """Rundet einen ISO-Zeitstempel auf Minutenauflösung (A3); nicht-ISO-Strings unverändert.
+
+    Reruns innerhalb derselben Minute ergeben so denselben Prompt. Der in der DB gespeicherte
+    Plan behält die exakten Zeiten (der Planner setzt sie getrennt von diesem Kontext).
+    """
+    if not isinstance(ts, str):
+        return ts
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return ts
+    return dt.replace(second=0, microsecond=0).isoformat()
+
+
+def _condense_state(state: dict, quantize: dict | None = None) -> list[dict]:
+    """Verdichtet den State-Snapshot je Rolle: quantisierte Werte + Mittel + Trend (A3/B2)."""
+    q = quantize or _DEFAULT_QUANTIZE
     out: list[dict] = []
     for role, info in state.items():
+        unit = info.get("unit")
         entry: dict[str, object] = {
             "role": role,
             "label": info.get("label"),
-            "unit": info.get("unit"),
+            "unit": unit,
         }
-        if "value" in info:  # Zustandsgrößen: nur Letztwert (SOC, Temperatur …)
-            entry["value"] = info.get("value")
-        else:  # Messgrößen: Letztwert + 1/15/60-min-Mittel (nur vorhandene)
-            entry["latest"] = info.get("latest")
+        if "value" in info:  # Zustandsgrößen: nur (gerundeter) Letztwert (SOC, Temperatur …)
+            entry["value"] = _snap_by_unit(info.get("value"), unit, q)
+        else:  # Messgrößen: Letztwert + 1/15/60-min-Mittel (nur vorhandene), plus Trend
+            entry["latest"] = _snap_by_unit(info.get("latest"), unit, q)
             for key in ("mean_1m", "mean_15m", "mean_60m"):
                 if info.get(key) is not None:
-                    entry[key] = info[key]
+                    entry[key] = _snap_by_unit(info[key], unit, q)
+            # Trend aus den ROHEN Mitteln ableiten (vor dem Snapping), sonst verschwindet er.
+            trend = _trend(info.get("mean_1m"), info.get("mean_60m"))
+            if trend is not None:
+                entry["trend"] = trend
         out.append(entry)
     return out
 
 
-def _condense_forecast(forecast: dict) -> dict:
-    """Reduziert die PV-Prognose auf die summierten Werte (keine Einzel-Ausrichtungen)."""
+def _condense_forecast(forecast: dict, quantize: dict | None = None) -> dict:
+    """Reduziert die PV-Prognose auf die summierten (gerundeten) Werte (keine Ausrichtungen)."""
     if not forecast:
         return {}
+    q = quantize or _DEFAULT_QUANTIZE
+    step = q.get("forecast_kwh", SNAP_FORECAST_KWH)
     return {
         "unit": forecast.get("unit"),
         "values": [
-            {"key": v.get("key"), "label": v.get("label"), "total": v.get("total")}
+            {"key": v.get("key"), "label": v.get("label"), "total": _snap(v.get("total"), step)}
             for v in forecast.get("values", [])
         ],
     }
@@ -363,19 +444,21 @@ def build_context(
     weather_detail: str = "compact",
     now: datetime | None = None,
     previous_plan: dict | None = None,
+    quantize: dict | None = None,
 ) -> dict:
     """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, Iron Rule 7).
 
     `now` (UTC) steuert das stündliche Wetter-Tagesfenster der One-Call-Quelle; ohne Angabe
     gilt die aktuelle Zeit. `previous_plan` (Ausgabe von `Planner.latest_plan()`) wird als
     verdichteter Anker `previous_plan` eingehängt (A1 – Stabilität über Aufrufe); fehlt er,
-    entfällt der Schlüssel.
+    entfällt der Schlüssel. `quantize` (Snap-Schritte je Größe) steuert die Eingangs-Rundung
+    (A3); ohne Angabe gelten die Modul-Defaults `_DEFAULT_QUANTIZE`.
     """
     context: dict[str, object] = {
-        "valid_from": valid_from,
-        "valid_until": valid_until,
-        "state": _condense_state(state),
-        "forecast": _condense_forecast(forecast),
+        "valid_from": _round_minute(valid_from),
+        "valid_until": _round_minute(valid_until),
+        "state": _condense_state(state, quantize),
+        "forecast": _condense_forecast(forecast, quantize),
         "weather": _condense_weather(
             weather or {}, horizon_h=horizon_h, detail=weather_detail, now=now
         ),
@@ -421,6 +504,8 @@ DEFAULT_PLANNING_PROMPT = (
     "unter dem Feldnamen aus `vorschlagsfeld` (nur diese Felder sind in `allowed_fields`).\n"
     "- Hat ein Gerät das Feld `funktion`, ist das eine vom User verfasste Beschreibung seiner "
     "Funktion/Besonderheiten; berücksichtige sie bei der Planung dieses Geräts.\n"
+    "- Bei Messgrößen im `state` zeigt `trend` (steigend/fallend/stabil) den Verlauf aus kurz- "
+    "gegen langfristiges Mittel; plane aus dem Verlauf, nicht aus einem einzelnen Momentwert.\n"
     "- Ist `previous_plan` vorhanden, ist das dein zuletzt veröffentlichter Plan (je Gerät die "
     "vorigen Vorschlagswerte). Bleibe ohne materiellen Grund nah daran: ändere Priorität oder "
     "Freigabe nur, wenn die aktuellen Daten es klar erfordern – nicht wegen kleiner "

@@ -494,3 +494,76 @@ def test_build_context_omits_previous_plan_when_absent():
 
 def test_default_prompt_mentions_previous_plan():
     assert "previous_plan" in DEFAULT_PLANNING_PROMPT
+
+
+# --- A3: Eingangs-Quantisierung / Snapping ---------------------------------------------------
+
+def test_state_values_are_quantized_to_grid():
+    # Zwei minimal verschiedene Means (812 vs. 819 W) → derselbe gerundete Prompt-Wert (800 W):
+    # so verändert Sensor-Rauschen den Prompt nicht (nutzt ai_temperature=0/ai_seed=42).
+    state = {
+        "pv_power": {"label": "PV", "unit": "W", "latest": 812.0, "mean_1m": 819.0,
+                     "mean_15m": None, "mean_60m": None},
+        "battery_soc": {"label": "SOC", "unit": "%", "value": 55.4},
+    }
+    ctx = build_context(state, {}, _constraints(), objectives_from_config({}),
+                        valid_from="A", valid_until="B")
+    pv = next(s for s in ctx["state"] if s["role"] == "pv_power")
+    assert pv["latest"] == 800.0
+    assert pv["mean_1m"] == 800.0
+    soc = next(s for s in ctx["state"] if s["role"] == "battery_soc")
+    assert soc["value"] == 55.0
+
+
+def test_forecast_total_is_quantized():
+    forecast = {"unit": "kWh", "values": [{"key": "current_hour", "label": "Akt", "total": 2.06}]}
+    ctx = build_context({}, forecast, _constraints(), objectives_from_config({}),
+                        valid_from="A", valid_until="B")
+    assert ctx["forecast"]["values"][0]["total"] == 2.1
+
+
+def test_context_timestamps_rounded_to_minute():
+    ctx = build_context(
+        {}, {}, _constraints(), objectives_from_config({}),
+        valid_from="2026-07-11T09:45:37.123456+00:00",
+        valid_until="2026-07-11T10:45:37+00:00",
+    )
+    assert ctx["valid_from"] == "2026-07-11T09:45:00+00:00"
+    assert ctx["valid_until"] == "2026-07-11T10:45:00+00:00"
+
+
+def test_quantize_override_changes_grid():
+    state = {"pv_power": {"label": "PV", "unit": "W", "latest": 1234.0,
+                          "mean_15m": None, "mean_60m": None}}
+    ctx = build_context(state, {}, _constraints(), objectives_from_config({}),
+                        valid_from="A", valid_until="B", quantize={"power_w": 100})
+    pv = next(s for s in ctx["state"] if s["role"] == "pv_power")
+    assert pv["latest"] == 1200.0  # 100-W-Raster statt 50
+
+
+# --- B2: Trend-Features ----------------------------------------------------------------------
+
+def test_trend_rising_falling_stable():
+    state = {
+        "pv_power": {"label": "PV", "unit": "W", "latest": 1000.0, "mean_1m": 1000.0,
+                     "mean_60m": 500.0},
+        "house_load": {"label": "Last", "unit": "W", "latest": 300.0, "mean_1m": 300.0,
+                       "mean_60m": 900.0},
+        "grid_power": {"label": "Netz", "unit": "W", "latest": 100.0, "mean_1m": 100.0,
+                       "mean_60m": 110.0},
+    }
+    ctx = build_context(state, {}, _constraints(), objectives_from_config({}),
+                        valid_from="A", valid_until="B")
+    by = {s["role"]: s for s in ctx["state"]}
+    assert by["pv_power"]["trend"] == "steigend"
+    assert by["house_load"]["trend"] == "fallend"
+    assert by["grid_power"]["trend"] == "stabil"  # |−10| < max(25, 5 % von 110)
+
+
+def test_trend_omitted_without_both_means():
+    state = {"pv_power": {"label": "PV", "unit": "W", "latest": 1000.0, "mean_1m": 1000.0,
+                          "mean_60m": None}}
+    ctx = build_context(state, {}, _constraints(), objectives_from_config({}),
+                        valid_from="A", valid_until="B")
+    pv = next(s for s in ctx["state"] if s["role"] == "pv_power")
+    assert "trend" not in pv

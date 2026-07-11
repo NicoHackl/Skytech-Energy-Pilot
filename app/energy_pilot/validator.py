@@ -8,17 +8,24 @@ angebunden wird. Implementiert sind die jetzt schon möglichen Pipeline-Stufen:
 2. **Harte Grenzen** – jeder Geräte-Vorschlag gegen `DeviceConstraint` (Schreib-
    vertrag, Freigabe, Leistungs-/Temperaturgrenzen) klemmen oder ablehnen.
 3. **Zeitlogik** – `valid_from < valid_until`, nicht abgelaufen.
+6. **Mindestkonfidenz** (A4) – `confidence < min_confidence` lehnt den Plan ab
+   (nicht veröffentlichen), behält aber den normalisierten Plan für UI/DB.
 
-TODO(M2-Folge): Stufe 4 Datenaktualität, Stufe 5 Delta-Limit (braucht Vorplan),
-Stufe 6 Mindestkonfidenz (braucht KI-Konfidenz; `min_confidence_percent` liegt
-bereits in der Addon-Config). Bewusst noch nicht verdrahtet (Eingaben fehlen).
+Zusätzlich stellt dieses Modul die **deterministische Anti-Flatter-Schicht**
+(A2 / Stufe 5) als reine Funktion `smooth_plan()` bereit: Delta-Limit gegen den
+Vorplan + Freigabe-Hysterese + Mindesthaltezeit. Sie ist DB-frei; der Planner
+lädt/speichert den Pro-Gerät-Zustand und ruft sie nach `validate()` auf gültigen
+Plänen auf. So bleibt der Validator testbar und die Persistenz getrennt.
+
+TODO(M2-Folge): Stufe 4 Datenaktualität (braucht Zeitstempel-/Qualitäts-Mitführung
+im Collector). Bewusst noch nicht verdrahtet (Eingaben fehlen).
 """
 
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from energy_pilot.constraints import DeviceConstraint
 from energy_pilot.plan_schema import schema_errors, suggestion_keys
@@ -54,6 +61,11 @@ def _parse_dt(value: object) -> datetime | None:
     except ValueError:
         return None
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+
+def _is_num(value: object) -> bool:
+    """True für echte Zahlen (bool zählt NICHT als Zahl)."""
+    return isinstance(value, int | float) and not isinstance(value, bool)
 
 
 def _clamp(value: float, lo: float | None, hi: float | None) -> tuple[float, bool]:
@@ -254,11 +266,14 @@ def validate(
     constraints: list[DeviceConstraint],
     *,
     now: datetime | None = None,
+    min_confidence: int | None = None,
 ) -> ValidationResult:
-    """Validiert einen Kandidatenplan gegen Schema + harte Grenzen (Stufen 1–3).
+    """Validiert einen Kandidatenplan gegen Schema + harte Grenzen (Stufen 1–3, 6).
 
     Liefert bei Strukturfehlern `ok=False` ohne Normalplan; sonst einen normalisierten
     (geklemmten) Plan plus Liste der Klemmungen und etwaiger Ablehnungsgründe.
+    `min_confidence` (Prozent) aktiviert Stufe 6: liegt die KI-Konfidenz darunter, wird der
+    Plan abgelehnt (aber normalisiert zurückgegeben). Fehlt die Konfidenz, wird nicht abgelehnt.
     """
     now = now or datetime.now(UTC)
 
@@ -296,6 +311,176 @@ def validate(
     # Stufe 2b: Prioritäten geräteübergreifend auf die strikte 10er-Rangfolge bringen.
     _normalize_priorities(normalized["devices"], by_name, clamped)
 
+    # Stufe 6 (A4): Mindestkonfidenz. Unsichere Pläne ablehnen (nicht veröffentlichen), den
+    # normalisierten Plan aber behalten. Fehlende Konfidenz lehnt NICHT ab (Iron Rule 8).
+    if min_confidence is not None:
+        confidence = plan_dict.get("confidence")
+        if _is_num(confidence) and confidence < min_confidence:
+            errors.append(
+                f"Mindestkonfidenz: {int(confidence)}% < {int(min_confidence)}% erforderlich"
+            )
+
     return ValidationResult(
         ok=not errors, errors=errors, clamped=clamped, normalized_plan=normalized
     )
+
+
+# --- Stufe 5 (A2): deterministische Anti-Flatter-Schicht -------------------------------------
+# Rein deterministisch und DB-frei. Der Planner lädt den Pro-Gerät-Zustand aus der DB, ruft
+# smooth_plan() NUR auf gültigen (validierten) Plänen auf, hängt die Notizen an result.clamped
+# und speichert den zurückgegebenen Zustand wieder in die DB. So bleibt der Validator testbar.
+
+
+@dataclass
+class StabilityLimits:
+    """Konfigurierbare Grenzen der Anti-Flatter-Schicht (Defaults = D-021)."""
+
+    power_percent: float = 20.0  # Delta-Limit geschützte Mindestleistung je Lauf
+    battery_percent: float = 10.0  # engerer Satz für die Batterie
+    hysteresis_runs: int = 2  # Freigabe-Wechsel erst nach N konsistenten Läufen
+    min_hold_minutes: float = 15.0  # keine erneute Freigabe-Änderung in diesem Fenster
+
+
+@dataclass
+class SmoothResult:
+    """Ergebnis der Glättung: angepasste Geräte, neuer Pro-Gerät-Zustand, Notizen."""
+
+    devices: list[dict]
+    state: dict[str, dict]
+    notes: list[str] = field(default_factory=list)
+
+
+def _within_hold(last_change_ts: object, now: datetime, minutes: float) -> bool:
+    """True, wenn die letzte akzeptierte Änderung weniger als `minutes` zurückliegt."""
+    if minutes <= 0:
+        return False
+    changed = _parse_dt(last_change_ts)
+    if changed is None:
+        return False
+    return (now - changed) < timedelta(minutes=minutes)
+
+
+def _prio_of(entry: dict, state: dict) -> int | None:
+    """Kanonische Prio des Eintrags (int) für die Zustandsfortschreibung; sonst der letzte Wert."""
+    value = entry.get(_PRIO_KEY)
+    if isinstance(value, bool):
+        value = None
+    elif isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return value if isinstance(value, int) else state.get("last_prio")
+
+
+def _delta_clamp_protected(
+    entry: dict, constraint: DeviceConstraint, prev: dict, limits: StabilityLimits,
+    notes: list[str],
+) -> None:
+    """Begrenzt die Änderung der geschützten Mindestleistung ggü. dem Vorplan (Delta-Limit)."""
+    name = constraint.name
+    pct = limits.battery_percent if constraint.is_battery else limits.power_percent
+    for key in _PROTECTED_MIN_KEYS:
+        new_val = entry.get(key)
+        prev_val = prev.get(key)
+        if not _is_num(new_val) or not _is_num(prev_val) or prev_val == 0:
+            continue
+        span = abs(float(prev_val)) * pct / 100.0
+        clamped_val, was_clamped = _clamp(float(new_val), prev_val - span, prev_val + span)
+        if was_clamped:
+            clamped_val = round(clamped_val, 3)
+            notes.append(f"{name}.{key}: {new_val} -> {clamped_val} (Delta-Limit ±{pct:g}%)")
+            entry[key] = clamped_val
+
+
+def _apply_freigabe_hysteresis(
+    entry: dict, constraint: DeviceConstraint, state: dict, limits: StabilityLimits,
+    now: datetime, notes: list[str],
+) -> dict:
+    """Hysterese + Mindesthaltezeit auf `freigabe_vorschlag`; liefert den neuen Gerätezustand.
+
+    Ein Freigabe-Wechsel wird erst nach `hysteresis_runs` konsistenten Läufen UND außerhalb der
+    Mindesthaltezeit übernommen; sonst wird die Freigabe auf den zuletzt veröffentlichten Wert
+    zurückgesetzt. Ausnahme (Sicherheit vor Stabilität): eine technisch gesperrte Last wird nie
+    auf `true` gehalten – der Wechsel auf `false` greift sofort.
+    """
+    new_state: dict = {
+        "last_freigabe": state.get("last_freigabe"),
+        "last_prio": _prio_of(entry, state),
+        "pending_freigabe": None,
+        "pending_count": 0,
+        "last_change_ts": state.get("last_change_ts"),
+    }
+    new_frei = entry.get("freigabe_vorschlag")
+    if not isinstance(new_frei, bool):  # kein Freigabe-Vertrag (z.B. Batterie) → nichts zu glätten
+        return new_state
+
+    last = state.get("last_freigabe")
+    last_bool = bool(last) if last is not None else None
+    name = constraint.name
+
+    # Erstbeobachtung oder unveränderte Freigabe → übernehmen, Kandidat zurücksetzen.
+    if last_bool is None or new_frei == last_bool:
+        new_state["last_freigabe"] = int(new_frei)
+        return new_state
+
+    # Kandidat-Flip. Sicherheit: technisch gesperrt darf nie auf true gehalten werden → sofort.
+    if last_bool is True and constraint.freigabe is False:
+        entry["freigabe_vorschlag"] = new_frei
+        new_state["last_freigabe"] = int(new_frei)
+        new_state["last_change_ts"] = now.isoformat()
+        notes.append(
+            f"{name}.freigabe_vorschlag: {last_bool} -> {new_frei} "
+            "(Sicherheit: technische Sperre, sofort)"
+        )
+        return new_state
+
+    pending = state.get("pending_freigabe")
+    pending_bool = bool(pending) if pending is not None else None
+    count = (int(state.get("pending_count") or 0) + 1) if pending_bool == new_frei else 1
+    within_hold = _within_hold(state.get("last_change_ts"), now, limits.min_hold_minutes)
+
+    if count >= limits.hysteresis_runs and not within_hold:
+        entry["freigabe_vorschlag"] = new_frei
+        new_state["last_freigabe"] = int(new_frei)
+        new_state["last_change_ts"] = now.isoformat()
+        notes.append(
+            f"{name}.freigabe_vorschlag: {last_bool} -> {new_frei} "
+            f"(Hysterese bestätigt nach {count} Läufen)"
+        )
+    else:
+        entry["freigabe_vorschlag"] = last_bool  # Wechsel halten
+        reason = "Mindesthaltezeit" if within_hold else f"Lauf {count}/{limits.hysteresis_runs}"
+        notes.append(f"{name}.freigabe_vorschlag: Wechsel gehalten ({reason})")
+        new_state["last_freigabe"] = int(last_bool)
+        new_state["pending_freigabe"] = int(new_frei)
+        new_state["pending_count"] = count
+    return new_state
+
+
+def smooth_plan(
+    devices: list[dict],
+    previous_by_name: dict[str, dict],
+    constraints_by_name: dict[str, DeviceConstraint],
+    state: dict[str, dict],
+    *,
+    limits: StabilityLimits,
+    now: datetime | None = None,
+) -> SmoothResult:
+    """Glättet einen validierten Plan gegen Vorplan + Zustand (A2, in-place auf `devices`).
+
+    `previous_by_name` = Geräteeinträge des zuletzt veröffentlichten Plans (Delta-Limit-Basis);
+    `state` = persistierter Pro-Gerät-Zustand (Hysterese-Zähler, letzte Änderung). Gibt die
+    angepassten Geräte, den neuen Zustand (vom Planner zu persistieren) und die Notizen zurück.
+    """
+    now = now or datetime.now(UTC)
+    notes: list[str] = []
+    new_state: dict[str, dict] = {}
+    for entry in devices:
+        constraint = constraints_by_name.get(entry.get("name"))
+        if constraint is None:
+            continue
+        prev = previous_by_name.get(constraint.name) or {}
+        st = state.get(constraint.name) or {}
+        _delta_clamp_protected(entry, constraint, prev, limits, notes)
+        new_state[constraint.name] = _apply_freigabe_hysteresis(
+            entry, constraint, st, limits, now, notes
+        )
+    return SmoothResult(devices=devices, state=new_state, notes=notes)

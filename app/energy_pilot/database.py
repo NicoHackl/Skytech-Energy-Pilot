@@ -134,6 +134,22 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE device_extras ADD COLUMN write_original INTEGER NOT NULL DEFAULT 0;
         """,
     ),
+    (
+        9,
+        # Pro-Gerät-Zustand der Anti-Flatter-Schicht (A2 / Validator Stufe 5): letzte
+        # veröffentlichte Freigabe/Prio, der in der Hysterese laufende Kandidat samt Zähler
+        # und der Zeitstempel der letzten akzeptierten Freigabe-Änderung (Mindesthaltezeit).
+        """
+        CREATE TABLE IF NOT EXISTS device_plan_state (
+            device_name TEXT PRIMARY KEY,
+            last_freigabe INTEGER,
+            last_prio INTEGER,
+            pending_freigabe INTEGER,
+            pending_count INTEGER DEFAULT 0,
+            last_change_ts TEXT
+        );
+        """,
+    ),
 ]
 
 
