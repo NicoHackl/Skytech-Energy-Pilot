@@ -321,6 +321,35 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
     return entry
 
 
+# Aus dem Vorplan als Anker relevant (A1): Gerätename + gesetzte Vorschlagsfelder. Diese Keys
+# überträgt `plan_to_dict` bereits flach je Gerät (feste Felder + `extra_<obj>_vorschlag`).
+_PREV_SKIP_KEYS = frozenset({"name"})
+
+
+def _condense_previous_plan(previous: dict | None) -> dict:
+    """Verdichtet den zuletzt gespeicherten Plan als Anker für den nächsten Lauf (A1).
+
+    Übergibt der KI nur die Gerät-Vorschlagswerte (Name + gesetzte Vorschlagsfelder) und die
+    frühere Konfidenz — Zeitstempel, Reasoning und Warnungen bleiben draußen (Datenminimum,
+    Iron Rule 7). So kann die KI ohne materiellen Grund nah am Vorplan bleiben und dämpft
+    Lauf-zu-Lauf-Sprünge. Leer, wenn es keinen (Geräte-)Vorplan gibt.
+    """
+    if not previous:
+        return {}
+    plan = previous.get("plan") or {}
+    devices = [
+        {k: v for k, v in d.items() if k in _PREV_SKIP_KEYS or k.endswith("_vorschlag")}
+        for d in plan.get("devices") or []
+        if isinstance(d, dict) and d.get("name")
+    ]
+    if not devices:
+        return {}
+    out: dict[str, object] = {"devices": devices}
+    if plan.get("confidence") is not None:
+        out["confidence"] = plan.get("confidence")
+    return out
+
+
 def build_context(
     state: dict,
     forecast: dict,
@@ -333,13 +362,16 @@ def build_context(
     horizon_h: int = 24,
     weather_detail: str = "compact",
     now: datetime | None = None,
+    previous_plan: dict | None = None,
 ) -> dict:
     """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, Iron Rule 7).
 
     `now` (UTC) steuert das stündliche Wetter-Tagesfenster der One-Call-Quelle; ohne Angabe
-    gilt die aktuelle Zeit.
+    gilt die aktuelle Zeit. `previous_plan` (Ausgabe von `Planner.latest_plan()`) wird als
+    verdichteter Anker `previous_plan` eingehängt (A1 – Stabilität über Aufrufe); fehlt er,
+    entfällt der Schlüssel.
     """
-    return {
+    context: dict[str, object] = {
         "valid_from": valid_from,
         "valid_until": valid_until,
         "state": _condense_state(state),
@@ -352,6 +384,10 @@ def build_context(
             {"key": o.key, "label": o.label, "weight": o.weight} for o in objectives
         ],
     }
+    prev = _condense_previous_plan(previous_plan)
+    if prev:
+        context["previous_plan"] = prev
+    return context
 
 
 # Standard-Instruktion für die Planung. Über die EP-Oberfläche editierbar (in der
@@ -384,7 +420,11 @@ DEFAULT_PLANNING_PROMPT = (
     "dessen Bedeutung. Hat ein Zusatzwert `suggest=true`, liefere deinen Vorschlag exakt "
     "unter dem Feldnamen aus `vorschlagsfeld` (nur diese Felder sind in `allowed_fields`).\n"
     "- Hat ein Gerät das Feld `funktion`, ist das eine vom User verfasste Beschreibung seiner "
-    "Funktion/Besonderheiten; berücksichtige sie bei der Planung dieses Geräts.\n\n"
+    "Funktion/Besonderheiten; berücksichtige sie bei der Planung dieses Geräts.\n"
+    "- Ist `previous_plan` vorhanden, ist das dein zuletzt veröffentlichter Plan (je Gerät die "
+    "vorigen Vorschlagswerte). Bleibe ohne materiellen Grund nah daran: ändere Priorität oder "
+    "Freigabe nur, wenn die aktuellen Daten es klar erfordern – nicht wegen kleiner "
+    "Schwankungen. Das hält den Plan über die Läufe hinweg stabil.\n\n"
     "Gib zusätzlich `confidence` (0–100), eine kurze deutsche `reasoning`-Begründung "
     "und optionale `warnings` aus. Antworte ausschließlich als JSON gemäß dem "
     "vorgegebenen Schema."

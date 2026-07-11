@@ -6,6 +6,19 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [0.0.50] - 2026-07-11
+
+### Hinzugefügt
+- **A1 – Vorplan als Anker in die Planung (Stabilität über Aufrufe).** `Planner.run()`
+  lädt vor dem KI-Aufruf den zuletzt gespeicherten Plan (`latest_plan()`) und reicht ihn
+  verdichtet als `previous_plan` in den KI-Kontext (`plan_context.build_context()` neuer
+  Parameter `previous_plan`). Übergeben werden nur Gerät-Vorschlagswerte (Name + gesetzte
+  `*_vorschlag`-Felder) plus die frühere Konfidenz — kein Reasoning/Warnings/Zeitstempel
+  (Datenminimum, Iron Rule 7). Der Default-Planungs-Prompt weist die KI an, ohne
+  materiellen Grund nah am Vorplan zu bleiben und Prio/Freigabe nicht wegen kleiner
+  Schwankungen zu ändern. Erster Lauf (kein Vorplan) hängt keinen Anker an. Grundlage für
+  die spätere Anti-Flatter-Glättung (A2). Siehe `plan/longterm_plan_claude.md` Abschn. 3.
+
 ## [0.0.49] - 2026-07-10
 
 ### Geändert

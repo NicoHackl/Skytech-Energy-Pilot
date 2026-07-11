@@ -136,6 +136,12 @@ class Planner:
         window_min = int(self.config.planning_interval_min)
         valid_until = (now + timedelta(minutes=window_min)).isoformat()
 
+        # Vorplan als Anker laden (A1): stabilisiert Lauf-zu-Lauf, indem die KI ihn als
+        # `previous_plan` mitbekommt (verdichtet in build_context). Später zusätzlich Eingang
+        # der Anti-Flatter-Glättung (A2/Validator Stage 5). Vor dem KI-Aufruf geladen, damit
+        # der noch nicht gespeicherte neue Plan ihn nicht überschreibt.
+        previous_plan = self.latest_plan()
+
         weather_detail = weather_config_from_options(self.config.values).llm_detail
         context = build_context(
             state, forecast, constraints, objectives,
@@ -144,6 +150,7 @@ class Planner:
             horizon_h=int(self.config.forecast_horizon_h),
             weather_detail=weather_detail,
             now=now,
+            previous_plan=previous_plan,
         )
         run_id = uuid4().hex[:12]
 

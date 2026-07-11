@@ -236,6 +236,21 @@ async def test_run_no_repair_when_first_response_complete(tmp_path):
     assert db.execute("SELECT COUNT(*) AS n FROM ai_calls WHERE ok=1").fetchone()["n"] == 1
 
 
+async def test_run_passes_previous_plan_as_anchor(tmp_path):
+    # A1: erster Lauf ohne Anker; zweiter Lauf bekommt den gespeicherten Vorplan verdichtet
+    # als `previous_plan` in den KI-Kontext (Stabilität über Aufrufe).
+    planner, _ = _planner(tmp_path, _FakeProvider(_VALID_DATA))
+
+    first = await planner.run(now=NOW)
+    assert "previous_plan" not in first.context
+
+    second = await planner.run(now=NOW)
+    prev = second.context["previous_plan"]
+    heizstab = next(d for d in prev["devices"] if d["name"] == "heizstab")
+    assert heizstab["prio_vorschlag"] == 10
+    assert heizstab["freigabe_vorschlag"] is True
+
+
 async def test_run_includes_weather_in_context(tmp_path):
     planner, _ = _planner(
         tmp_path, _FakeProvider(_VALID_DATA),

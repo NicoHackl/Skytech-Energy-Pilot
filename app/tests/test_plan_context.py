@@ -433,3 +433,64 @@ def test_build_context_includes_device_funktion_only_when_set():
 
 def test_default_prompt_mentions_funktion():
     assert "funktion" in DEFAULT_PLANNING_PROMPT
+
+
+# --- A1: Vorplan als Anker in den KI-Kontext -------------------------------------------------
+
+def _prev_plan():
+    # Form wie Planner.latest_plan(): {ts, ok, plan, validation}.
+    return {
+        "ts": "2026-07-11T10:00:00+00:00",
+        "ok": True,
+        "plan": {
+            "plan_id": "abc123",
+            "valid_from": "2026-07-11T09:45:00+00:00",
+            "valid_until": "2026-07-11T10:45:00+00:00",
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
+            "confidence": 82,
+            "reasoning": "Langer Vorplan-Text, gehört nicht in den Kontext.",
+            "warnings": ["egal"],
+            "devices": [
+                {"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+                 "geschutzte_mindestleistung_w_vorschlag": 800.0},
+                {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+            ],
+        },
+        "validation": {"ok": True, "errors": [], "clamped": []},
+    }
+
+
+def test_build_context_includes_condensed_previous_plan():
+    ctx = build_context(
+        {}, {}, _constraints(), objectives_from_config({}),
+        valid_from="A", valid_until="B", previous_plan=_prev_plan(),
+    )
+    prev = ctx["previous_plan"]
+    # Nur Gerät-Vorschlagswerte + Konfidenz – kein Reasoning/Warnings/Zeitstempel (Datenminimum).
+    assert prev["confidence"] == 82
+    assert "reasoning" not in prev and "warnings" not in prev and "valid_from" not in prev
+    heizstab = next(d for d in prev["devices"] if d["name"] == "heizstab")
+    assert heizstab["prio_vorschlag"] == 10
+    assert heizstab["freigabe_vorschlag"] is True
+    assert heizstab["geschutzte_mindestleistung_w_vorschlag"] == 800.0
+
+
+def test_build_context_omits_previous_plan_when_absent():
+    # Kein Vorplan (erster Lauf) -> Schlüssel fehlt komplett, kein leeres Objekt.
+    ctx = build_context(
+        {}, {}, _constraints(), objectives_from_config({}),
+        valid_from="A", valid_until="B",
+    )
+    assert "previous_plan" not in ctx
+    # Auch ein Vorplan ohne Geräte hängt keinen Anker an.
+    empty = build_context(
+        {}, {}, _constraints(), objectives_from_config({}),
+        valid_from="A", valid_until="B",
+        previous_plan={"ok": True, "plan": {"devices": []}},
+    )
+    assert "previous_plan" not in empty
+
+
+def test_default_prompt_mentions_previous_plan():
+    assert "previous_plan" in DEFAULT_PLANNING_PROMPT
