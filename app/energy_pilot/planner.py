@@ -23,8 +23,11 @@ from energy_pilot.ai_provider import AIProvider
 from energy_pilot.config import AddonConfig
 from energy_pilot.constraints import build_constraints
 from energy_pilot.logging_setup import log
-from energy_pilot.objectives import objectives_from_config
+from energy_pilot.objectives import load_ziele, objectives_from_classification
 from energy_pilot.plan_context import (
+    build_classification_context,
+    build_classification_prompt,
+    build_classification_response_schema,
     build_context,
     build_prompt,
     build_repair_prompt,
@@ -38,7 +41,7 @@ from energy_pilot.plan_schema import (
     is_extra_field,
     plan_to_dict,
 )
-from energy_pilot.settings import PLANNING_PROMPT_KEY, get_setting
+from energy_pilot.settings import CLASSIFICATION_PROMPT_KEY, PLANNING_PROMPT_KEY, get_setting
 from energy_pilot.suggestion_publisher import publish_suggestions
 from energy_pilot.validator import (
     StabilityLimits,
@@ -135,7 +138,6 @@ class Planner:
         devices = getattr(dc, "devices", []) if dc is not None else []
         readings = getattr(dc, "last_values", {}) if dc is not None else {}
         constraints = build_constraints(devices, readings)
-        objectives = objectives_from_config(self.config.values)
 
         valid_from = now.isoformat()
         window_min = int(self.config.planning_interval_min)
@@ -149,16 +151,6 @@ class Planner:
         previous_valid = self.latest_plan(only_ok=True)
 
         weather_detail = weather_config_from_options(self.config.values).llm_detail
-        context = build_context(
-            state, forecast, constraints, objectives,
-            valid_from=valid_from, valid_until=valid_until,
-            weather=weather,
-            horizon_h=int(self.config.forecast_horizon_h),
-            weather_detail=weather_detail,
-            now=now,
-            previous_plan=previous_plan,
-            quantize=self._quantize_config(),
-        )
         run_id = uuid4().hex[:12]
 
         if self.provider is None:
@@ -171,9 +163,84 @@ class Planner:
                     "clamped": [],
                 },
                 ai_call={},
-                context=context,
+                context=None,
                 error="provider_not_configured",
             )
+
+        # Vorgelagerter Klassifizierungs-Aufruf (D-055): leitet aus den user-definierten Zielen
+        # (Ziele-Tab) je Lauf eine Gewichtung ab, bevor der eigentliche Plan-Aufruf läuft. Bekommt
+        # dieselbe Datenbasis wie der Plan-Aufruf (build_classification_context). Ohne
+        # konfigurierte Ziele entfällt der Aufruf ersatzlos (objectives bleibt leer). Scheitert der
+        # Aufruf, gilt der GESAMTE Planungslauf als gescheitert (kein stiller Fallback).
+        ziele = load_ziele(self.db)
+        objectives: list = []
+        class_tokens_in: int | None = None
+        class_tokens_out: int | None = None
+        if ziele:
+            classification_context = build_classification_context(
+                state, forecast, constraints, ziele,
+                valid_from=valid_from, valid_until=valid_until,
+                weather=weather,
+                horizon_h=int(self.config.forecast_horizon_h),
+                weather_detail=weather_detail,
+                now=now,
+                previous_plan=previous_plan,
+                quantize=self._quantize_config(),
+            )
+            classification_prompt = build_classification_prompt(
+                classification_context, get_setting(self.db, CLASSIFICATION_PROMPT_KEY)
+            )
+            classification_schema = build_classification_response_schema(ziele)
+            try:
+                class_response = await self.provider.generate(
+                    classification_prompt, classification_schema
+                )
+            except Exception as exc:  # kontrolliert: nie Crash (Iron Rule 8)
+                detail = _describe_exc(exc)
+                self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=detail)
+                self._log(
+                    "error", "Ziel-Klassifizierung fehlgeschlagen",
+                    context={"error": detail}, run_id=run_id,
+                    provider=self.provider.name, model=str(self.config.model),
+                )
+                return PlanRunResult(
+                    ok=False,
+                    plan=None,
+                    validation={
+                        "ok": False,
+                        "errors": [f"Klassifizierungs-Aufruf fehlgeschlagen: {detail}"],
+                        "clamped": [],
+                    },
+                    ai_call={
+                        "provider": self.provider.name,
+                        "model": str(self.config.model),
+                        "ok": False,
+                        "error": detail,
+                    },
+                    context=classification_context,
+                    error="classification_error",
+                )
+
+            self._record_ai_call(
+                ok=True, tokens_in=class_response.tokens_in, tokens_out=class_response.tokens_out,
+                error=None,
+            )
+            class_tokens_in = class_response.tokens_in
+            class_tokens_out = class_response.tokens_out
+            objectives = objectives_from_classification(
+                ziele, class_response.data.get("gewichtung") or {}
+            )
+
+        context = build_context(
+            state, forecast, constraints, objectives,
+            valid_from=valid_from, valid_until=valid_until,
+            weather=weather,
+            horizon_h=int(self.config.forecast_horizon_h),
+            weather_detail=weather_detail,
+            now=now,
+            previous_plan=previous_plan,
+            quantize=self._quantize_config(),
+        )
 
         # Editierbare Instruktion aus der EP-Oberfläche (sonst Default); Daten-Block hängt
         # build_prompt selbst an, das Antwort-Schema bleibt code-kontrolliert.
@@ -210,8 +277,8 @@ class Planner:
         self._record_ai_call(
             ok=True, tokens_in=response.tokens_in, tokens_out=response.tokens_out, error=None
         )
-        tokens_in = response.tokens_in
-        tokens_out = response.tokens_out
+        tokens_in = _sum_tokens(class_tokens_in, response.tokens_in)
+        tokens_out = _sum_tokens(class_tokens_out, response.tokens_out)
 
         plan_dict = self._assemble_plan(
             response.data, plan_id=run_id, valid_from=valid_from, valid_until=valid_until

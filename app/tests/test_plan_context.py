@@ -4,15 +4,23 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from energy_pilot.constraints import build_constraints
 from energy_pilot.devices import BINARY, CONTROLLABLE, Device, DeviceExtra
-from energy_pilot.objectives import objectives_from_config
+from energy_pilot.objectives import Objective, Ziel
 from energy_pilot.plan_context import (
+    DEFAULT_CLASSIFICATION_PROMPT,
     DEFAULT_PLANNING_PROMPT,
     _condense_weather,
+    build_classification_context,
+    build_classification_prompt,
+    build_classification_response_schema,
     build_context,
     build_prompt,
     build_repair_prompt,
     build_response_schema,
 )
+
+# Fixe Objective-Liste als Ersatz für das frühere `objectives_from_config({})` (D-055: Ziele
+# sind jetzt user-definiert + LLM-gewichtet, keine Config-Defaults mehr).
+_OBJECTIVES = [Objective("test_ziel", "Test-Ziel", 80)]
 
 
 def _weather_snapshot(n_slots=20):
@@ -154,7 +162,7 @@ def test_response_schema_select_uses_enum_pool():
 def test_build_repair_prompt_lists_missing_fields():
     # D-050: die Nachforderung hängt an den Basis-Prompt an und benennt exakt die Lücken.
     base = build_prompt(
-        build_context({}, {}, _constraints(), objectives_from_config({}),
+        build_context({}, {}, _constraints(), _OBJECTIVES,
                       valid_from="A", valid_until="B")
     )
     out = build_repair_prompt(base, {"heizstab": ["prio_vorschlag", "freigabe_vorschlag"]})
@@ -188,7 +196,7 @@ def test_build_context_is_data_minimum():
         "orientations": [{"label": "S", "values": {}}],
     }
     ctx = build_context(
-        state, forecast, _constraints(), objectives_from_config({}),
+        state, forecast, _constraints(), _OBJECTIVES,
         valid_from="A", valid_until="B",
     )
 
@@ -209,7 +217,7 @@ def test_build_context_is_data_minimum():
 
 def test_build_prompt_contains_rules_and_data():
     ctx = build_context(
-        {}, {}, _constraints(), objectives_from_config({}), valid_from="A", valid_until="B"
+        {}, {}, _constraints(), _OBJECTIVES, valid_from="A", valid_until="B"
     )
     prompt = build_prompt(ctx)
     assert isinstance(prompt, str)
@@ -223,7 +231,7 @@ def test_default_prompt_mentions_weather():
 
 def test_build_prompt_uses_custom_template_and_always_appends_data():
     ctx = build_context(
-        {}, {}, _constraints(), objectives_from_config({}), valid_from="A", valid_until="B"
+        {}, {}, _constraints(), _OBJECTIVES, valid_from="A", valid_until="B"
     )
     prompt = build_prompt(ctx, "MEIN EIGENER PROMPT")
     assert prompt.startswith("MEIN EIGENER PROMPT")
@@ -234,7 +242,7 @@ def test_build_prompt_uses_custom_template_and_always_appends_data():
 
 def test_build_prompt_blank_template_falls_back_to_default():
     ctx = build_context(
-        {}, {}, _constraints(), objectives_from_config({}), valid_from="A", valid_until="B"
+        {}, {}, _constraints(), _OBJECTIVES, valid_from="A", valid_until="B"
     )
     assert "Orchestrator" in build_prompt(ctx, "   ")
 
@@ -265,7 +273,7 @@ def test_condense_weather_empty_without_forecast():
 
 def test_build_context_includes_weather():
     ctx = build_context(
-        {}, {}, _constraints(), objectives_from_config({}),
+        {}, {}, _constraints(), _OBJECTIVES,
         valid_from="A", valid_until="B",
         weather=_weather_snapshot(4), horizon_h=24, weather_detail="full",
     )
@@ -398,7 +406,7 @@ def test_condense_weather_onecall_empty_without_any_active_model():
 
 def test_build_context_includes_onecall_weather():
     ctx = build_context(
-        {}, {}, _constraints(), objectives_from_config({}),
+        {}, {}, _constraints(), _OBJECTIVES,
         valid_from="A", valid_until="B",
         weather=_onecall_snapshot(), horizon_h=24, now=_OC_NOW,
     )
@@ -423,7 +431,7 @@ def test_build_context_includes_device_funktion_only_when_set():
         "heizluefter_1": {"technische_freigabe": {"value": True}, "leistung_w": {"value": 1500.0}},
     }
     ctx = build_context(
-        {}, {}, build_constraints(devices, readings), objectives_from_config({}),
+        {}, {}, build_constraints(devices, readings), _OBJECTIVES,
         valid_from="A", valid_until="B",
     )
     by_name = {d["name"]: d for d in ctx["devices"]}
@@ -463,7 +471,7 @@ def _prev_plan():
 
 def test_build_context_includes_condensed_previous_plan():
     ctx = build_context(
-        {}, {}, _constraints(), objectives_from_config({}),
+        {}, {}, _constraints(), _OBJECTIVES,
         valid_from="A", valid_until="B", previous_plan=_prev_plan(),
     )
     prev = ctx["previous_plan"]
@@ -479,13 +487,13 @@ def test_build_context_includes_condensed_previous_plan():
 def test_build_context_omits_previous_plan_when_absent():
     # Kein Vorplan (erster Lauf) -> Schlüssel fehlt komplett, kein leeres Objekt.
     ctx = build_context(
-        {}, {}, _constraints(), objectives_from_config({}),
+        {}, {}, _constraints(), _OBJECTIVES,
         valid_from="A", valid_until="B",
     )
     assert "previous_plan" not in ctx
     # Auch ein Vorplan ohne Geräte hängt keinen Anker an.
     empty = build_context(
-        {}, {}, _constraints(), objectives_from_config({}),
+        {}, {}, _constraints(), _OBJECTIVES,
         valid_from="A", valid_until="B",
         previous_plan={"ok": True, "plan": {"devices": []}},
     )
@@ -506,7 +514,7 @@ def test_state_values_are_quantized_to_grid():
                      "mean_15m": None, "mean_60m": None},
         "battery_soc": {"label": "SOC", "unit": "%", "value": 55.4},
     }
-    ctx = build_context(state, {}, _constraints(), objectives_from_config({}),
+    ctx = build_context(state, {}, _constraints(), _OBJECTIVES,
                         valid_from="A", valid_until="B")
     pv = next(s for s in ctx["state"] if s["role"] == "pv_power")
     assert pv["latest"] == 800.0
@@ -517,14 +525,14 @@ def test_state_values_are_quantized_to_grid():
 
 def test_forecast_total_is_quantized():
     forecast = {"unit": "kWh", "values": [{"key": "current_hour", "label": "Akt", "total": 2.06}]}
-    ctx = build_context({}, forecast, _constraints(), objectives_from_config({}),
+    ctx = build_context({}, forecast, _constraints(), _OBJECTIVES,
                         valid_from="A", valid_until="B")
     assert ctx["forecast"]["values"][0]["total"] == 2.1
 
 
 def test_context_timestamps_rounded_to_minute():
     ctx = build_context(
-        {}, {}, _constraints(), objectives_from_config({}),
+        {}, {}, _constraints(), _OBJECTIVES,
         valid_from="2026-07-11T09:45:37.123456+00:00",
         valid_until="2026-07-11T10:45:37+00:00",
     )
@@ -535,7 +543,7 @@ def test_context_timestamps_rounded_to_minute():
 def test_quantize_override_changes_grid():
     state = {"pv_power": {"label": "PV", "unit": "W", "latest": 1234.0,
                           "mean_15m": None, "mean_60m": None}}
-    ctx = build_context(state, {}, _constraints(), objectives_from_config({}),
+    ctx = build_context(state, {}, _constraints(), _OBJECTIVES,
                         valid_from="A", valid_until="B", quantize={"power_w": 100})
     pv = next(s for s in ctx["state"] if s["role"] == "pv_power")
     assert pv["latest"] == 1200.0  # 100-W-Raster statt 50
@@ -552,7 +560,7 @@ def test_trend_rising_falling_stable():
         "grid_power": {"label": "Netz", "unit": "W", "latest": 100.0, "mean_1m": 100.0,
                        "mean_60m": 110.0},
     }
-    ctx = build_context(state, {}, _constraints(), objectives_from_config({}),
+    ctx = build_context(state, {}, _constraints(), _OBJECTIVES,
                         valid_from="A", valid_until="B")
     by = {s["role"]: s for s in ctx["state"]}
     assert by["pv_power"]["trend"] == "steigend"
@@ -563,7 +571,54 @@ def test_trend_rising_falling_stable():
 def test_trend_omitted_without_both_means():
     state = {"pv_power": {"label": "PV", "unit": "W", "latest": 1000.0, "mean_1m": 1000.0,
                           "mean_60m": None}}
-    ctx = build_context(state, {}, _constraints(), objectives_from_config({}),
+    ctx = build_context(state, {}, _constraints(), _OBJECTIVES,
                         valid_from="A", valid_until="B")
     pv = next(s for s in ctx["state"] if s["role"] == "pv_power")
     assert "trend" not in pv
+
+
+# --- D-055: Klassifizierungs-Kontext/Prompt/Schema (vorgelagerter Ziel-Aufruf) -----------------
+
+def _ziele():
+    return [
+        Ziel(id=1, name="Warmwasserkomfort", beschreibung="Genug warmes Wasser", devices=("heizstab",)),
+        Ziel(id=2, name="Netzbezug minimieren", beschreibung="", devices=()),
+    ]
+
+
+def test_build_classification_context_replaces_objectives_with_ziele():
+    ctx = build_classification_context(
+        {}, {}, _constraints(), _ziele(), valid_from="A", valid_until="B"
+    )
+    assert "objectives" not in ctx
+    assert ctx["ziele"] == [
+        {"id": 1, "name": "Warmwasserkomfort", "beschreibung": "Genug warmes Wasser",
+         "geraete": ["heizstab"]},
+        {"id": 2, "name": "Netzbezug minimieren", "beschreibung": "", "geraete": []},
+    ]
+    # Gleiche Datenbasis wie build_context (Datenminimum, Iron Rule 7): state/forecast/weather/devices bleiben.
+    assert "state" in ctx and "forecast" in ctx and "weather" in ctx and "devices" in ctx
+
+
+def test_build_classification_prompt_uses_default_and_template():
+    ctx = build_classification_context(
+        {}, {}, _constraints(), _ziele(), valid_from="A", valid_until="B"
+    )
+    default_prompt = build_classification_prompt(ctx)
+    assert default_prompt.startswith(DEFAULT_CLASSIFICATION_PROMPT)
+    assert "Daten:" in default_prompt
+    custom = build_classification_prompt(ctx, "SONDER-INSTRUKTION")
+    assert custom.startswith("SONDER-INSTRUKTION")
+
+
+def test_build_classification_response_schema_requires_all_ziel_ids():
+    schema = build_classification_response_schema(_ziele())
+    gewichtung = schema["properties"]["gewichtung"]
+    assert set(gewichtung["required"]) == {"1", "2"}
+    assert gewichtung["properties"]["1"]["type"] == "INTEGER"
+    assert schema["required"] == ["gewichtung"]
+
+
+def test_build_classification_response_schema_empty_ziele():
+    schema = build_classification_response_schema([])
+    assert schema["properties"]["gewichtung"]["required"] == []

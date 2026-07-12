@@ -146,34 +146,6 @@ configuration:
           llm_timeline:
             name: KI-Timeline
             description: Welche Timeline (15min, 1h oder 1day) in den KI-Kontext fließt.
-  objective_weights:
-    name: Zielgewichte
-    description: Weiche Zielgewichte (0–100 %), gegeneinander abwägbar. Harte Grenzen sind davon unberührt.
-    fields:
-      versorgungssicherheit:
-        name: Versorgungssicherheit
-        description: Gewicht der Versorgungssicherheit.
-      eauto_ladeziel:
-        name: E-Auto-Ladeziel
-        description: Gewicht des E-Auto-Ladeziels.
-      warmwasserkomfort:
-        name: Warmwasserkomfort
-        description: Gewicht des Warmwasserkomforts.
-      netzbezug:
-        name: Netzbezug minimieren
-        description: Gewicht der Netzbezug-Minimierung.
-      stromkosten:
-        name: Stromkosten minimieren
-        description: Gewicht der Stromkosten-Minimierung.
-      eigenverbrauch:
-        name: Eigenverbrauch maximieren
-        description: Gewicht der Eigenverbrauch-Maximierung.
-      einspeisung:
-        name: Einspeisung reduzieren
-        description: Gewicht der Einspeise-Reduzierung.
-      batterieschonung:
-        name: Batterieschonung
-        description: Gewicht der Batterieschonung.
   sensoren:
     name: Sensor-Zuordnung
     description: Zuordnung der Messgrößen zu Home-Assistant-Entitäten.

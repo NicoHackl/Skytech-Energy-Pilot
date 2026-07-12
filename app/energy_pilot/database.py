@@ -150,6 +150,22 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        10,
+        # User-definierte Ziele (D-055): ersetzen die statischen `objective_weights` aus der
+        # Addon-Config. Ein vorgelagerter Klassifizierungs-Aufruf leitet daraus je Planungslauf
+        # die Gewichtung ab (siehe planner.py). `devices_json` = JSON-Array der Gerätenamen.
+        """
+        CREATE TABLE IF NOT EXISTS ziele (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            beschreibung TEXT NOT NULL DEFAULT '',
+            devices_json TEXT NOT NULL DEFAULT '[]',
+            sort_order INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        """,
+    ),
 ]
 
 

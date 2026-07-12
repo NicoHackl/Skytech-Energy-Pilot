@@ -12,10 +12,10 @@ def test_migrations_create_core_tables(tmp_path):
     expected = {
         "config", "audit", "errors", "ai_calls", "entity_map", "allowlist", "plans",
         "hems_feedback", "device_extras", "device_prompts", "device_plan_state",
-        "schema_migrations",
+        "ziele", "schema_migrations",
     }
     assert expected <= tables
-    assert current_version(conn) == 9
+    assert current_version(conn) == 10
     conn.close()
 
 
@@ -31,5 +31,5 @@ def test_migrations_are_idempotent(tmp_path):
 
 def test_in_memory_database_works():
     conn = init_db(":memory:")
-    assert current_version(conn) == 9
+    assert current_version(conn) == 10
     conn.close()

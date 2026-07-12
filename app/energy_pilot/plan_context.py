@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from energy_pilot.constraints import DeviceConstraint
 from energy_pilot.devices import BINARY
-from energy_pilot.objectives import Objective
+from energy_pilot.objectives import Objective, Ziel
 from energy_pilot.plan_schema import suggestion_keys
 from energy_pilot.weather import ONECALL_TIMELINES
 
@@ -473,6 +473,43 @@ def build_context(
     return context
 
 
+def build_classification_context(
+    state: dict,
+    forecast: dict,
+    constraints: list[DeviceConstraint],
+    ziele: list[Ziel],
+    *,
+    valid_from: str,
+    valid_until: str,
+    weather: dict | None = None,
+    horizon_h: int = 24,
+    weather_detail: str = "compact",
+    now: datetime | None = None,
+    previous_plan: dict | None = None,
+    quantize: dict | None = None,
+) -> dict:
+    """Kontext für den vorgelagerten Klassifizierungs-Aufruf (D-055).
+
+    Exakt dieselbe Datenbasis wie `build_context` (Datenminimum, Iron Rule 7) – nur der Key
+    `objectives` (Gewicht bereits bekannt) wird durch `ziele` ersetzt: die user-definierten
+    Zieldefinitionen (id/name/beschreibung/geraete) OHNE Gewicht. Die Klassifizierungs-KI
+    leitet daraus die Gewichtung ab (`objectives_from_classification`), die dann in den
+    eigentlichen Plan-Kontext (`build_context`) einfließt.
+    """
+    context = build_context(
+        state, forecast, constraints, [],
+        valid_from=valid_from, valid_until=valid_until,
+        weather=weather, horizon_h=horizon_h, weather_detail=weather_detail,
+        now=now, previous_plan=previous_plan, quantize=quantize,
+    )
+    del context["objectives"]
+    context["ziele"] = [
+        {"id": z.id, "name": z.name, "beschreibung": z.beschreibung, "geraete": list(z.devices)}
+        for z in ziele
+    ]
+    return context
+
+
 # Standard-Instruktion für die Planung. Über die EP-Oberfläche editierbar (in der
 # `config`-Tabelle persistiert); der `Daten:`-Block wird IMMER von `build_prompt`
 # angehängt, das Antwort-Schema bleibt code-kontrolliert und der Validator erzwingt die
@@ -525,6 +562,41 @@ def build_prompt(context: dict, template: str | None = None) -> str:
     Template immer angehängt, damit der Kontext nie versehentlich fehlt.
     """
     instruction = (template or "").strip() or DEFAULT_PLANNING_PROMPT
+    data = json.dumps(context, ensure_ascii=False, indent=2)
+    return f"{instruction}\n\nDaten:\n{data}\n"
+
+
+# Standard-Instruktion für die Klassifizierung (D-055). Läuft VOR dem Planungs-Aufruf, bekommt
+# dieselben Daten (`build_classification_context`) und leitet nur die Gewichtung der user-
+# definierten Ziele ab; über die EP-Oberfläche editierbar (in der `config`-Tabelle persistiert).
+DEFAULT_CLASSIFICATION_PROMPT = (
+    "Du bist der Ziel-Klassifizierer des Home-Assistant-Addons „Skytech Energy Pilot“. "
+    "Du erzeugst KEINEN Energieplan, sondern leitest aus den folgenden Daten eine Gewichtung "
+    "(0–100 %) für jedes vom User definierte Ziel ab – als Vorbereitung für den nachfolgenden "
+    "Planungs-Aufruf.\n\n"
+    "Regeln:\n"
+    "- `ziele` listet die vom User definierten Ziele: `id`, `name`, `beschreibung` und "
+    "`geraete` (die diesem Ziel zugeordneten Gerätenamen aus `devices`, kann leer sein für "
+    "geräteunabhängige/globale Ziele).\n"
+    "- Leite je Ziel-`id` ein Gewicht 0–100 ab, wie wichtig/dringend dieses Ziel JETZT ist – "
+    "auf Basis von `state` (aktuelle Werte, Trends), `forecast` (PV-Prognose), `weather`, den "
+    "harten Grenzen/Zusatzwerten der zugeordneten `geraete` und `previous_plan` (falls "
+    "vorhanden, für Stabilität über Läufe hinweg).\n"
+    "- Höheres Gewicht = wichtiger/dringender im aktuellen Kontext, NICHT eine feste Rangfolge.\n"
+    "- Antworte für JEDE Ziel-`id` aus `ziele` mit exakt einem Gewicht; erfinde keine Ziele.\n"
+    "- Gib zusätzlich eine kurze deutsche `reasoning`-Begründung aus. Antworte ausschließlich "
+    "als JSON gemäß dem vorgegebenen Schema."
+)
+
+
+def build_classification_prompt(context: dict, template: str | None = None) -> str:
+    """Baut den Klassifizierungs-Prompt: (editierbare) Instruktion + angehängter Datenblock.
+
+    Identischer Aufbau wie `build_prompt` (D-055): `template` ist die optional vom User
+    gepflegte Instruktion; fehlt sie, gilt `DEFAULT_CLASSIFICATION_PROMPT`. Der `Daten:`-Block
+    wird unabhängig vom Template immer angehängt.
+    """
+    instruction = (template or "").strip() or DEFAULT_CLASSIFICATION_PROMPT
     data = json.dumps(context, ensure_ascii=False, indent=2)
     return f"{instruction}\n\nDaten:\n{data}\n"
 
@@ -618,6 +690,31 @@ def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
         },
         "required": ["devices", "confidence", "reasoning"],
         "propertyOrdering": ["devices", "confidence", "reasoning", "warnings"],
+    }
+
+
+def build_classification_response_schema(ziele: list[Ziel]) -> dict:
+    """Gemini-Antwort-Schema der Klassifizierung: ein Gewicht je Ziel-`id`, ALLE Pflicht (D-055).
+
+    Gleiches Muster wie `build_response_schema` (Pflichtfeld je bekanntem Schlüssel,
+    `propertyOrdering` für stabile Ausgaben) – hier ein Property je Ziel statt je Gerät.
+    """
+    ids = [str(z.id) for z in ziele]
+    return {
+        "type": "OBJECT",
+        "properties": {
+            "gewichtung": {
+                "type": "OBJECT",
+                "properties": {
+                    i: {"type": "INTEGER", "description": "Gewicht 0–100 %."} for i in ids
+                },
+                "required": ids,
+                "propertyOrdering": ids,
+            },
+            "reasoning": {"type": "STRING"},
+        },
+        "required": ["gewichtung"],
+        "propertyOrdering": ["gewichtung", "reasoning"],
     }
 
 

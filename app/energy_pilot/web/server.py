@@ -31,11 +31,12 @@ from energy_pilot.device_prompts import load_device_prompts, set_device_prompt
 from energy_pilot.devices import DeviceExtra
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import RingBufferHandler, log
-from energy_pilot.objectives import objectives_from_config
-from energy_pilot.plan_context import DEFAULT_PLANNING_PROMPT
+from energy_pilot.objectives import delete_ziel, load_ziele, upsert_ziel
+from energy_pilot.plan_context import DEFAULT_CLASSIFICATION_PROMPT, DEFAULT_PLANNING_PROMPT
 from energy_pilot.plan_schema import PLAN_JSON_SCHEMA, SCHEMA_VERSION, suggestion_keys
 from energy_pilot.roles import MEASUREMENT_ROLES
 from energy_pilot.settings import (
+    CLASSIFICATION_PROMPT_KEY,
     PLANNING_PROMPT_KEY,
     delete_setting,
     get_setting,
@@ -113,10 +114,14 @@ def create_app(
             web.post("/api/hems/rediscover", hems_rediscover),
             web.get("/api/allowlist", allowlist_get),
             web.get("/api/constraints", constraints_get),
-            web.get("/api/objectives", objectives_get),
+            web.get("/api/ziele", ziele_get),
+            web.post("/api/ziele", ziele_post),
+            web.delete("/api/ziele", ziele_delete),
             web.get("/api/plan/schema", plan_schema_get),
             web.get("/api/prompt", prompt_get),
             web.post("/api/prompt", prompt_post),
+            web.get("/api/classification-prompt", classification_prompt_get),
+            web.post("/api/classification-prompt", classification_prompt_post),
             web.post("/api/plan/run", plan_run),
             web.post("/api/plan/publish", plan_publish),
             web.get("/api/plan", plan_get),
@@ -743,11 +748,90 @@ async def constraints_get(request: web.Request) -> web.Response:
     return web.json_response({"devices": payload})
 
 
-async def objectives_get(request: web.Request) -> web.Response:
-    """Liefert die aktiven weichen Zielgewichte (Defaults §7 + Addon-Config-Overrides)."""
-    config: AddonConfig = request.app["config"]
-    objectives = [asdict(obj) for obj in objectives_from_config(config.values)]
-    return web.json_response({"objectives": objectives})
+def _ziel_payload(ziel) -> dict:
+    return {
+        "id": ziel.id,
+        "name": ziel.name,
+        "beschreibung": ziel.beschreibung,
+        "devices": list(ziel.devices),
+    }
+
+
+async def ziele_get(request: web.Request) -> web.Response:
+    """Liefert die user-definierten Ziele (D-055, Ziele-Tab). Gewichtung wird je Planungslauf
+    vom vorgelagerten Klassifizierungs-Aufruf abgeleitet, nicht hier gepflegt."""
+    db = request.app.get("db")
+    ziele = [_ziel_payload(z) for z in load_ziele(db)]
+    return web.json_response({"ziele": ziele})
+
+
+async def ziele_post(request: web.Request) -> web.Response:
+    """Legt ein Ziel an oder aktualisiert es (D-055). Body: `{id?, name, beschreibung?, devices?}`.
+
+    `devices` sind die vom HEMS erkannten Gerätenamen, denen dieses Ziel zugeordnet ist (kann
+    leer sein für geräteunabhängige/globale Ziele). Kein Gewicht – das leitet der vorgelagerte
+    Klassifizierungs-Aufruf je Planungslauf ab.
+    """
+    db = request.app.get("db")
+    device_collector = request.app.get("device_collector")
+    if db is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+
+    raw_id = body.get("id")
+    ziel_id = int(raw_id) if isinstance(raw_id, (int, float)) and not isinstance(raw_id, bool) else None
+    name = str(body.get("name") or "").strip()
+    beschreibung = str(body.get("beschreibung") or "").strip()
+    devices_in = body.get("devices") or []
+    if not isinstance(devices_in, list):
+        return web.json_response({"ok": False, "reason": "devices muss eine Liste sein"}, status=400)
+    devices = [str(d).strip() for d in devices_in if str(d).strip()]
+
+    if not name:
+        return web.json_response({"ok": False, "reason": "name darf nicht leer sein"}, status=400)
+    known = {d.name for d in getattr(device_collector, "devices", [])}
+    unknown = [d for d in devices if d not in known]
+    if unknown:
+        return web.json_response(
+            {"ok": False, "reason": f"unbekannte Geräte: {', '.join(unknown)}"}, status=400
+        )
+
+    ziel = upsert_ziel(db, ziel_id=ziel_id, name=name, beschreibung=beschreibung, devices=devices)
+    _audit_ziel(db, "ziel_updated" if ziel_id else "ziel_created", ziel.id, name)
+    return web.json_response({"ok": True, "ziel": _ziel_payload(ziel)})
+
+
+async def ziele_delete(request: web.Request) -> web.Response:
+    """Entfernt ein Ziel (D-055). Body: `{id}`."""
+    db = request.app.get("db")
+    if db is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+    raw_id = body.get("id")
+    if not isinstance(raw_id, (int, float)) or isinstance(raw_id, bool):
+        return web.json_response({"ok": False, "reason": "id erforderlich"}, status=400)
+    ziel_id = int(raw_id)
+    delete_ziel(db, ziel_id)
+    _audit_ziel(db, "ziel_deleted", ziel_id, "")
+    return web.json_response({"ok": True})
+
+
+def _audit_ziel(db: sqlite3.Connection, action: str, ziel_id: int, name: str) -> None:
+    """Protokolliert eine Ziel-Änderung (Audit-Log); blockiert nie (Iron Rule 8)."""
+    try:
+        db.execute(
+            "INSERT INTO audit (actor, action, subject, detail_json) VALUES (?, ?, ?, ?)",
+            ("user", action, str(ziel_id), json.dumps({"name": name}, ensure_ascii=False)),
+        )
+        db.commit()
+    except sqlite3.Error:  # pragma: no cover - Audit darf den Vorgang nie stören
+        pass
 
 
 async def plan_schema_get(request: web.Request) -> web.Response:
@@ -793,6 +877,42 @@ async def prompt_post(request: web.Request) -> web.Response:
         delete_setting(db, PLANNING_PROMPT_KEY)
         action, is_custom = "prompt_reset", False
     _audit_prompt(db, action, len(prompt))
+    return web.json_response({"ok": True, "is_custom": is_custom})
+
+
+async def classification_prompt_get(request: web.Request) -> web.Response:
+    """Liefert die aktuell wirksame Klassifizierungs-Instruktion + den Standard (D-055).
+
+    Analog `prompt_get`, nur für den vorgelagerten Ziel-Klassifizierungs-Aufruf.
+    """
+    db = request.app.get("db")
+    custom = get_setting(db, CLASSIFICATION_PROMPT_KEY)
+    return web.json_response(
+        {
+            "prompt": custom or DEFAULT_CLASSIFICATION_PROMPT,
+            "is_custom": bool(custom),
+            "default": DEFAULT_CLASSIFICATION_PROMPT,
+        }
+    )
+
+
+async def classification_prompt_post(request: web.Request) -> web.Response:
+    """Speichert die editierte Klassifizierungs-Instruktion; leerer Text setzt zurück (D-055)."""
+    db = request.app.get("db")
+    if db is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+    prompt = str(body.get("prompt") or "").strip()
+    if prompt:
+        set_setting(db, CLASSIFICATION_PROMPT_KEY, prompt)
+        action, is_custom = "classification_prompt_updated", True
+    else:
+        delete_setting(db, CLASSIFICATION_PROMPT_KEY)
+        action, is_custom = "classification_prompt_reset", False
+    _audit_prompt(db, action, len(prompt), subject=CLASSIFICATION_PROMPT_KEY)
     return web.json_response({"ok": True, "is_custom": is_custom})
 
 

@@ -9,6 +9,16 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 ## [Unreleased]
 
 ### Geändert
+- **User-definierte Ziele statt statischer Zielgewichte (D-055).** Die feste Addon-Config
+  `objective_weights` (8 Ziele, Gewicht 0–100 %) ist entfernt. Im Tab "Grenzen und Ziele"
+  definiert der User jetzt eigene Ziele (Name, Beschreibung, zugeordnete Geräte) OHNE
+  Gewicht (`GET/POST/DELETE /api/ziele`, DB-Tabelle `ziele`). Ein vorgelagerter
+  Klassifizierungs-LLM-Aufruf bekommt dieselbe Datenbasis wie der Plan-Aufruf plus die
+  Zieldefinitionen und leitet daraus je Planungslauf die Gewichtung ab (eigener
+  editierbarer Klassifizierungs-Prompt im Plan-Tab, `GET/POST /api/classification-prompt`).
+  Scheitert die Klassifizierung oder der Plan-Aufruf, gilt der gesamte Lauf als
+  gescheitert. Migration ohne Seed-Daten – bestehende Installationen starten mit einer
+  leeren Ziele-Liste.
 - **Harte Freigabe-Sperre entfernt (D-054).** `technische_freigabe=false` beschreibt nur
   den AKTUELLEN Ist-Zustand eines Geräts, kein Verbot für den gesamten Gültigkeitszeitraum
   des Plans (24–48 h). EP darf `freigabe_vorschlag=true` jetzt auch dann vorschlagen, wenn

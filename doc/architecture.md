@@ -97,7 +97,7 @@ aber von keinem Code-Pfad genutzt. Details: [known-gaps-and-pitfalls.md](known-g
 | `device_extras.py` | Persistenz + Anwendung konfigurierbarer Zusatz-Entitäten |
 | `device_prompts.py` | Persistenz der Pro-Gerät-KI-Beschreibung (`funktion`) |
 | `constraints.py` | Leitet harte Gerätegrenzen aus `ems_*`-Werten ab |
-| `objectives.py` | Weiche Zielgewichte (`objective_weights`-Config) |
+| `objectives.py` | User-definierte Ziele (`ziele`-Tabelle, D-055) + Gewichtung aus der Klassifizierungs-Antwort |
 | `forecast.py` / `forecast_collector.py` | PV-Prognose-Modell + Sammlung/Summierung je Ausrichtung |
 | `weather.py` / `weather_client.py` / `weather_collector.py` / `onecall_client.py` / `onecall_budget.py` | OpenWeatherMap-Anbindung (zwei Quellen: `forecast3h`/`onecall`) |
 | `ai_provider.py` | Abstrakte Provider-Schnittstelle + `AsyncRateLimiter` (Wartedrossel) |

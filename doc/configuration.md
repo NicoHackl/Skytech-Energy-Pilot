@@ -67,13 +67,24 @@ harte Tagesobergrenze **aller** bezahlten One-Call-Aufrufe, UTC-Tag, überlebt
 Neustarts (in der DB persistiert). `enable_alerts`/`refresh_alerts` — Unwetterwarnungen,
 aktuell nur Anzeige, **nicht** in die Planung eingespeist.
 
-## Zielgewichte (`objective_weights`)
+## Ziele (D-055, kein Addon-Config-Abschnitt mehr)
 
-8 feste weiche Ziele, Gewicht 0–100 %: `versorgungssicherheit` (100),
-`eauto_ladeziel` (100), `warmwasserkomfort` (100), `netzbezug` (90),
-`stromkosten` (85), `eigenverbrauch` (80), `einspeisung` (70),
-`batterieschonung` (50). Harte Grenzen sind **nicht** hier, sondern werden aus den
-`ems_*`-Werten abgeleitet (`constraints.py`).
+Die früheren 8 festen `objective_weights` (statisches Gewicht 0–100 % in der
+Addon-Config) sind entfernt. Stattdessen definiert der User im Tab
+"Grenzen und Ziele" eigene Ziele (DB-Tabelle `ziele`,
+[objectives.py](../app/energy_pilot/objectives.py)): `id`, `name`,
+`beschreibung`, optionale Liste zugeordneter (vom HEMS erkannter) Geräte —
+**ohne** Gewicht. Ein vorgelagerter Klassifizierungs-LLM-Aufruf
+(`planner.py`, `plan_context.build_classification_context`) bekommt dieselben
+Daten wie der Plan-Aufruf plus die Zieldefinitionen und leitet daraus je
+Planungslauf die Gewichtung ab (0–100 % je Ziel); das Ergebnis fließt
+unverändert als `objectives` (key/label/weight) in den Plan-Kontext ein.
+Scheitert der Klassifizierungs- oder der Plan-Aufruf, gilt der gesamte
+Planungslauf als gescheitert (kein stiller Fallback). Ohne konfigurierte
+Ziele entfällt der Klassifizierungs-Aufruf ersatzlos. Der Klassifizierungs-
+Prompt ist im Plan-Tab editierbar ("Klassifizierungs-Prompt bearbeiten",
+analog zum Planungs-Prompt). Harte Grenzen sind **nicht** hier, sondern
+werden aus den `ems_*`-Werten abgeleitet (`constraints.py`).
 
 ## Sensor-Zuordnung (`sensoren`)
 

@@ -85,9 +85,6 @@ DEFAULTS: dict[str, object] = {
             "refresh_1day": 180,
         },
     },
-    # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus objectives.py.
-    # Siehe doc/configuration.md.
-    "objective_weights": {},
 }
 
 DEFAULT_OPTIONS_PATH = "/data/options.json"

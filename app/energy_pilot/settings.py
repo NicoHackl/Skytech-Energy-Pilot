@@ -12,6 +12,8 @@ import sqlite3
 
 # Schlüssel des in der EP-Oberfläche editierbaren Planungs-Prompts.
 PLANNING_PROMPT_KEY = "planning_prompt"
+# Schlüssel des editierbaren Klassifizierungs-Prompts (D-055, vorgelagerter Ziel-Aufruf).
+CLASSIFICATION_PROMPT_KEY = "classification_prompt"
 
 
 def get_setting(db: sqlite3.Connection | None, key: str) -> str | None:

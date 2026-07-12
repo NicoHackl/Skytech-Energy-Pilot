@@ -146,34 +146,6 @@ configuration:
           llm_timeline:
             name: AI timeline
             description: Which timeline (15min, 1h or 1day) feeds into the AI context.
-  objective_weights:
-    name: Objective weights
-    description: Soft objective weights (0-100 %), weighed against each other. Hard limits are unaffected.
-    fields:
-      versorgungssicherheit:
-        name: Supply security
-        description: Weight of supply security.
-      eauto_ladeziel:
-        name: EV charge target
-        description: Weight of the EV charge target.
-      warmwasserkomfort:
-        name: Hot-water comfort
-        description: Weight of hot-water comfort.
-      netzbezug:
-        name: Minimize grid import
-        description: Weight of grid-import minimization.
-      stromkosten:
-        name: Minimize energy cost
-        description: Weight of energy-cost minimization.
-      eigenverbrauch:
-        name: Maximize self-consumption
-        description: Weight of self-consumption maximization.
-      einspeisung:
-        name: Reduce feed-in
-        description: Weight of feed-in reduction.
-      batterieschonung:
-        name: Battery preservation
-        description: Weight of battery preservation.
   sensoren:
     name: Sensor mapping
     description: Mapping of the measured quantities to Home Assistant entities.

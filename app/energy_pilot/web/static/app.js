@@ -663,7 +663,6 @@ function OneCallAlerts({ alerts }) {
    ============================================================ */
 function GrenzenTab() {
   const [cons, reloadCons] = usePoll(() => api("api/constraints"), true);
-  const [obj] = usePoll(() => api("api/objectives"), false);
   return html`
     <div class="ha-card">
       <div class="card-title">Harte Grenzen je Gerät<div class="card-actions"><button onClick=${reloadCons}>Aktualisieren</button></div></div>
@@ -672,15 +671,111 @@ function GrenzenTab() {
       <${Constraints} data=${cons} />
     </div>
     <div class="ha-card">
-      <div class="card-title">Weiche Zielgewichte</div>
-      <p class="hint">Gewichte (0–100 %), in der Addon-Config unter <code>objective_weights</code> pflegbar (siehe doc/configuration.md).</p>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Ziel</th><th class="num">Gewicht</th></tr></thead>
-        <tbody>${((obj && obj.objectives) || []).map(
-          (o, i) => html`<tr key=${i}><td>${o.label}</td><td class="num">${o.weight} %</td></tr>`
-        )}</tbody>
-      </table></div>
+      <div class="card-title">Ziele</div>
+      <${ZieleEditor} />
     </div>`;
+}
+
+// Ziele-Editor (D-055): User definiert eigene Ziele (Name/Beschreibung/zugeordnete Geräte) OHNE
+// Gewicht. Die Gewichtung leitet ein vorgelagerter Klassifizierungs-LLM-Aufruf pro Planungslauf
+// selbst aus dem aktuellen Kontext ab (siehe "Klassifizierungs-Prompt bearbeiten" im Plan-Tab).
+function ZieleEditor() {
+  const [data, reload] = usePoll(() => api("api/ziele"), true);
+  const [devicesData] = usePoll(() => api("api/devices"), false);
+  const devices = (devicesData && devicesData.devices) || [];
+  const ziele = (data && data.ziele) || [];
+  const empty = { id: null, name: "", beschreibung: "", devices: [] };
+  const [form, setForm] = useState(empty);
+  const [msg, setMsg] = useState("");
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const toggleDevice = (name) =>
+    setForm((f) => ({
+      ...f,
+      devices: f.devices.includes(name) ? f.devices.filter((d) => d !== name) : [...f.devices, name],
+    }));
+  const startEdit = (z) =>
+    setForm({ id: z.id, name: z.name, beschreibung: z.beschreibung || "", devices: [...(z.devices || [])] });
+  const del = async (id) => {
+    if (!confirm("Ziel löschen?")) return;
+    await fetch("api/ziele", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    reload();
+  };
+  const save = async () => {
+    if (!form.name.trim()) {
+      setMsg(" ❌ Name erforderlich");
+      return;
+    }
+    setMsg(" … speichere …");
+    try {
+      const res = await fetch("api/ziele", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: form.id,
+          name: form.name,
+          beschreibung: form.beschreibung,
+          devices: form.devices,
+        }),
+      });
+      const d = await res.json();
+      if (d.ok) {
+        setMsg(" ✅ gespeichert");
+        setForm(empty);
+        reload();
+      } else {
+        setMsg(" ❌ " + (d.reason || res.status));
+      }
+    } catch (e) {
+      setMsg(" ❌ " + e);
+    }
+  };
+  return html`<${Fragment}>
+    <p class="hint">Eigene Ziele definieren (Name, Beschreibung, zugeordnete Geräte). Ein vorgelagerter
+      Klassifizierungs-Aufruf leitet daraus <strong>pro Planungslauf</strong> selbst eine Gewichtung ab
+      (kein manuelles Gewicht mehr) – Prompt dafür im Plan-Tab unter „Klassifizierungs-Prompt bearbeiten“.</p>
+    ${ziele.length
+      ? html`<div class="table-wrap"><table>
+          <thead><tr><th>Name</th><th>Beschreibung</th><th>Geräte</th><th></th></tr></thead>
+          <tbody>${ziele.map(
+            (z, i) => html`<tr key=${i}>
+              <td>${z.name}</td>
+              <td style="font-size:.8rem;color:#888;max-width:20rem;">${z.beschreibung || "–"}</td>
+              <td style="font-size:.8rem;">${(z.devices || []).length ? z.devices.join(", ") : "–"}</td>
+              <td style="white-space:nowrap;">
+                <button onClick=${() => startEdit(z)}>Bearbeiten</button>
+                <button onClick=${() => del(z.id)}>Löschen</button>
+              </td>
+            </tr>`
+          )}</tbody>
+        </table></div>`
+      : html`<p style="font-size:.8rem;color:#888;">Noch keine Ziele. Unten anlegen.</p>`}
+    <div class="ziel-form" style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem;margin:.4rem 0 .8rem;max-width:44rem;">
+      <input style="grid-column:1/3;" placeholder="Name, z. B. Warmwasserkomfort"
+        value=${form.name} onInput=${(e) => set({ name: e.target.value })} />
+      <textarea style="grid-column:1/3;min-height:3rem;"
+        placeholder="Beschreibung (optional): erklärt der KI, worum es bei diesem Ziel geht."
+        value=${form.beschreibung} onInput=${(e) => set({ beschreibung: e.target.value })}></textarea>
+      <div style="grid-column:1/3;font-size:.82rem;">
+        <div style="margin-bottom:.2rem;color:#888;">Zugeordnete Geräte (optional – für geräteunabhängige/globale Ziele leer lassen):</div>
+        ${devices.length
+          ? devices.map(
+              (d, i) => html`<label key=${i} style="display:inline-block;margin:0 .8rem .2rem 0;">
+                <input type="checkbox" checked=${form.devices.includes(d.name)} onChange=${() => toggleDevice(d.name)} /> ${d.label}
+              </label>`
+            )
+          : html`<span style="color:#888;">keine Geräte erkannt</span>`}
+      </div>
+      <div style="grid-column:1/3;">
+        <button onClick=${save}>Speichern</button>
+        ${form.id ? html`<button onClick=${() => setForm(empty)}>Abbrechen</button>` : ""}
+        <span style="font-size:.8rem;">${msg}</span>
+      </div>
+    </div>
+  </${Fragment}>`;
 }
 
 function Constraints({ data }) {
@@ -768,6 +863,51 @@ function PromptEditor() {
   </details>`;
 }
 
+// Klassifizierungs-Prompt (D-055): Instruktion für den vorgelagerten Ziel-Gewichtungs-Aufruf.
+// Gleicher Aufbau wie PromptEditor, eigener Endpunkt/Standard.
+function KlassifizierungsPromptEditor() {
+  const [prompt, setPrompt] = useState("");
+  const [def, setDef] = useState("");
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    (async () => {
+      const d = await api("api/classification-prompt");
+      setDef(d.default || "");
+      setPrompt(d.prompt || "");
+      setStatus(d.is_custom ? " (eigener Prompt)" : " (Standard)");
+    })();
+  }, []);
+  const save = async (text) => {
+    setStatus(" … speichere …");
+    try {
+      const res = await fetch("api/classification-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: text }),
+      });
+      const d = await res.json();
+      setStatus(
+        d.ok ? (d.is_custom ? " ✅ gespeichert (eigener Prompt)" : " ✅ auf Standard zurückgesetzt") : " ❌ " + (d.reason || res.status)
+      );
+    } catch (e) {
+      setStatus(" ❌ " + e);
+    }
+  };
+  return html`<details>
+    <summary>Klassifizierungs-Prompt bearbeiten</summary>
+    <p class="hint">Die Instruktion für den <strong>vorgelagerten</strong> Aufruf, der aus den im Tab „Grenzen und
+      Ziele“ definierten Zielen pro Planungslauf eine Gewichtung ableitet (bevor der eigentliche Plan erzeugt wird).
+      Bekommt dieselben Daten wie der Planungs-Prompt, zusätzlich die Zieldefinitionen. Änderungen wirken sofort
+      beim nächsten Plan.</p>
+    <textarea rows="14" value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
+    <div class="toolbar">
+      <button class="primary" onClick=${() => save(prompt)}>Speichern</button>
+      <button onClick=${() => { setPrompt(def); save(""); }}>Auf Standard zurücksetzen</button>
+      <span class="hint-inline">${status}</span>
+    </div>
+  </details>`;
+}
+
 function PlanTab() {
   const [plan, reloadPlan, setPlan] = usePoll(() => api("api/plan"), false);
   const [status, setStatus] = useState("");
@@ -823,6 +963,7 @@ function PlanTab() {
       Grenzen validiert und bei Gültigkeit als <code>sensor.ep_*_vorschlag</code> nach Home Assistant geschrieben
       (reine Anzeige zum manuellen Verdrahten) – aber <strong>nicht</strong> an HEMS übergeben.</p>
     <${PromptEditor} />
+    <${KlassifizierungsPromptEditor} />
     <${PlanResult} data=${plan} />
   </div>`;
 }

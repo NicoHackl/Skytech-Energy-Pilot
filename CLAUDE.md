@@ -49,7 +49,7 @@ Eigene Achse, getrennt von den Betriebsmodi (Beobachten→Vorschlagen→Shadow�
 - **HA-Helfer:** werden **nicht** automatisch angelegt. Ich liefere fertige `<domain>_ep.yaml` in [claude-ha-config-dateien/](claude-ha-config-dateien/) (Vorlage: [user-beispiele/](user-beispiele/)).
 - **Naming nach Domäne (D-029):** `ems_*` = User-/Geräte-Eingaben (EP liest), `ep_*` = EP-Vorschläge (EP schreibt). Beispiele: liest `ems_heizstab_technische_freigabe`, `ems_heizlüfter_1_leistung_w`; schreibt `sensor.ep_heizstab_prio_vorschlag`, `sensor.ep_heizlüfter_1_freigabe_vorschlag`. (Frühere `ziel_soc`-Beispiele überholt, D-030.)
 - **Prognose/Preis:** bestehende HA-Sensoren, Entitätsnamen in Addon-Config gepflegt.
-- **Zielgewichtung:** in Addon-Config pflegbar, initial aus den in [doc/configuration.md](doc/configuration.md) dokumentierten Defaultwerten.
+- **Ziele (D-055):** User definiert eigene Ziele (id/Name/Beschreibung/Geräte-Liste, KEIN Gewicht) im Tab "Grenzen und Ziele" (DB-Tabelle `ziele`, kein Addon-Config-Abschnitt mehr). Ein vorgelagerter Klassifizierungs-LLM-Aufruf (gleiche Datenbasis wie der Plan-Aufruf) leitet je Planungslauf die Gewichtung ab; eigener editierbarer Klassifizierungs-Prompt im Plan-Tab. Details: [doc/configuration.md](doc/configuration.md).
 - **Logging:** Auto-Export eines KI-lesbaren Bundles bei ERROR/CRITICAL.
 - **CI:** muss u.a. HEMS↔EP-Zusammenspiel testen; Start-Coverage 60 %.
 - **Leitprinzip Konfigurierbarkeit:** so gut wie **alles** in der Addon-Config einstellbar (Mindestkonfidenz 70 %, Delta-Limit ±20 %/±10 %, Provider/Modell, Intervalle, Gewichte, Sensor-Mappings …) — Defaults von mir, aber überschreibbar.

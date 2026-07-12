@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot (Dev)
-version: "0.0.53"
+version: "0.0.54"
 slug: skytech_energy_pilot_dev
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -91,17 +91,9 @@ options:
       daily_call_budget: 1000
       enable_alerts: true
       refresh_alerts: 30
-  # Weiche Zielgewichte (Prozent 0–100, D-011). Initialwerte aus info.md §7.
-  # Harte Grenzen sind nicht hier, sondern werden aus den ems_*-Werten abgeleitet (constraints.py).
-  objective_weights:
-    versorgungssicherheit: 100
-    eauto_ladeziel: 100
-    warmwasserkomfort: 100
-    netzbezug: 90
-    stromkosten: 85
-    eigenverbrauch: 80
-    einspeisung: 70
-    batterieschonung: 50
+  # Weiche Ziele (D-055): user-definiert im Tab "Grenzen und Ziele" (DB-Tabelle `ziele`),
+  # keine Addon-Config mehr. Gewichtung leitet ein vorgelagerter Klassifizierungs-LLM-Aufruf
+  # je Planungslauf ab. Harte Grenzen werden weiterhin aus den ems_*-Werten abgeleitet (constraints.py).
   # Sensor-Zuordnung als eigene aufklappbare Gruppe (entity_ = HA-Entität).
   # Warmwassertemperatur ist NICHT systemweit, sondern gerätespezifisch (Geräte-Tab).
   sensoren:
@@ -159,15 +151,6 @@ schema:
       daily_call_budget: int(1,100000)?
       enable_alerts: bool?
       refresh_alerts: int(1,1440)?
-  objective_weights:
-    versorgungssicherheit: int(0,100)?
-    eauto_ladeziel: int(0,100)?
-    warmwasserkomfort: int(0,100)?
-    netzbezug: int(0,100)?
-    stromkosten: int(0,100)?
-    eigenverbrauch: int(0,100)?
-    einspeisung: int(0,100)?
-    batterieschonung: int(0,100)?
   sensoren:
     entity_pv_power: str?
     entity_house_load: str?
