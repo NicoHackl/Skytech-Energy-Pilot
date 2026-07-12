@@ -10,11 +10,14 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ### Geändert
 - **Branch-Strategie: `claude/main` → `claude/stage` + 3 Release-Channels (D-053).**
-  Arbeits-Branch umbenannt. Neu: `stage/dev`/`stage/beta`/`stage/stable`, je eigenes
+  Arbeits-Branch umbenannt. Neu: `stage-dev`/`stage-beta`/`stage-stable`, je eigenes
   `config.yaml` (Slug-/Namens-Suffix), damit HA sie per Branch-URL als 3 separate
   Addon-Channels (Dev/Beta/Stable) anzeigt. Promotion zwischen den Branches nur
   manuell auf Zuruf, kein Automatismus. CI (`ci.yaml`) läuft ab sofort auf allen
-  4 Branches statt nur auf `claude/main`.
+  4 Branches statt nur auf `claude/main`. **Bindestrich statt Slash:** HA
+  Supervisor akzeptiert im `repo#branch`-Format keine Slashes im Branch-Namen
+  (führte zu „ungültige Repo-URL"), ursprünglich geplantes `stage/dev` etc.
+  daher auf `stage-dev`/`stage-beta`/`stage-stable` korrigiert.
 
 ## [0.0.51] - 2026-07-11
 

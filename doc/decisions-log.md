@@ -62,7 +62,7 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 | D-050 | Stabile/vollständige KI-Vorschlagsfelder: 4-schichtige Determinismus-/Vollständigkeits-Absicherung (siehe [planning-engine.md](planning-engine.md)) |
 | D-051 | Geräte-Tab als Einzelgerät-Dropdown + Pro-Gerät-KI-Beschreibungsfeld (`funktion`) |
 | D-052 | Zusatz-Entitäten: optionales "In Original schreiben" über HA-Service-Calls, nur für echte Helfer-Domänen |
-| D-053 | Arbeits-Branch `claude/main` → `claude/stage` umbenannt; 3 Release-Channel-Branches `stage/dev`/`stage/beta`/`stage/stable` (je eigenes `config.yaml`, in HA per Branch-URL als 3 separate Addons einbindbar), Promotion nur manuell auf Zuruf, CI auf allen 4 Branches |
+| D-053 | Arbeits-Branch `claude/main` → `claude/stage` umbenannt; 3 Release-Channel-Branches `stage-dev`/`stage-beta`/`stage-stable` (je eigenes `config.yaml`, in HA per Branch-URL `repo#branch` als 3 separate Addons einbindbar), Promotion nur manuell auf Zuruf, CI auf allen 4 Branches. **Kein `/` im Branch-Namen** — HA Supervisor validiert `repo#branch` per Regex ohne Slash-Unterstützung im Branch-Teil, ursprünglich `stage/dev` etc. schlug mit „ungültige Repo-URL" fehl, daher Bindestrich-Namen |
 
 ## Noch offen (Stand letzter alter Doku-Fassung)
 

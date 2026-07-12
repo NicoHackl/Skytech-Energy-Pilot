@@ -17,12 +17,12 @@ Diese Datei ist die praktische Checkliste. Die verbindliche Quelle der Regeln is
 - Committen/pushen **nur** in Branch `claude/stage` — auch im separaten
   SkytechHEMS-Repo (D-022, umbenannt von `claude/main`, D-053). Nach **jeder**
   relevanten Änderung committen/pushen.
-- Release-Channels (D-053): `stage/dev`/`stage/beta`/`stage/stable`, je eigenes
+- Release-Channels (D-053): `stage-dev`/`stage-beta`/`stage-stable`, je eigenes
   `config.yaml` (Slug/Name-Suffix), in HA per Branch-URL einzeln einbindbar.
-  Promotion `claude/stage` → `stage/dev` → `stage/beta` → `stage/stable` nur
+  Promotion `claude/stage` → `stage-dev` → `stage-beta` → `stage-stable` nur
   **manuell auf Zuruf**, kein Automatismus.
-- CI (`.github/workflows/ci.yaml`) läuft auf `claude/stage`, `stage/dev`,
-  `stage/beta`, `stage/stable`: Ruff-Lint + `pytest --cov --cov-fail-under=60`.
+- CI (`.github/workflows/ci.yaml`) läuft auf `claude/stage`, `stage-dev`,
+  `stage-beta`, `stage-stable`: Ruff-Lint + `pytest --cov --cov-fail-under=60`.
 
 ## Versionierung (`config.yaml`)
 
