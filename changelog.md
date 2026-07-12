@@ -8,6 +8,21 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Hinzugefügt
+- **Multi-Provider: Claude und OpenAI zusätzlich zu Gemini (D-056).** Der KI-Anbieter ist
+  jetzt zwischen **Google Gemini**, **Anthropic Claude** und **OpenAI (GPT)** umschaltbar.
+  In der Addon-Config wählt ein Radio/Dropdown (`provider`) den aktiven Anbieter; jeder
+  Anbieter hat ein eigenes aufklappbares Untermenü `providers.<name>` mit Schlüssel, Modell,
+  Zeitlimit und Ratenbegrenzung. Alle drei sind schlanke aiohttp-REST-Clients (kein SDK) über
+  die gemeinsame `AIProvider`-Abstraktion; `schema_convert.py` übersetzt das
+  Antwort-Schema für Claude (`output_config.format`) und OpenAI (`response_format`, Strict).
+  Default-Modelle: Gemini `gemini-2.5-flash`, Claude `claude-sonnet-5`, OpenAI `gpt-5`.
+  **Config-Migration:** Die früheren flachen Top-Level-Keys (`model`/`api_key`/
+  `ai_request_timeout_s`/`ai_rate_limit_per_min`) sind entfernt. Bestehende Gemini-
+  Installationen laufen dank Legacy-Fallback zunächst weiter; den Schlüssel nach dem Update
+  bitte ins Gemini-Untermenü eintragen. `ai_temperature`/`ai_seed` bleiben geteilt (Claude
+  ignoriert Sampling-Parameter).
+
 ### Geändert
 - **"Klassifizierung erzeugen"-Button im Plan-Tab (D-055 Folge-Anpassung).** Neuer Button
   löst den Klassifizierungs-Aufruf isoliert aus (`POST /api/classification/run`,

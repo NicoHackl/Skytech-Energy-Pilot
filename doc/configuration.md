@@ -12,15 +12,25 @@ bei Änderungen **beide** synchron halten.
 
 ## Allgemein
 
+**KI-Anbieter (D-056):** `provider` wählt einen von drei Anbietern (Gemini, Claude,
+OpenAI). Jeder hat ein eigenes aufklappbares Untermenü `providers.<name>` mit
+`api_key`/`model`/`timeout_s`/`rate_limit_per_min`; nur das Untermenü des aktiven
+Anbieters wird genutzt. `ai_temperature`/`ai_seed` sind geteilt (Gemini/OpenAI senden
+sie mit; Claude akzeptiert keine festen Sampling-Parameter mehr). Migration bestehender
+Gemini-Installationen: `resolve_active_provider` (`config.py`) fällt für Gemini auf die
+alten flachen Top-Level-Keys (`api_key`/`model`/`ai_request_timeout_s`/
+`ai_rate_limit_per_min`) zurück, solange das Untermenü leer ist — der Schlüssel geht beim
+Update nicht verloren; nach dem Update sollte er ins Gemini-Untermenü eingetragen werden.
+
 | Option | Default | Bereich | Zweck |
 |---|---|---|---|
 | `log_level` | `info` | debug\|info\|warning\|error | Log-Verbosität |
-| `provider` | `gemini` | gemini\|openai | KI-Provider — **`openai` ist im Schema erlaubt, aber nicht implementiert** |
-| `model` | `gemini-2.5-flash` | frei | siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#gemini-35-flash-hang) |
-| `api_key` | leer | Passwort, nie geloggt | leer = KI-Planung deaktiviert |
-| `ai_request_timeout_s` | 30 | 5–600 | Timeout je KI-Aufruf |
-| `ai_rate_limit_per_min` | 10 | 1–60 | Wartedrossel (Gemini-Free ~10/min) |
-| `ai_temperature` | 0.0 | 0–2 | Determinismus, siehe [planning-engine.md](planning-engine.md) |
+| `provider` | `gemini` | gemini\|claude\|openai | Aktiver KI-Anbieter (D-056). Zugangsdaten im jeweiligen Untermenü `providers.<name>` |
+| `providers.<name>.api_key` | leer | Passwort, nie geloggt | Schlüssel je Anbieter; leer (beim aktiven Anbieter) = KI-Planung deaktiviert |
+| `providers.<name>.model` | gemini `gemini-2.5-flash`, claude `claude-sonnet-5`, openai `gpt-5` | frei | Modell je Anbieter |
+| `providers.<name>.timeout_s` | 30 | 5–600 | Timeout je KI-Aufruf |
+| `providers.<name>.rate_limit_per_min` | gemini 10 / claude 50 / openai 60 | 1–1000 | Wartedrossel (Gemini-Free ~10/min) |
+| `ai_temperature` | 0.0 | 0–2 | Determinismus (Gemini/OpenAI; Claude ignoriert Sampling-Params). siehe [planning-engine.md](planning-engine.md) |
 | `ai_seed` | 42 | frei | Determinismus |
 | `ai_repair_missing` | true | bool | Nachforder-Aufruf bei fehlenden Pflichtfeldern |
 | `planning_interval_min` | 60 | 15–60 | **Config existiert, wird nicht ausgewertet** (kein Scheduler) |

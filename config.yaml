@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot (Dev)
-version: "0.0.55"
+version: "0.0.56"
 slug: skytech_energy_pilot_dev
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -18,15 +18,30 @@ panel_title: Energy Pilot (Dev)
 homeassistant_api: true
 options:
   log_level: info
+  # Aktiver KI-Anbieter (D-056): Gemini, Claude (Anthropic) oder OpenAI (GPT). Jeder Anbieter
+  # hat sein eigenes aufklappbares Untermenü unter `providers` (Schlüssel/Modell/Timeout/Rate).
   provider: gemini
-  model: gemini-2.5-flash
-  # KI-Provider-Schlüssel (D-007/D-041); leer => KI-Planung deaktiviert. Wird nie geloggt.
-  api_key: ""
-  # Timeout je KI-Aufruf (s) und Rate-Limit-Drossel (Aufrufe/min; Gemini-Free ~10).
-  ai_request_timeout_s: 30
-  ai_rate_limit_per_min: 10
+  # Pro-Anbieter-Verbindungs-Config. Nur das Untermenü des aktiven `provider` wird genutzt.
+  # api_key leer => KI-Planung deaktiviert. Der Schlüssel wird nie geloggt.
+  providers:
+    gemini:
+      api_key: ""
+      model: gemini-2.5-flash
+      timeout_s: 30
+      rate_limit_per_min: 10
+    claude:
+      api_key: ""
+      model: claude-sonnet-5
+      timeout_s: 30
+      rate_limit_per_min: 50
+    openai:
+      api_key: ""
+      model: gpt-5
+      timeout_s: 30
+      rate_limit_per_min: 60
   # Determinismus (D-050): Sampling-Temperatur (0 = deterministisch) + fixer Seed sorgen dafür,
   # dass gleicher Kontext stabil dieselben Vorschlagsfelder liefert (statt je Lauf/Modell zu schwanken).
+  # Geteilt über alle Anbieter (Gemini/OpenAI nutzen sie; Claude ignoriert Sampling-Parameter).
   ai_temperature: 0.0
   ai_seed: 42
   # Fehlende Pflicht-Vorschlagsfelder per gezieltem Nachforder-Aufruf ergänzen (ein Versuch),
@@ -106,11 +121,23 @@ options:
     entity_battery_soc: ""
 schema:
   log_level: list(debug|info|warning|error)
-  provider: list(gemini|openai)
-  model: str
-  api_key: password?
-  ai_request_timeout_s: int(5,600)?
-  ai_rate_limit_per_min: int(1,60)?
+  provider: list(gemini|claude|openai)
+  providers:
+    gemini:
+      api_key: password?
+      model: str?
+      timeout_s: int(5,600)?
+      rate_limit_per_min: int(1,1000)?
+    claude:
+      api_key: password?
+      model: str?
+      timeout_s: int(5,600)?
+      rate_limit_per_min: int(1,1000)?
+    openai:
+      api_key: password?
+      model: str?
+      timeout_s: int(5,600)?
+      rate_limit_per_min: int(1,1000)?
   ai_temperature: float(0,2)?
   ai_seed: int?
   ai_repair_missing: bool?

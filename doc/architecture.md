@@ -102,6 +102,9 @@ aber von keinem Code-Pfad genutzt. Details: [known-gaps-and-pitfalls.md](known-g
 | `weather.py` / `weather_client.py` / `weather_collector.py` / `onecall_client.py` / `onecall_budget.py` | OpenWeatherMap-Anbindung (zwei Quellen: `forecast3h`/`onecall`) |
 | `ai_provider.py` | Abstrakte Provider-Schnittstelle + `AsyncRateLimiter` (Wartedrossel) |
 | `gemini_provider.py` | Google-Gemini-REST-Client |
+| `claude_provider.py` | Anthropic-Claude-REST-Client (Messages-API, `output_config.format`, D-056) |
+| `openai_provider.py` | OpenAI-GPT-REST-Client (Chat-Completions, `response_format`/Strict, D-056) |
+| `schema_convert.py` | Übersetzt das Gemini-Antwortschema in Standard-JSON-Schema für Claude/OpenAI (D-056) |
 | `plan_context.py` | Baut komprimierten KI-Kontext + Gemini-Response-Schema + Prompt |
 | `plan_schema.py` | Versioniertes Plan-JSON-Schema (`jsonschema`), Schreibvertrag je Gerät |
 | `validator.py` | Lokale Plan-Validierung (Struktur → Grenzen → Zeitlogik) |

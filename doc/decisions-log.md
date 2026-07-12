@@ -1,4 +1,4 @@
-# Decision-Log (verdichtet, D-001 … D-055)
+# Decision-Log (verdichtet, D-001 … D-056)
 
 Verdichtete Fassung des alten `plan/entscheidungen.md` (gelöscht 2026-07-10, voller
 Text weiterhin abrufbar via `git show ad48b23^:plan/entscheidungen.md`). Jede Zeile:
@@ -65,6 +65,7 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 | D-053 | Arbeits-Branch `claude/main` → `claude/stage` umbenannt; 3 Release-Channel-Branches `stage/dev`/`stage/beta`/`stage/stable` (je eigenes `config.yaml`, in HA per Branch-URL als 3 separate Addons einbindbar), Promotion nur manuell auf Zuruf, CI auf allen 4 Branches |
 | D-054 | Harte Regel „`technische_freigabe=false` blockiert `freigabe_vorschlag=true`" entfernt: sie ist nur der AKTUELLE Ist-Zustand, kein Verbot für den gesamten Planzeitraum. Betrifft Validator-Stufe 2 (kein Reject mehr) und Freigabe-Hysterese (kein Sofort-Override mehr); bleibt als Fallback-Startwert bei fehlendem KI-Feld |
 | D-055 | Statische `objective_weights` (Addon-Config) entfernt: User definiert eigene Ziele (id/name/beschreibung/Geräte-Liste, KEIN Gewicht) im Tab "Grenzen und Ziele" (DB-Tabelle `ziele`). Vorgelagerter Klassifizierungs-LLM-Aufruf (gleiche Datenbasis wie der Plan-Aufruf) leitet die Gewichtung je Planungslauf ab; eigener editierbarer Klassifizierungs-Prompt im Plan-Tab. Migration ohne Seed-Daten (leer starten); scheitert Klassifizierung ODER Plan-Aufruf, gilt der gesamte Lauf als gescheitert |
+| D-056 | Multi-Provider: 3 umschaltbare KI-Anbieter (Gemini/Claude/OpenAI). Top-Level-Radio `provider` + je Anbieter ein aufklappbares Untermenü `providers.<name>` (api_key/model/timeout_s/rate_limit_per_min); frühere flache Top-Level-Keys entfallen. Alle drei als schlanke aiohttp-REST-Clients (kein SDK, `AIProvider`-Abstraktion): `claude_provider.py` (Messages-API, `output_config.format`), `openai_provider.py` (Chat-Completions, `response_format`/Strict, temperature/seed-Retry für Reasoning-Modelle wie gpt-5). `schema_convert.to_json_schema` übersetzt das Gemini-Antwortschema in Standard-JSON-Schema. `ai_temperature`/`ai_seed` geteilt (Claude ohne Sampling). `resolve_active_provider` mit Legacy-Fallback (Gemini) für bestehende Installationen. Default-Modelle: `gemini-2.5-flash`/`claude-sonnet-5`/`gpt-5` |
 
 ## Noch offen (Stand letzter alter Doku-Fassung)
 

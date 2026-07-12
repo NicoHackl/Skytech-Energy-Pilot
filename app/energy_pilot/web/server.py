@@ -16,7 +16,7 @@ from typing import Any
 from aiohttp import web
 
 from energy_pilot.collector import StateCollector, run_poller
-from energy_pilot.config import AddonConfig
+from energy_pilot.config import AddonConfig, resolve_active_provider
 from energy_pilot.constraints import build_constraints
 from energy_pilot.device_extras import (
     apply_extras,
@@ -316,11 +316,13 @@ async def index(request: web.Request) -> web.Response:
 async def health(request: web.Request) -> web.Response:
     """Statusendpunkt für UI und Überwachung."""
     config: AddonConfig = request.app["config"]
+    # Aktiver Anbieter + Modell aus dem Provider-Untermenü auflösen (D-056).
+    active = resolve_active_provider(config.values)
     payload: dict[str, Any] = {
         "status": "ok",
         "version": request.app["version"],
-        "provider": config.provider,
-        "model": config.model,
+        "provider": active.name,
+        "model": active.model,
         "ha_configured": request.app["ha_client"] is not None,
     }
     return web.json_response(payload)

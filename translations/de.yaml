@@ -7,19 +7,59 @@ configuration:
     description: Detailgrad der Protokollierung (debug, info, warning, error).
   provider:
     name: KI-Anbieter
-    description: Anbieter des Sprachmodells für die Planung (Gemini oder OpenAI).
-  model:
-    name: Modell
-    description: Konkretes Modell des gewählten Anbieters (Standard gemini-2.5-flash).
-  api_key:
-    name: KI-API-Schlüssel
-    description: Schlüssel des KI-Anbieters. Leer lassen deaktiviert die KI-Planung. Wird niemals protokolliert.
-  ai_request_timeout_s:
-    name: KI-Zeitlimit (Sekunden)
-    description: Maximale Wartezeit je KI-Aufruf, bevor er abgebrochen wird.
-  ai_rate_limit_per_min:
-    name: KI-Ratenbegrenzung (Aufrufe/Minute)
-    description: Höchstzahl der KI-Aufrufe pro Minute (Gemini-Gratis rund 10).
+    description: Aktiver Anbieter des Sprachmodells für die Planung. Die Zugangsdaten des gewählten Anbieters stehen im jeweiligen Untermenü unten.
+  providers:
+    name: Anbieter-Zugänge
+    description: Pro Anbieter (Gemini, Claude, OpenAI) ein eigenes Untermenü mit Schlüssel, Modell, Zeitlimit und Ratenbegrenzung. Genutzt wird nur der oben gewählte Anbieter.
+    fields:
+      gemini:
+        name: Google Gemini
+        description: Zugang für Google Gemini.
+        fields:
+          api_key:
+            name: API-Schlüssel
+            description: Gemini-API-Schlüssel. Leer lassen deaktiviert die KI-Planung (wenn Gemini aktiv ist). Wird niemals protokolliert.
+          model:
+            name: Modell
+            description: Gemini-Modell (Standard gemini-2.5-flash).
+          timeout_s:
+            name: Zeitlimit (Sekunden)
+            description: Maximale Wartezeit je KI-Aufruf, bevor er abgebrochen wird.
+          rate_limit_per_min:
+            name: Ratenbegrenzung (Aufrufe/Minute)
+            description: Höchstzahl der KI-Aufrufe pro Minute (Gemini-Gratis rund 10).
+      claude:
+        name: Anthropic Claude
+        description: Zugang für Anthropic Claude.
+        fields:
+          api_key:
+            name: API-Schlüssel
+            description: Anthropic-API-Schlüssel. Leer lassen deaktiviert die KI-Planung (wenn Claude aktiv ist). Wird niemals protokolliert.
+          model:
+            name: Modell
+            description: Claude-Modell (Standard claude-sonnet-5; z. B. auch claude-opus-4-8 oder claude-haiku-4-5).
+          timeout_s:
+            name: Zeitlimit (Sekunden)
+            description: Maximale Wartezeit je KI-Aufruf, bevor er abgebrochen wird.
+          rate_limit_per_min:
+            name: Ratenbegrenzung (Aufrufe/Minute)
+            description: Höchstzahl der KI-Aufrufe pro Minute (je nach Anthropic-Tarif).
+      openai:
+        name: OpenAI (GPT)
+        description: Zugang für OpenAI (GPT-Modelle).
+        fields:
+          api_key:
+            name: API-Schlüssel
+            description: OpenAI-API-Schlüssel. Leer lassen deaktiviert die KI-Planung (wenn OpenAI aktiv ist). Wird niemals protokolliert.
+          model:
+            name: Modell
+            description: OpenAI-Modell (Standard gpt-5; z. B. auch gpt-4o oder gpt-4o-mini).
+          timeout_s:
+            name: Zeitlimit (Sekunden)
+            description: Maximale Wartezeit je KI-Aufruf, bevor er abgebrochen wird.
+          rate_limit_per_min:
+            name: Ratenbegrenzung (Aufrufe/Minute)
+            description: Höchstzahl der KI-Aufrufe pro Minute (je nach OpenAI-Tarif).
   ai_temperature:
     name: KI-Temperatur
     description: Sampling-Temperatur des KI-Aufrufs (0 = deterministisch). Niedrige Werte liefern bei gleichem Kontext stabil dieselben Vorschlagsfelder, statt je Lauf zu schwanken.

@@ -148,6 +148,12 @@ class Planner:
         self.weather_collector = weather_collector
         self.logger = logger
 
+    @property
+    def model_name(self) -> str:
+        """Modell des aktiven Providers (D-056). Das Modell liegt seit dem Multi-Provider-Umbau
+        pro Anbieter-Untermenü, nicht mehr top-level – der Provider trägt es selbst."""
+        return self.provider.model if self.provider is not None else ""
+
     async def run(self, *, now: datetime | None = None) -> PlanRunResult:
         """Führt einen kompletten Planungslauf aus (siehe Modul-Docstring)."""
         now = now or datetime.now(UTC)
@@ -217,7 +223,7 @@ class Planner:
                     },
                     ai_call={
                         "provider": self.provider.name,
-                        "model": str(self.config.model),
+                        "model": self.model_name,
                         "ok": False,
                         "error": outcome.error,
                     },
@@ -253,7 +259,7 @@ class Planner:
             self._log(
                 "error", "KI-Planung fehlgeschlagen",
                 context={"error": detail}, run_id=run_id,
-                provider=self.provider.name, model=str(self.config.model),
+                provider=self.provider.name, model=self.model_name,
             )
             return PlanRunResult(
                 ok=False,
@@ -265,7 +271,7 @@ class Planner:
                 },
                 ai_call={
                     "provider": self.provider.name,
-                    "model": str(self.config.model),
+                    "model": self.model_name,
                     "ok": False,
                     "error": detail,
                 },
@@ -309,13 +315,13 @@ class Planner:
                 self._log(
                     "info", "KI-Nachforderung fehlender Felder ausgeführt",
                     context={"missing": missing}, run_id=run_id,
-                    provider=self.provider.name, model=str(self.config.model),
+                    provider=self.provider.name, model=self.model_name,
                 )
             except Exception as exc:  # optional: Fehler blockiert nie (Iron Rule 8)
                 self._log(
                     "warning", "KI-Nachforderung fehlgeschlagen (Fallback-Füllung greift)",
                     context={"error": _describe_exc(exc)}, run_id=run_id,
-                    provider=self.provider.name, model=str(self.config.model),
+                    provider=self.provider.name, model=self.model_name,
                 )
 
         min_conf = self.config.values.get("min_confidence_percent")
@@ -337,7 +343,7 @@ class Planner:
             "Plan erzeugt" if result.ok else "Plan abgelehnt (Validierung)",
             context={"ok": result.ok, "errors": result.errors, "clamped": result.clamped},
             run_id=run_id, plan_id=run_id,
-            provider=self.provider.name, model=str(self.config.model),
+            provider=self.provider.name, model=self.model_name,
         )
 
         # Vorschlagswerte nach HA schreiben – nur bei gültigem Plan und aktivem Schalter
@@ -355,7 +361,7 @@ class Planner:
             validation={"ok": result.ok, "errors": result.errors, "clamped": result.clamped},
             ai_call={
                 "provider": self.provider.name,
-                "model": str(self.config.model),
+                "model": self.model_name,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "ok": True,
@@ -404,7 +410,7 @@ class Planner:
             self._log(
                 "error", "Ziel-Klassifizierung fehlgeschlagen",
                 context={"error": detail}, run_id=run_id,
-                provider=self.provider.name, model=str(self.config.model),
+                provider=self.provider.name, model=self.model_name,
             )
             return _ClassificationOutcome(
                 ok=False, context=classification_context, data=None,
@@ -463,7 +469,7 @@ class Planner:
             return ClassificationRunResult(
                 ok=False, objectives=None, reasoning=None,
                 ai_call={
-                    "provider": self.provider.name, "model": str(self.config.model),
+                    "provider": self.provider.name, "model": self.model_name,
                     "ok": False, "error": outcome.error,
                 },
                 context=outcome.context, error="classification_error",
@@ -476,7 +482,7 @@ class Planner:
             objectives=[asdict(o) for o in objectives],
             reasoning=str(reasoning) if reasoning is not None else None,
             ai_call={
-                "provider": self.provider.name, "model": str(self.config.model),
+                "provider": self.provider.name, "model": self.model_name,
                 "ok": True, "tokens_in": outcome.tokens_in, "tokens_out": outcome.tokens_out,
             },
             context=outcome.context,
@@ -664,7 +670,7 @@ class Planner:
             valid_until=valid_until,
             devices=suggestions,
             provider=self.provider.name if self.provider else "",
-            model=str(self.config.model),
+            model=self.model_name,
             confidence=_as_int(model_data.get("confidence")),
             reasoning=str(model_data.get("reasoning") or ""),
             warnings=[str(w) for w in (model_data.get("warnings") or [])],
@@ -682,7 +688,7 @@ class Planner:
             self.db.execute(
                 "INSERT INTO ai_calls (provider, model, tokens_in, tokens_out, est_cost, ok, error)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (provider_name, str(self.config.model), tokens_in, tokens_out, 0.0,
+                (provider_name, self.model_name, tokens_in, tokens_out, 0.0,
                  1 if ok else 0, error),
             )
             self.db.commit()

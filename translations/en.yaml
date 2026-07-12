@@ -7,19 +7,59 @@ configuration:
     description: Verbosity of logging (debug, info, warning, error).
   provider:
     name: AI provider
-    description: Provider of the language model used for planning (Gemini or OpenAI).
-  model:
-    name: Model
-    description: Concrete model of the selected provider (default gemini-2.5-flash).
-  api_key:
-    name: AI API key
-    description: Key of the AI provider. Leave empty to disable AI planning. Never logged.
-  ai_request_timeout_s:
-    name: AI timeout (seconds)
-    description: Maximum wait time per AI call before it is aborted.
-  ai_rate_limit_per_min:
-    name: AI rate limit (calls/minute)
-    description: Maximum number of AI calls per minute (Gemini free tier around 10).
+    description: Active provider of the language model used for planning. Credentials for the selected provider live in its submenu below.
+  providers:
+    name: Provider credentials
+    description: One submenu per provider (Gemini, Claude, OpenAI) with key, model, timeout and rate limit. Only the provider selected above is used.
+    fields:
+      gemini:
+        name: Google Gemini
+        description: Credentials for Google Gemini.
+        fields:
+          api_key:
+            name: API key
+            description: Gemini API key. Leave empty to disable AI planning (when Gemini is active). Never logged.
+          model:
+            name: Model
+            description: Gemini model (default gemini-2.5-flash).
+          timeout_s:
+            name: Timeout (seconds)
+            description: Maximum wait time per AI call before it is aborted.
+          rate_limit_per_min:
+            name: Rate limit (calls/minute)
+            description: Maximum number of AI calls per minute (Gemini free tier around 10).
+      claude:
+        name: Anthropic Claude
+        description: Credentials for Anthropic Claude.
+        fields:
+          api_key:
+            name: API key
+            description: Anthropic API key. Leave empty to disable AI planning (when Claude is active). Never logged.
+          model:
+            name: Model
+            description: Claude model (default claude-sonnet-5; e.g. also claude-opus-4-8 or claude-haiku-4-5).
+          timeout_s:
+            name: Timeout (seconds)
+            description: Maximum wait time per AI call before it is aborted.
+          rate_limit_per_min:
+            name: Rate limit (calls/minute)
+            description: Maximum number of AI calls per minute (depending on your Anthropic tier).
+      openai:
+        name: OpenAI (GPT)
+        description: Credentials for OpenAI (GPT models).
+        fields:
+          api_key:
+            name: API key
+            description: OpenAI API key. Leave empty to disable AI planning (when OpenAI is active). Never logged.
+          model:
+            name: Model
+            description: OpenAI model (default gpt-5; e.g. also gpt-4o or gpt-4o-mini).
+          timeout_s:
+            name: Timeout (seconds)
+            description: Maximum wait time per AI call before it is aborted.
+          rate_limit_per_min:
+            name: Rate limit (calls/minute)
+            description: Maximum number of AI calls per minute (depending on your OpenAI tier).
   ai_temperature:
     name: AI temperature
     description: Sampling temperature of the AI call (0 = deterministic). Low values make the same context return the same suggestion fields instead of varying per run.
