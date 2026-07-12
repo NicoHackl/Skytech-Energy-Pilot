@@ -1,11 +1,12 @@
 name: CI
 
-# Automatische Tests laufen ausschließlich für den Branch claude/main (Decision D-024)
+# Automatische Tests laufen für den Arbeits-Branch claude/stage sowie die drei
+# Release-Channel-Branches (Decision D-024/D-053)
 on:
   push:
-    branches: [claude/main]
+    branches: [claude/stage, stage/dev, stage/beta, stage/stable]
   pull_request:
-    branches: [claude/main]
+    branches: [claude/stage, stage/dev, stage/beta, stage/stable]
 
 jobs:
   test:
