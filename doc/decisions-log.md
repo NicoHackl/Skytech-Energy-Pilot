@@ -1,4 +1,4 @@
-# Decision-Log (verdichtet, D-001 … D-052)
+# Decision-Log (verdichtet, D-001 … D-054)
 
 Verdichtete Fassung des alten `plan/entscheidungen.md` (gelöscht 2026-07-10, voller
 Text weiterhin abrufbar via `git show ad48b23^:plan/entscheidungen.md`). Jede Zeile:
@@ -63,6 +63,7 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 | D-051 | Geräte-Tab als Einzelgerät-Dropdown + Pro-Gerät-KI-Beschreibungsfeld (`funktion`) |
 | D-052 | Zusatz-Entitäten: optionales "In Original schreiben" über HA-Service-Calls, nur für echte Helfer-Domänen |
 | D-053 | Arbeits-Branch `claude/main` → `claude/stage` umbenannt; 3 Release-Channel-Branches `stage/dev`/`stage/beta`/`stage/stable` (je eigenes `config.yaml`, in HA per Branch-URL als 3 separate Addons einbindbar), Promotion nur manuell auf Zuruf, CI auf allen 4 Branches |
+| D-054 | Harte Regel „`technische_freigabe=false` blockiert `freigabe_vorschlag=true`" entfernt: sie ist nur der AKTUELLE Ist-Zustand, kein Verbot für den gesamten Planzeitraum. Betrifft Validator-Stufe 2 (kein Reject mehr) und Freigabe-Hysterese (kein Sofort-Override mehr); bleibt als Fallback-Startwert bei fehlendem KI-Feld |
 
 ## Noch offen (Stand letzter alter Doku-Fassung)
 

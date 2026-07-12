@@ -106,16 +106,17 @@ def test_min_hold_blocks_recent_change():
     assert any("Mindesthaltezeit" in n for n in res.notes)
 
 
-def test_safety_never_holds_true_when_technically_locked():
-    # Technisch gesperrt: der Wechsel auf false greift sofort, trotz Hysterese/Haltezeit.
+def test_technical_lock_no_longer_forces_immediate_flip():
+    # D-054: technische Sperre ist nur der Ist-Zustand, kein Sofort-Override mehr -
+    # Hysterese/Haltezeit greifen unverändert, auch wenn das Gerät aktuell gesperrt ist.
     limits = StabilityLimits(hysteresis_runs=5, min_hold_minutes=60)
     state = {"heizstab": {"last_freigabe": 1, "last_prio": 10, "pending_freigabe": None,
                           "pending_count": 0, "last_change_ts": NOW.isoformat()}}
     d = [{"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": False,
           "geschutzte_mindestleistung_w_vorschlag": 500.0}]
     res = smooth_plan(d, {}, _cmap(heizstab_frei=False), state, limits=limits, now=NOW)
-    assert d[0]["freigabe_vorschlag"] is False
-    assert any("Sicherheit" in n for n in res.notes)
+    assert d[0]["freigabe_vorschlag"] is True
+    assert any("Mindesthaltezeit" in n for n in res.notes)
 
 
 def test_battery_without_freigabe_contract_is_untouched():

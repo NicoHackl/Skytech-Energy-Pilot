@@ -9,6 +9,12 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 ## [Unreleased]
 
 ### Geändert
+- **Harte Freigabe-Sperre entfernt (D-054).** `technische_freigabe=false` beschreibt nur
+  den AKTUELLEN Ist-Zustand eines Geräts, kein Verbot für den gesamten Gültigkeitszeitraum
+  des Plans (24–48 h). EP darf `freigabe_vorschlag=true` jetzt auch dann vorschlagen, wenn
+  das Gerät aktuell technisch gesperrt ist. Entfernt: harter Reject in Validator-Stufe 2
+  (`_check_device`) sowie der Sofort-Override in der Freigabe-Hysterese (`smooth_plan()`).
+  Weiterhin: dient als sicherer Fallback-Startwert, wenn die KI `freigabe_vorschlag` auslässt.
 - **Branch-Strategie: `claude/main` → `claude/stage` + 3 Release-Channels (D-053).**
   Arbeits-Branch umbenannt. Neu: `stage/dev`/`stage/beta`/`stage/stable`, je eigenes
   `config.yaml` (Slug-/Namens-Suffix), damit HA sie per Branch-URL als 3 separate

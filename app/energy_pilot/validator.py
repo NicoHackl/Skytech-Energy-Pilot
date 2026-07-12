@@ -6,7 +6,9 @@ angebunden wird. Implementiert sind die jetzt schon möglichen Pipeline-Stufen:
 
 1. **Schema** – Plan gegen `PLAN_JSON_SCHEMA` + korrekte `schema_version`.
 2. **Harte Grenzen** – jeder Geräte-Vorschlag gegen `DeviceConstraint` (Schreib-
-   vertrag, Freigabe, Leistungs-/Temperaturgrenzen) klemmen oder ablehnen.
+   vertrag, Leistungs-/Temperaturgrenzen) klemmen oder ablehnen. `technische_freigabe`
+   ist nur der AKTUELLE Ist-Zustand des Geräts (kein Vorschlags-Blocker, D-054): sie
+   beschreibt nicht, ob das Gerät im Gültigkeitszeitraum des Plans arbeiten darf.
 3. **Zeitlogik** – `valid_from < valid_until`, nicht abgelaufen.
 6. **Mindestkonfidenz** (A4) – `confidence < min_confidence` lehnt den Plan ab
    (nicht veröffentlichen), behält aber den normalisierten Plan für UI/DB.
@@ -109,7 +111,8 @@ def _fallback_value(constraint: DeviceConstraint, key: str) -> object:
     Behebt schwankende Ausgabefelder: statt ein vom Modell vergessenes Vertragsfeld lautlos zu
     übergehen, füllt EP es aus dem aktuellen Zustand. Bewusst sicherheitskonservativ:
     - `prio_vorschlag` => None (die Rangfolge vergibt `_normalize_priorities`, auch bei Lücken).
-    - `freigabe_vorschlag` => aktuelle technische Freigabe (nie eine gesperrte Last freigeben).
+    - `freigabe_vorschlag` => aktuelle technische Freigabe als sicherer Startwert (kein hartes
+      Verbot, D-054: nur Fallback, falls die KI das Feld ausgelassen hat).
     - geschützte Mindestleistung => technische Mindestleistung bzw. 0 (wird ohnehin geklemmt).
     - Zusatzfeld => aktueller Lesewert, sonst typ-abhängiger Default (Zahl 0/min, Bool False,
       Auswahl erste Option, Text leer). `datetime` ohne Lesewert bleibt offen (kein sinnvoller
@@ -193,10 +196,6 @@ def _check_device(
     for key in entry:
         if key != "name" and key not in allowed:
             errors.append(f"{name}: Feld '{key}' nicht im Schreibvertrag dieses Geräts")
-
-    # Freigabe: EP darf eine technisch gesperrte Last nicht freigeben (harte Grenze).
-    if entry.get("freigabe_vorschlag") is True and constraint.freigabe is False:
-        errors.append(f"{name}: freigabe_vorschlag=true trotz technischer Sperre")
 
     # Geschützte Mindestleistung in [min_power, max_power] klemmen (Batterie: <= max. Ladeleistung).
     for key in _PROTECTED_MIN_KEYS:
@@ -398,8 +397,8 @@ def _apply_freigabe_hysteresis(
 
     Ein Freigabe-Wechsel wird erst nach `hysteresis_runs` konsistenten Läufen UND außerhalb der
     Mindesthaltezeit übernommen; sonst wird die Freigabe auf den zuletzt veröffentlichten Wert
-    zurückgesetzt. Ausnahme (Sicherheit vor Stabilität): eine technisch gesperrte Last wird nie
-    auf `true` gehalten – der Wechsel auf `false` greift sofort.
+    zurückgesetzt. `constraint.freigabe` (aktuelle technische Freigabe) fließt bewusst NICHT mehr
+    hart ein (D-054): sie beschreibt nur den JETZT-Zustand, nicht die Gültigkeit im Planzeitraum.
     """
     new_state: dict = {
         "last_freigabe": state.get("last_freigabe"),
@@ -419,17 +418,6 @@ def _apply_freigabe_hysteresis(
     # Erstbeobachtung oder unveränderte Freigabe → übernehmen, Kandidat zurücksetzen.
     if last_bool is None or new_frei == last_bool:
         new_state["last_freigabe"] = int(new_frei)
-        return new_state
-
-    # Kandidat-Flip. Sicherheit: technisch gesperrt darf nie auf true gehalten werden → sofort.
-    if last_bool is True and constraint.freigabe is False:
-        entry["freigabe_vorschlag"] = new_frei
-        new_state["last_freigabe"] = int(new_frei)
-        new_state["last_change_ts"] = now.isoformat()
-        notes.append(
-            f"{name}.freigabe_vorschlag: {last_bool} -> {new_frei} "
-            "(Sicherheit: technische Sperre, sofort)"
-        )
         return new_state
 
     pending = state.get("pending_freigabe")

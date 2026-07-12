@@ -168,11 +168,13 @@ def test_unknown_extra_field_rejected_by_write_contract():
     assert any("Schreibvertrag" in e for e in result.errors)
 
 
-def test_freigabe_override_of_technical_block_rejected():
+def test_freigabe_true_despite_current_technical_block_allowed():
+    # D-054: `technische_freigabe=false` ist nur der AKTUELLE Ist-Zustand, kein Verbot fuer
+    # den gesamten Planzeitraum. heizluefter_1 ist in _constraints() aktuell gesperrt
+    # (technische_freigabe=False, Zeile 36), der Plan darf ihn trotzdem freigeben.
     plan = _plan([{"name": "heizluefter_1", "prio_vorschlag": 3, "freigabe_vorschlag": True}])
     result = validate(plan, _constraints(), now=NOW)
-    assert not result.ok
-    assert any("technische" in e.lower() for e in result.errors)
+    assert result.ok
 
 
 def test_write_contract_violation_rejected():
