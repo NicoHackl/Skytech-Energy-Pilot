@@ -1,7 +1,7 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
-name: Skytech Energy Pilot
+name: Skytech Energy Pilot (Beta)
 version: "0.0.51"
-slug: skytech_energy_pilot
+slug: skytech_energy_pilot_beta
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
 arch:
