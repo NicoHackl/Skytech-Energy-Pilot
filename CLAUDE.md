@@ -19,7 +19,8 @@ Skytech **Energy Pilot (EP)** = eigenständiges Home-Assistant-Addon. KI-gestüt
 3. Es ist verpflichtend bei jeder **funktionalen oder Designtechnischen Änderung am Code** einen entsprechenden Eintrag in der **changelog.md** zu verfassen
 
 ## Eiserne Regeln (nicht verhandelbar)
-1. **Git:** committen/pushen **nur** in Branch `claude/main` — **auch im HEMS-Repo** (D-022) und dies auch nach **jeder Relevanten Änderung** durchführen. CI-Tests laufen nur auf `claude/main` (D-024) nach jeder abgeschlossenen Aufgabe wird ein Commit and Push durchgeführt.
+1. **Git:** committen/pushen **nur** in Branch `claude/stage` — **auch im HEMS-Repo** (D-022, umbenannt von `claude/main` D-053) und dies auch nach **jeder Relevanten Änderung** durchführen. CI-Tests laufen auf `claude/stage`, `stage/dev`, `stage/beta`, `stage/stable` (D-024/D-053) nach jeder abgeschlossenen Aufgabe wird ein Commit and Push durchgeführt.
+   - **Release-Channels (D-053):** 3 Branches `stage/dev` / `stage/beta` / `stage/stable`, je eigenes `config.yaml` (eigener `slug`/`name`, Suffix „(Dev)"/„(Beta)" bei Dev/Beta) — User fügt das Repo per Branch-URL (`...#stage/dev` etc.) dreifach in HA hinzu, jeder Branch erscheint als eigenes Addon/Channel. **Promotion nur manuell auf Zuruf** (`claude/stage` → `stage/dev` → `stage/beta` → `stage/stable`), kein Automatismus.
 2. **Sprache Code:** Variablen/Funktionen/Klassen **Englisch**, Kommentare **Deutsch**.
 3. **Sprache HA-Entitäten/Helfer:** **Deutsch**.
 4. **Namens-Domäne nach Datenrichtung (D-029):** vom **User gepflegte technische Gerätewerte → `ems_*`** (HEMS-Domäne, EP **liest** nur); **EP-Vorschlagswerte → `ep_*`** (EP **schreibt**). **Ausnahme (D-035):** ein `ep_*`-Wert kann auch ein user-/extern-gepflegter Grenzwert sein, den EP **liest** (z.B. `input_number.ep_heizstab_max_temperatur`). Vollständiger Datenfluss: [user-beispiele/variablen-zugriff.md](user-beispiele/variablen-zugriff.md).

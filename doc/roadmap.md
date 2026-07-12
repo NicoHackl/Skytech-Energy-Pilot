@@ -8,7 +8,8 @@ Reihenfolge aus der alten Doku (`plan/roadmap.md`), Status hier gegen den
 
 Addon-Grundgerüst, aiohttp+Ingress-SPA, HA-Connector (REST+WS) über
 `SUPERVISOR_TOKEN`, SQLite-Init+Migrationen, strukturiertes JSON-Logging + UI-
-Logansicht + JSONL-Export, CI (Lint, Pytest, Docker-Build) auf `claude/main`.
+Logansicht + JSONL-Export, CI (Lint, Pytest, Docker-Build) auf `claude/stage`
+(D-053, umbenannt von `claude/main`).
 
 ## M1 — Daten & Anzeige — ☑ fertig
 
@@ -65,7 +66,7 @@ Tarife/Netzladen, mehrere Speicher).
 
 ## Querschnitt (durchgehend seit M0)
 
-Tests/CI (jedes Feature getestet, CI grün auf `claude/main`, HEMS↔EP-Zusammenspiel
+Tests/CI (jedes Feature getestet, CI grün auf `claude/stage`, HEMS↔EP-Zusammenspiel
 laut D-015 verpflichtend — **aktuell keine dedizierte Contract-Test-Suite gegen ein
 Mock-HEMS gefunden**, prüfen bevor man das als erledigt annimmt), Logging/
 Observability (UI-sichtbar + maschinenlesbarer Export), Sicherheit (harte Grenzen/

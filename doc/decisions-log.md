@@ -31,9 +31,9 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 | D-019 | Gemini-Modell in Addon-Config wählbar (konkreter Default noch offen, siehe D-025) |
 | D-020 | Steuermodus-Geltung: global=Hybrid → pro Gerät verfeinerbar; global=Manuell/Automatisch → gilt für alle |
 | D-021 | Mindestkonfidenz 70 %, Delta-Limit ±20 % Leistung/±10 % SOC-Ziel — Claude-Vorschlagswerte, konfigurierbar |
-| D-022 | `claude/main`-Branch-Regel gilt auch im SkytechHEMS-Repo |
+| D-022 | Branch-Regel (Arbeits-Branch, seit D-053 `claude/stage`) gilt auch im SkytechHEMS-Repo |
 | D-023 | Externer Zugriff startet über HA Long-Lived Token, eigener EP-Endpunkt evtl. später |
-| D-024 | CI-Coverage-Gate startet bei 60 %, CI läuft nur auf `claude/main` |
+| D-024 | CI-Coverage-Gate startet bei 60 %, CI läuft auf `claude/stage` + den drei Release-Channel-Branches (seit D-053) |
 | D-025 | Default-Modell korrigiert auf `gemini-2.5-flash` — `gemini-3.5-flash` hing in der Praxis (siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#gemini-35-flash-hang)) |
 | D-026 | PV-Prognosewerte im Sensor-**State**, nicht als Attribut |
 | D-027 | Sensor-Mapping in Addon-Config (`entity_<rolle>`), UI zeigt nur read-only an |
@@ -62,6 +62,7 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 | D-050 | Stabile/vollständige KI-Vorschlagsfelder: 4-schichtige Determinismus-/Vollständigkeits-Absicherung (siehe [planning-engine.md](planning-engine.md)) |
 | D-051 | Geräte-Tab als Einzelgerät-Dropdown + Pro-Gerät-KI-Beschreibungsfeld (`funktion`) |
 | D-052 | Zusatz-Entitäten: optionales "In Original schreiben" über HA-Service-Calls, nur für echte Helfer-Domänen |
+| D-053 | Arbeits-Branch `claude/main` → `claude/stage` umbenannt; 3 Release-Channel-Branches `stage/dev`/`stage/beta`/`stage/stable` (je eigenes `config.yaml`, in HA per Branch-URL als 3 separate Addons einbindbar), Promotion nur manuell auf Zuruf, CI auf allen 4 Branches |
 
 ## Noch offen (Stand letzter alter Doku-Fassung)
 
