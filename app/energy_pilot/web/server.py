@@ -123,6 +123,7 @@ def create_app(
             web.get("/api/classification-prompt", classification_prompt_get),
             web.post("/api/classification-prompt", classification_prompt_post),
             web.post("/api/plan/run", plan_run),
+            web.post("/api/classification/run", classification_run),
             web.post("/api/plan/publish", plan_publish),
             web.get("/api/plan", plan_get),
             web.get("/api/ai/test", ai_test),
@@ -995,6 +996,38 @@ async def plan_run(request: web.Request) -> web.Response:
                 "validation": {"ok": False, "errors": [detail], "clamped": []},
             }
         )
+
+
+async def classification_run(request: web.Request) -> web.Response:
+    """Stößt NUR den Klassifizierungs-Aufruf an (D-055 Testbutton im Plan-Tab), unabhängig vom
+    eigentlichen Plan-Aufruf. Gleiches Transparenz-/Fehler-Muster wie `plan_run`."""
+    planner = request.app.get("planner")
+    if planner is None:
+        return web.json_response(
+            {"ok": False, "error": "KI nicht konfiguriert (api_key fehlt)"}, status=503
+        )
+    try:
+        result = await planner.run_classification()
+        payload: dict[str, Any] = {
+            "ok": result.ok,
+            "objectives": result.objectives,
+            "reasoning": result.reasoning,
+            "ai_call": result.ai_call,
+            "context": result.context,
+        }
+        if result.error:
+            payload["error"] = result.error
+        return web.json_response(payload, dumps=_safe_dumps)
+    except Exception as exc:  # noqa: BLE001 - bewusst breit (kontrollierte, lesbare Fehler)
+        detail = f"{exc.__class__.__name__}: {exc}".strip()
+        logger = request.app.get("logger")
+        if logger is not None:
+            logger.error(
+                "Klassifizierungslauf abgebrochen (unerwarteter Fehler)",
+                exc_info=exc,
+                extra={"context": {"error": detail}},
+            )
+        return web.json_response({"ok": False, "error": detail})
 
 
 async def plan_publish(request: web.Request) -> web.Response:

@@ -912,6 +912,22 @@ function PlanTab() {
   const [plan, reloadPlan, setPlan] = usePoll(() => api("api/plan"), false);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [classResult, setClassResult] = useState(null);
+  const [classStatus, setClassStatus] = useState("");
+  const [classBusy, setClassBusy] = useState(false);
+  const runClassification = async () => {
+    setClassStatus(" … klassifiziere …");
+    setClassBusy(true);
+    try {
+      const d = await api("api/classification/run", { method: "POST" });
+      setClassStatus(d.ok ? " ✅ Klassifizierung erzeugt" : ` ❌ ${d.error || ""}`);
+      setClassResult(d);
+    } catch (e) {
+      setClassStatus(" ❌ " + e);
+    } finally {
+      setClassBusy(false);
+    }
+  };
   const run = async () => {
     setStatus(" … plane …");
     setBusy(true);
@@ -954,18 +970,60 @@ function PlanTab() {
   return html`<div class="ha-card">
     <div class="card-title">Plan<div class="card-actions">
       <button class="primary" disabled=${busy} onClick=${run}>Plan erzeugen</button>
+      <button disabled=${classBusy} onClick=${runClassification}>Klassifizierung erzeugen</button>
       <button onClick=${publish}>Erneut nach HA schreiben</button>
       <button onClick=${reloadPlan}>Aktualisieren</button>
       <button onClick=${testAi}>KI-Verbindung testen</button>
     </div></div>
-    <div class="toolbar"><span class="hint-inline">${status}</span></div>
+    <div class="toolbar">
+      <span class="hint-inline">${status}</span>
+      <span class="hint-inline">${classStatus}</span>
+    </div>
     <p class="hint">Die KI erzeugt einen <strong>Vorschlagsplan</strong> (V1). Werte werden lokal gegen die harten
       Grenzen validiert und bei Gültigkeit als <code>sensor.ep_*_vorschlag</code> nach Home Assistant geschrieben
       (reine Anzeige zum manuellen Verdrahten) – aber <strong>nicht</strong> an HEMS übergeben.</p>
     <${PromptEditor} />
     <${KlassifizierungsPromptEditor} />
+    <${KlassifizierungResult} data=${classResult} />
     <${PlanResult} data=${plan} />
   </div>`;
+}
+
+// Ergebnis des eigenständigen Klassifizierungslaufs (D-055 Testbutton): zeigt die abgeleitete
+// Gewichtung je Ziel + Begründung + gesendeten Kontext, analog PlanResult.
+function KlassifizierungResult({ data }) {
+  if (!data) return null;
+  if (!data.ok) {
+    const msg =
+      data.error === "keine_ziele_konfiguriert"
+        ? "Noch keine Ziele definiert (Tab „Grenzen und Ziele“)."
+        : data.error === "provider_not_configured"
+          ? "KI nicht konfiguriert (api_key fehlt)."
+          : data.error === "classification_error"
+            ? `Klassifizierungs-Aufruf fehlgeschlagen: ${(data.ai_call && data.ai_call.error) || ""}`
+            : data.error || "Klassifizierung fehlgeschlagen.";
+    return html`<p style="color:#c33;font-size:.85rem;">${msg}</p>`;
+  }
+  const objs = data.objectives || [];
+  return html`<${Fragment}>
+    <h2 style="font-size:1rem;margin-top:1rem;">Klassifizierungs-Ergebnis</h2>
+    ${objs.length
+      ? html`<div class="table-wrap"><table>
+          <thead><tr><th>Ziel</th><th class="num">Gewicht</th></tr></thead>
+          <tbody>${objs.map(
+            (o, i) => html`<tr key=${i}><td>${o.label}</td><td class="num">${o.weight} %</td></tr>`
+          )}</tbody>
+        </table></div>`
+      : html`<p class="hint-inline">Keine Ziele konfiguriert.</p>`}
+    ${data.reasoning ? html`<p style="font-size:.85rem;"><strong>Begründung:</strong> ${data.reasoning}</p>` : ""}
+    ${data.ai_call && data.ai_call.tokens_in != null
+      ? html`<p style="font-size:.8rem;color:#888;">Tokens (ein/aus): ${data.ai_call.tokens_in} / ${data.ai_call.tokens_out}</p>`
+      : ""}
+    ${data.context
+      ? html`<details style="margin-top:1rem;"><summary style="cursor:pointer;font-size:.85rem;">An die KI gesendete Daten (Klassifizierung)</summary>
+          <pre style="font-size:.75rem;overflow:auto;">${JSON.stringify(data.context, null, 2)}</pre></details>`
+      : ""}
+  </${Fragment}>`;
 }
 
 function PlanResult({ data }) {

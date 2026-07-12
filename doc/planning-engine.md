@@ -30,6 +30,14 @@ Ausgelöst **nur manuell** über `POST /api/plan/run` (siehe
 Token-Zähler (`ai_call.tokens_in/out`) summieren Klassifizierungs- **und** Plan-Aufruf
 (`_sum_tokens()`); beide Aufrufe werden einzeln in `ai_calls` protokolliert.
 
+**Klassifizierung isoliert testen:** `Planner._run_classification_call()` bündelt den
+Klassifizierungs-Kern (Kontext/Prompt/Schema/`generate()`/Fehlerpfad) als privaten Helfer,
+den sowohl `run()` als auch `Planner.run_classification()` nutzen.
+`run_classification()` (`POST /api/classification/run`, Button „Klassifizierung erzeugen“
+im Plan-Tab) führt NUR diesen Klassifizierungs-Aufruf aus – ohne anschließenden Plan-Aufruf –
+zum gezielten Testen von Zieldefinitionen/Klassifizierungs-Prompt. Liefert `ok=false` mit
+`error="keine_ziele_konfiguriert"`, wenn keine Ziele angelegt sind.
+
 Der Planner fängt **alle** Provider-Exceptions ab und wirft nie an den Aufrufer weiter;
 DB-Schreibfehler sind mit `except sqlite3.Error: pass` abgesichert — ein Planungslauf
 blockiert die Anlage nie (Eiserne Regel 8).

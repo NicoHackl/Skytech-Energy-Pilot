@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -63,6 +63,31 @@ class PlanRunResult:
     context: dict | None
     error: str | None = None
     published: dict | None = None  # {ok, written, failed, reason} – HA-Schreibergebnis
+
+
+@dataclass
+class ClassificationRunResult:
+    """Ergebnis eines eigenständigen Klassifizierungslaufs (D-055 Testbutton im Plan-Tab)."""
+
+    ok: bool
+    objectives: list[dict] | None  # [{key, label, weight}], None bei Fehler
+    reasoning: str | None
+    ai_call: dict  # {provider, model, ok, tokens_in?, tokens_out?, error?}
+    context: dict | None
+    error: str | None = None
+
+
+@dataclass
+class _ClassificationOutcome:
+    """Rohes Ergebnis des Klassifizierungs-Aufrufs (intern, von `run()` und
+    `run_classification()` gemeinsam genutzt)."""
+
+    ok: bool
+    context: dict
+    data: dict | None
+    tokens_in: int | None
+    tokens_out: int | None
+    error: str | None
 
 
 def _as_int(value: object) -> int | None:
@@ -168,8 +193,7 @@ class Planner:
             )
 
         # Vorgelagerter Klassifizierungs-Aufruf (D-055): leitet aus den user-definierten Zielen
-        # (Ziele-Tab) je Lauf eine Gewichtung ab, bevor der eigentliche Plan-Aufruf läuft. Bekommt
-        # dieselbe Datenbasis wie der Plan-Aufruf (build_classification_context). Ohne
+        # (Ziele-Tab) je Lauf eine Gewichtung ab, bevor der eigentliche Plan-Aufruf läuft. Ohne
         # konfigurierte Ziele entfällt der Aufruf ersatzlos (objectives bleibt leer). Scheitert der
         # Aufruf, gilt der GESAMTE Planungslauf als gescheitert (kein stiller Fallback).
         ziele = load_ziele(self.db)
@@ -177,58 +201,33 @@ class Planner:
         class_tokens_in: int | None = None
         class_tokens_out: int | None = None
         if ziele:
-            classification_context = build_classification_context(
-                state, forecast, constraints, ziele,
-                valid_from=valid_from, valid_until=valid_until,
-                weather=weather,
-                horizon_h=int(self.config.forecast_horizon_h),
-                weather_detail=weather_detail,
-                now=now,
-                previous_plan=previous_plan,
-                quantize=self._quantize_config(),
+            outcome = await self._run_classification_call(
+                now=now, state=state, forecast=forecast, weather=weather, constraints=constraints,
+                valid_from=valid_from, valid_until=valid_until, weather_detail=weather_detail,
+                previous_plan=previous_plan, ziele=ziele, run_id=run_id,
             )
-            classification_prompt = build_classification_prompt(
-                classification_context, get_setting(self.db, CLASSIFICATION_PROMPT_KEY)
-            )
-            classification_schema = build_classification_response_schema(ziele)
-            try:
-                class_response = await self.provider.generate(
-                    classification_prompt, classification_schema
-                )
-            except Exception as exc:  # kontrolliert: nie Crash (Iron Rule 8)
-                detail = _describe_exc(exc)
-                self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=detail)
-                self._log(
-                    "error", "Ziel-Klassifizierung fehlgeschlagen",
-                    context={"error": detail}, run_id=run_id,
-                    provider=self.provider.name, model=str(self.config.model),
-                )
+            if not outcome.ok:
                 return PlanRunResult(
                     ok=False,
                     plan=None,
                     validation={
                         "ok": False,
-                        "errors": [f"Klassifizierungs-Aufruf fehlgeschlagen: {detail}"],
+                        "errors": [f"Klassifizierungs-Aufruf fehlgeschlagen: {outcome.error}"],
                         "clamped": [],
                     },
                     ai_call={
                         "provider": self.provider.name,
                         "model": str(self.config.model),
                         "ok": False,
-                        "error": detail,
+                        "error": outcome.error,
                     },
-                    context=classification_context,
+                    context=outcome.context,
                     error="classification_error",
                 )
-
-            self._record_ai_call(
-                ok=True, tokens_in=class_response.tokens_in, tokens_out=class_response.tokens_out,
-                error=None,
-            )
-            class_tokens_in = class_response.tokens_in
-            class_tokens_out = class_response.tokens_out
+            class_tokens_in = outcome.tokens_in
+            class_tokens_out = outcome.tokens_out
             objectives = objectives_from_classification(
-                ziele, class_response.data.get("gewichtung") or {}
+                ziele, (outcome.data or {}).get("gewichtung") or {}
             )
 
         context = build_context(
@@ -363,6 +362,125 @@ class Planner:
             },
             context=context,
             published=published,
+        )
+
+    async def _run_classification_call(
+        self,
+        *,
+        now: datetime,
+        state: dict,
+        forecast: dict,
+        weather: dict,
+        constraints: list,
+        valid_from: str,
+        valid_until: str,
+        weather_detail: str,
+        previous_plan: dict | None,
+        ziele: list,
+        run_id: str,
+    ) -> _ClassificationOutcome:
+        """Führt den Klassifizierungs-Aufruf aus (D-055); gemeinsamer Kern von `run()` und
+        `run_classification()`. Baut Kontext/Prompt/Schema, ruft den Provider, protokolliert den
+        Aufruf (`ai_calls`) und fängt Provider-Exceptions kontrolliert ab (Iron Rule 8)."""
+        classification_context = build_classification_context(
+            state, forecast, constraints, ziele,
+            valid_from=valid_from, valid_until=valid_until,
+            weather=weather,
+            horizon_h=int(self.config.forecast_horizon_h),
+            weather_detail=weather_detail,
+            now=now,
+            previous_plan=previous_plan,
+            quantize=self._quantize_config(),
+        )
+        classification_prompt = build_classification_prompt(
+            classification_context, get_setting(self.db, CLASSIFICATION_PROMPT_KEY)
+        )
+        classification_schema = build_classification_response_schema(ziele)
+        try:
+            response = await self.provider.generate(classification_prompt, classification_schema)
+        except Exception as exc:  # kontrolliert: nie Crash (Iron Rule 8)
+            detail = _describe_exc(exc)
+            self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=detail)
+            self._log(
+                "error", "Ziel-Klassifizierung fehlgeschlagen",
+                context={"error": detail}, run_id=run_id,
+                provider=self.provider.name, model=str(self.config.model),
+            )
+            return _ClassificationOutcome(
+                ok=False, context=classification_context, data=None,
+                tokens_in=None, tokens_out=None, error=detail,
+            )
+        self._record_ai_call(
+            ok=True, tokens_in=response.tokens_in, tokens_out=response.tokens_out, error=None
+        )
+        return _ClassificationOutcome(
+            ok=True, context=classification_context, data=response.data,
+            tokens_in=response.tokens_in, tokens_out=response.tokens_out, error=None,
+        )
+
+    async def run_classification(self, *, now: datetime | None = None) -> ClassificationRunResult:
+        """Führt NUR den Klassifizierungs-Aufruf aus (D-055 Testbutton im Plan-Tab), unabhängig
+        vom eigentlichen Plan-Aufruf. Nützlich, um Ziele-Definitionen/Klassifizierungs-Prompt
+        gezielt zu testen, ohne einen vollständigen (teureren) Planungslauf auszulösen."""
+        now = now or datetime.now(UTC)
+        ziele = load_ziele(self.db)
+        if not ziele:
+            return ClassificationRunResult(
+                ok=False, objectives=None, reasoning=None, ai_call={},
+                context=None, error="keine_ziele_konfiguriert",
+            )
+        if self.provider is None:
+            return ClassificationRunResult(
+                ok=False, objectives=None, reasoning=None, ai_call={},
+                context=None, error="provider_not_configured",
+            )
+
+        state = self.collector.snapshot() if self.collector is not None else {}
+        forecast = (
+            self.forecast_collector.snapshot() if self.forecast_collector is not None else {}
+        )
+        weather = (
+            self.weather_collector.snapshot() if self.weather_collector is not None else {}
+        )
+        dc = self.device_collector
+        devices = getattr(dc, "devices", []) if dc is not None else []
+        readings = getattr(dc, "last_values", {}) if dc is not None else {}
+        constraints = build_constraints(devices, readings)
+
+        valid_from = now.isoformat()
+        window_min = int(self.config.planning_interval_min)
+        valid_until = (now + timedelta(minutes=window_min)).isoformat()
+        previous_plan = self.latest_plan()
+        weather_detail = weather_config_from_options(self.config.values).llm_detail
+        run_id = uuid4().hex[:12]
+
+        outcome = await self._run_classification_call(
+            now=now, state=state, forecast=forecast, weather=weather, constraints=constraints,
+            valid_from=valid_from, valid_until=valid_until, weather_detail=weather_detail,
+            previous_plan=previous_plan, ziele=ziele, run_id=run_id,
+        )
+        if not outcome.ok:
+            return ClassificationRunResult(
+                ok=False, objectives=None, reasoning=None,
+                ai_call={
+                    "provider": self.provider.name, "model": str(self.config.model),
+                    "ok": False, "error": outcome.error,
+                },
+                context=outcome.context, error="classification_error",
+            )
+        gewichtung = (outcome.data or {}).get("gewichtung") or {}
+        reasoning = (outcome.data or {}).get("reasoning")
+        objectives = objectives_from_classification(ziele, gewichtung)
+        return ClassificationRunResult(
+            ok=True,
+            objectives=[asdict(o) for o in objectives],
+            reasoning=str(reasoning) if reasoning is not None else None,
+            ai_call={
+                "provider": self.provider.name, "model": str(self.config.model),
+                "ok": True, "tokens_in": outcome.tokens_in, "tokens_out": outcome.tokens_out,
+            },
+            context=outcome.context,
+            error=None,
         )
 
     def latest_plan(self, *, only_ok: bool = False) -> dict | None:

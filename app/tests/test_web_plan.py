@@ -199,6 +199,60 @@ async def test_plan_run_fails_when_classification_call_fails(aiohttp_client, tmp
     assert "ziele" in run["context"]  # Transparenz: Klassifizierungs-Kontext wurde gesendet
 
 
+async def test_classification_run_returns_weighted_objectives(aiohttp_client, tmp_path):
+    config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    ziel = upsert_ziel(db, ziel_id=None, name="Warmwasserkomfort", devices=["batterie"])
+    provider = _SequencedProvider(
+        [{"gewichtung": {str(ziel.id): 65}, "reasoning": "mittel wichtig"}]
+    )
+    planner = Planner(provider, config, db, device_collector=_Devices(), logger=logger)
+    client = await aiohttp_client(create_app(config, db, ring, planner=planner, version="test"))
+
+    res = await (await client.post("/api/classification/run")).json()
+    assert res["ok"] is True
+    assert res["objectives"] == [{"key": str(ziel.id), "label": "Warmwasserkomfort", "weight": 65}]
+    assert res["reasoning"] == "mittel wichtig"
+    assert "ziele" in res["context"] and "objectives" not in res["context"]
+
+
+async def test_classification_run_without_ziele_reports_none_configured(aiohttp_client, tmp_path):
+    config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    planner = Planner(
+        _SequencedProvider([]), config, db, device_collector=_Devices(), logger=logger
+    )
+    client = await aiohttp_client(create_app(config, db, ring, planner=planner, version="test"))
+
+    res = await (await client.post("/api/classification/run")).json()
+    assert res["ok"] is False
+    assert res["error"] == "keine_ziele_konfiguriert"
+
+
+async def test_classification_run_fails_on_provider_error(aiohttp_client, tmp_path):
+    config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    upsert_ziel(db, ziel_id=None, name="X", devices=[])
+    planner = Planner(_FailingProvider(), config, db, device_collector=_Devices(), logger=logger)
+    client = await aiohttp_client(create_app(config, db, ring, planner=planner, version="test"))
+
+    res = await (await client.post("/api/classification/run")).json()
+    assert res["ok"] is False
+    assert res["error"] == "classification_error"
+
+
+async def test_classification_run_without_planner_returns_503(aiohttp_client, tmp_path):
+    config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
+    logger, ring = setup_logging("DEBUG", stream=io.StringIO())
+    db = init_db(str(tmp_path / "ep.db"))
+    client = await aiohttp_client(create_app(config, db, ring, version="test"))
+    res = await client.post("/api/classification/run")
+    assert res.status == 503
+
+
 async def test_plan_endpoints_without_planner(aiohttp_client, tmp_path):
     config = AddonConfig.load(options_path=str(tmp_path / "options.json"), env={})
     logger, ring = setup_logging("DEBUG", stream=io.StringIO())

@@ -9,6 +9,11 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 ## [Unreleased]
 
 ### Geändert
+- **"Klassifizierung erzeugen"-Button im Plan-Tab (D-055 Folge-Anpassung).** Neuer Button
+  löst den Klassifizierungs-Aufruf isoliert aus (`POST /api/classification/run`,
+  `Planner.run_classification()`), unabhängig vom eigentlichen Plan-Lauf – zum gezielten
+  Testen von Zieldefinitionen/Klassifizierungs-Prompt. Zeigt analog zu "Plan erzeugen" die
+  gesendeten Daten und das Ergebnis (Gewichtung je Ziel + Begründung).
 - **User-definierte Ziele statt statischer Zielgewichte (D-055).** Die feste Addon-Config
   `objective_weights` (8 Ziele, Gewicht 0–100 %) ist entfernt. Im Tab "Grenzen und Ziele"
   definiert der User jetzt eigene Ziele (Name, Beschreibung, zugeordnete Geräte) OHNE

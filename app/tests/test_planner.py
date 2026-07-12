@@ -8,6 +8,7 @@ from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
 from energy_pilot.devices import CONTROLLABLE, Device
 from energy_pilot.logging_setup import setup_logging
+from energy_pilot.objectives import upsert_ziel
 from energy_pilot.planner import Planner
 
 NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
@@ -386,6 +387,58 @@ async def test_run_without_provider_reports_not_configured(tmp_path):
     assert result.error == "provider_not_configured"
     assert db.execute("SELECT COUNT(*) AS n FROM ai_calls").fetchone()["n"] == 0
     assert db.execute("SELECT COUNT(*) AS n FROM plans").fetchone()["n"] == 0
+
+
+async def test_run_classification_without_ziele_reports_none_configured(tmp_path):
+    planner, _ = _planner(tmp_path, _FakeProvider())
+
+    result = await planner.run_classification(now=NOW)
+
+    assert not result.ok
+    assert result.error == "keine_ziele_konfiguriert"
+    assert result.objectives is None
+    assert result.context is None
+
+
+async def test_run_classification_without_provider_reports_not_configured(tmp_path):
+    planner, db = _planner(tmp_path, None)
+    upsert_ziel(db, ziel_id=None, name="Warmwasserkomfort", devices=[])
+
+    result = await planner.run_classification(now=NOW)
+
+    assert not result.ok
+    assert result.error == "provider_not_configured"
+
+
+async def test_run_classification_returns_weighted_objectives(tmp_path):
+    planner, db = _planner(tmp_path, _FakeProvider())
+    ziel = upsert_ziel(db, ziel_id=None, name="Warmwasserkomfort", devices=["heizstab"])
+    planner.provider = _FakeProvider(
+        {"gewichtung": {str(ziel.id): 90}, "reasoning": "dringend, da kalt"}
+    )
+
+    result = await planner.run_classification(now=NOW)
+
+    assert result.ok
+    assert result.objectives == [{"key": str(ziel.id), "label": "Warmwasserkomfort", "weight": 90}]
+    assert result.reasoning == "dringend, da kalt"
+    assert result.ai_call["tokens_in"] == 11 and result.ai_call["tokens_out"] == 22
+    assert "objectives" not in result.context
+    assert result.context["ziele"][0]["id"] == ziel.id
+    row = db.execute("SELECT COUNT(*) AS n FROM ai_calls").fetchone()
+    assert row["n"] == 1
+
+
+async def test_run_classification_provider_error_is_reported(tmp_path):
+    planner, db = _planner(tmp_path, _FakeProvider(exc=RuntimeError("kaputt")))
+    upsert_ziel(db, ziel_id=None, name="X", devices=[])
+
+    result = await planner.run_classification(now=NOW)
+
+    assert not result.ok
+    assert result.error == "classification_error"
+    assert result.context is not None  # Transparenz: gesendeter Kontext bleibt sichtbar
+    assert result.ai_call["error"]
 
 
 async def test_run_publishes_valid_plan_to_ha(tmp_path):

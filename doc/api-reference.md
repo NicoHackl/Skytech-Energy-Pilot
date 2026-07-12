@@ -34,6 +34,7 @@ Alle State liegt auf `app[...]`-Keys (Config/DB/Ring-Puffer/Clients/Collector/Pl
 | POST | `/api/prompt` | Planungs-Prompt speichern/zurücksetzen |
 | GET | `/api/classification-prompt` | aktueller/Default-Klassifizierungs-Prompt (D-055) |
 | POST | `/api/classification-prompt` | Klassifizierungs-Prompt speichern/zurücksetzen |
+| POST | `/api/classification/run` | Klassifizierungs-Aufruf isoliert auslösen (Testbutton, D-055) |
 | POST | `/api/plan/run` | Planungslauf auslösen (**der einzige Weg, wie ein Plan entsteht**) |
 | POST | `/api/plan/publish` | letzten gültigen Plan erneut nach HA schreiben |
 | GET | `/api/plan` | letzter gespeicherter Plan + Validierungsergebnis |
