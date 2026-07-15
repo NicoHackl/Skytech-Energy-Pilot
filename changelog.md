@@ -52,6 +52,26 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   manuell auf Zuruf, kein Automatismus. CI (`ci.yaml`) läuft ab sofort auf allen
   4 Branches statt nur auf `claude/main`.
 
+### Entfernt
+- **Stabilitäts-Kern A2/A3/A4/B2 vollständig zurückgebaut (Rückbau von v0.0.51).** Die
+  Determinismus-/Glättungs-Schicht aus `plan/longterm_plan_claude.md` wird komplett entfernt,
+  da sie sich in der Praxis nicht bewährt hat:
+  - **A2 Anti-Flatter:** `validator.smooth_plan()` samt `StabilityLimits`/`SmoothResult` und
+    der Planner-Glättung entfällt; die DB-Tabelle `device_plan_state` (Migration 9) entfällt
+    (Migrationen: `9` gelöscht, `ziele` bleibt Version `10`). Der Validator arbeitet wieder
+    rein auf den Stufen 1–3.
+  - **A3 Eingangs-Quantisierung:** Snapping/Zeitstempel-Rundung und der `quantize`-Pfad durch
+    `build_context`/`build_classification_context` sind raus – die KI bekommt wieder die
+    unveränderten verdichteten Werte.
+  - **A4 Confidence-Gate:** Validator-Stufe 6 entfällt; `min_confidence_percent` bleibt als
+    Config-Wert erhalten, wird aber wieder nirgends ausgewertet.
+  - **B2 Trend-Features:** das `trend`-Feld je Messgröße und die zugehörigen Prompt-Hinweise
+    sind entfernt.
+  - Entfernte Addon-Config-Keys: `delta_limit_power_percent`, `delta_limit_battery_percent`,
+    `freigabe_hysteresis_runs`, `min_hold_minutes`, `snap_power_w`, `snap_soc_percent`,
+    `snap_amp_a`, `snap_forecast_kwh`. Alle späteren Features (D-053 bis D-056) bleiben
+    unverändert funktionsfähig.
+
 ## [0.0.51] - 2026-07-11
 
 ### Hinzugefügt

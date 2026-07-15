@@ -43,12 +43,7 @@ from energy_pilot.plan_schema import (
 )
 from energy_pilot.settings import CLASSIFICATION_PROMPT_KEY, PLANNING_PROMPT_KEY, get_setting
 from energy_pilot.suggestion_publisher import publish_suggestions
-from energy_pilot.validator import (
-    StabilityLimits,
-    missing_suggestion_fields,
-    smooth_plan,
-    validate,
-)
+from energy_pilot.validator import missing_suggestion_fields, validate
 from energy_pilot.weather import weather_config_from_options
 
 
@@ -175,11 +170,9 @@ class Planner:
         valid_until = (now + timedelta(minutes=window_min)).isoformat()
 
         # Vorplan als Anker laden (A1): stabilisiert Lauf-zu-Lauf, indem die KI ihn als
-        # `previous_plan` mitbekommt (verdichtet in build_context). Der zuletzt GÜLTIGE Plan
-        # ist zusätzlich die Delta-Limit-Basis der Anti-Flatter-Schicht (A2). Vor dem KI-Aufruf
-        # geladen, damit der noch nicht gespeicherte neue Plan ihn nicht überschreibt.
+        # `previous_plan` mitbekommt (verdichtet in build_context). Vor dem KI-Aufruf geladen,
+        # damit der noch nicht gespeicherte neue Plan ihn nicht überschreibt.
         previous_plan = self.latest_plan()
-        previous_valid = self.latest_plan(only_ok=True)
 
         weather_detail = weather_config_from_options(self.config.values).llm_detail
         run_id = uuid4().hex[:12]
@@ -244,7 +237,6 @@ class Planner:
             weather_detail=weather_detail,
             now=now,
             previous_plan=previous_plan,
-            quantize=self._quantize_config(),
         )
 
         # Editierbare Instruktion aus der EP-Oberfläche (sonst Default); Daten-Block hängt
@@ -324,18 +316,8 @@ class Planner:
                     provider=self.provider.name, model=self.model_name,
                 )
 
-        min_conf = self.config.values.get("min_confidence_percent")
-        result = validate(
-            plan_dict, constraints, now=now,
-            min_confidence=int(min_conf) if min_conf is not None else None,
-        )
+        result = validate(plan_dict, constraints, now=now)
         stored = result.normalized_plan or plan_dict
-
-        # Anti-Flatter (A2 / Validator Stufe 5): nur gültige Pläne glätten; abgelehnte werden
-        # nicht veröffentlicht und dürfen den Pro-Gerät-Zustand nicht fortschreiben.
-        if result.ok:
-            self._apply_stability(stored, previous_valid, constraints, result, now)
-
         self._store_plan(stored, result)
         self._audit("plan_created" if result.ok else "plan_rejected", run_id, result)
         self._log(
@@ -396,7 +378,6 @@ class Planner:
             weather_detail=weather_detail,
             now=now,
             previous_plan=previous_plan,
-            quantize=self._quantize_config(),
         )
         classification_prompt = build_classification_prompt(
             classification_context, get_setting(self.db, CLASSIFICATION_PROMPT_KEY)
@@ -489,17 +470,13 @@ class Planner:
             error=None,
         )
 
-    def latest_plan(self, *, only_ok: bool = False) -> dict | None:
-        """Liefert den zuletzt gespeicherten Plan inkl. Validierungsergebnis (für /api/plan).
-
-        `only_ok=True` liefert den zuletzt **gültigen** Plan (Delta-Limit-Basis der A2-Glättung).
-        """
+    def latest_plan(self) -> dict | None:
+        """Liefert den zuletzt gespeicherten Plan inkl. Validierungsergebnis (für /api/plan)."""
         if self.db is None:
             return None
         row = self.db.execute(
-            "SELECT ts, plan_id, ok, plan_json, errors_json, clamped_json FROM plans "
-            + ("WHERE ok=1 " if only_ok else "")
-            + "ORDER BY id DESC LIMIT 1"
+            "SELECT ts, plan_id, ok, plan_json, errors_json, clamped_json "
+            "FROM plans ORDER BY id DESC LIMIT 1"
         ).fetchone()
         if row is None:
             return None
@@ -543,89 +520,6 @@ class Planner:
     def _publish_enabled(self) -> bool:
         """Ob Vorschlagswerte nach HA geschrieben werden (Addon-Option, Default an)."""
         return bool(self.config.values.get("publish_suggestions", True))
-
-    def _quantize_config(self) -> dict:
-        """Snap-Schritte für die Eingangs-Quantisierung (A3) aus der Addon-Config."""
-        v = self.config.values
-        return {
-            "power_w": v.get("snap_power_w", 50),
-            "soc_percent": v.get("snap_soc_percent", 1),
-            "amp_a": v.get("snap_amp_a", 0.1),
-            "forecast_kwh": v.get("snap_forecast_kwh", 0.1),
-        }
-
-    def _apply_stability(
-        self, plan: dict, previous_valid: dict | None, constraints: list, result: object,
-        now: datetime,
-    ) -> None:
-        """Glättet einen gültigen Plan (A2) in-place und persistiert den Pro-Gerät-Zustand.
-
-        Delta-Limit gegen den zuletzt gültigen Plan + Freigabe-Hysterese/Mindesthaltezeit; die
-        Glättungs-Notizen werden wie Klemmungen an `result.clamped` gehängt (UI/Audit).
-        """
-        v = self.config.values
-        limits = StabilityLimits(
-            power_percent=float(v.get("delta_limit_power_percent", 20)),
-            battery_percent=float(v.get("delta_limit_battery_percent", 10)),
-            hysteresis_runs=int(v.get("freigabe_hysteresis_runs", 2)),
-            min_hold_minutes=float(v.get("min_hold_minutes", 15)),
-        )
-        prev_plan = (previous_valid or {}).get("plan") or {}
-        previous_by_name = {
-            d["name"]: d
-            for d in prev_plan.get("devices", [])
-            if isinstance(d, dict) and d.get("name")
-        }
-        constraints_by_name = {c.name: c for c in constraints}
-        smoothed = smooth_plan(
-            plan.get("devices", []), previous_by_name, constraints_by_name,
-            self._load_device_state(), limits=limits, now=now,
-        )
-        result.clamped.extend(smoothed.notes)
-        self._save_device_state(smoothed.state)
-
-    def _load_device_state(self) -> dict[str, dict]:
-        """Lädt den Pro-Gerät-Anti-Flatter-Zustand aus der DB (leer bei Fehler/ohne DB)."""
-        if self.db is None:
-            return {}
-        try:
-            rows = self.db.execute(
-                "SELECT device_name, last_freigabe, last_prio, pending_freigabe, "
-                "pending_count, last_change_ts FROM device_plan_state"
-            ).fetchall()
-        except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert die Planung nie
-            return {}
-        return {
-            row["device_name"]: {
-                "last_freigabe": row["last_freigabe"],
-                "last_prio": row["last_prio"],
-                "pending_freigabe": row["pending_freigabe"],
-                "pending_count": row["pending_count"],
-                "last_change_ts": row["last_change_ts"],
-            }
-            for row in rows
-        }
-
-    def _save_device_state(self, state: dict[str, dict]) -> None:
-        """Persistiert den Pro-Gerät-Anti-Flatter-Zustand (Upsert; DB-Fehler blockieren nie)."""
-        if self.db is None:
-            return
-        try:
-            for name, st in state.items():
-                self.db.execute(
-                    "INSERT INTO device_plan_state (device_name, last_freigabe, last_prio, "
-                    "pending_freigabe, pending_count, last_change_ts) VALUES (?, ?, ?, ?, ?, ?) "
-                    "ON CONFLICT(device_name) DO UPDATE SET "
-                    "last_freigabe=excluded.last_freigabe, last_prio=excluded.last_prio, "
-                    "pending_freigabe=excluded.pending_freigabe, "
-                    "pending_count=excluded.pending_count, last_change_ts=excluded.last_change_ts",
-                    (name, st.get("last_freigabe"), st.get("last_prio"),
-                     st.get("pending_freigabe"), st.get("pending_count"),
-                     st.get("last_change_ts")),
-                )
-            self.db.commit()
-        except sqlite3.Error:  # pragma: no cover - DB-Defensive
-            pass
 
     @staticmethod
     def _device_entries(raw: object) -> list[dict]:

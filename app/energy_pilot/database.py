@@ -135,22 +135,6 @@ MIGRATIONS: list[tuple[int, str]] = [
         """,
     ),
     (
-        9,
-        # Pro-Gerät-Zustand der Anti-Flatter-Schicht (A2 / Validator Stufe 5): letzte
-        # veröffentlichte Freigabe/Prio, der in der Hysterese laufende Kandidat samt Zähler
-        # und der Zeitstempel der letzten akzeptierten Freigabe-Änderung (Mindesthaltezeit).
-        """
-        CREATE TABLE IF NOT EXISTS device_plan_state (
-            device_name TEXT PRIMARY KEY,
-            last_freigabe INTEGER,
-            last_prio INTEGER,
-            pending_freigabe INTEGER,
-            pending_count INTEGER DEFAULT 0,
-            last_change_ts TEXT
-        );
-        """,
-    ),
-    (
         10,
         # User-definierte Ziele (D-055): ersetzen die statischen `objective_weights` aus der
         # Addon-Config. Ein vorgelagerter Klassifizierungs-Aufruf leitet daraus je Planungslauf

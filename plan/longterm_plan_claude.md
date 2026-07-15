@@ -77,13 +77,13 @@ Deterministischer Basisplan (`longterm_plan.md` Abschn. 4) minimiert bereits die
 | Empf. | Langzeitplan | Status im Code | Einordnung |
 |---|---|---|---|
 | A1 Vorplan laden | Abschn. 5/6 | ✅ umgesetzt (v0.0.50) | **erledigt** (Voraussetzung) |
-| A2 Anti-Flatter | Abschn. 6 | ✅ umgesetzt (v0.0.51); Prio-Hold offen (mit B3) | **erledigt** (Delta-Limit + Freigabe-Hysterese + Haltezeit) |
-| A3 Quantisierung | – | ✅ umgesetzt (v0.0.51) | **erledigt** |
-| A4 Confidence-Gate | Abschn. 6 | ✅ umgesetzt (v0.0.51) | **erledigt** |
-| A5 Freshness-Gate | Abschn. 3/6 | Stage 4 = TODO | **vorziehen** (braucht Collector-Zeitstempel) |
+| A2 Anti-Flatter | Abschn. 6 | Stage 5 = TODO | **vorziehen** |
+| A3 Quantisierung | – | fehlt | **neu** |
+| A4 Confidence-Gate | Abschn. 6 | Config tot | **vorziehen** (trivial) |
+| A5 Freshness-Gate | Abschn. 3/6 | Stage 4 = TODO | **vorziehen** |
 | A6 Basisplan | Abschn. 4/5 | fehlt | Phase 2/3 (groß, Kern) |
 | B1 Feedback/Vorplan | Abschn. 8 | gespeichert, ungenutzt | mittel |
-| B2 Trends | Abschn. 3 | ✅ umgesetzt (v0.0.51) | **erledigt** |
+| B2 Trends | Abschn. 3 | teilweise (Aggregator) | mittel |
 | B3 Urgency-Formel | Abschn. 3 | fehlt | mittel |
 | B4 Reason-Codes | Abschn. 5 | fehlt | mittel |
 | B5 Bilanz-Leitplanken | implizit | fehlt | mit A6 |

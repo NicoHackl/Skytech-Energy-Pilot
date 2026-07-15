@@ -36,12 +36,7 @@ Update nicht verloren; nach dem Update sollte er ins Gemini-Untermenü eingetrag
 | `planning_interval_min` | 60 | 15–60 | **Config existiert, wird nicht ausgewertet** (kein Scheduler) |
 | `plan_update_interval_min` | 15 | 5–60 | **Config existiert, wird nicht ausgewertet** |
 | `forecast_horizon_h` | 24 | 12–48 | Planungshorizont |
-| `min_confidence_percent` | 70 | 0–100 | Confidence-Gate (Validator-Stufe 6, v0.0.51): darunter → Plan abgelehnt, nicht veröffentlicht |
-| `delta_limit_power_percent` | 20 | 0–100 | Anti-Flatter (A2): max. Änderung der Schutzleistung je Lauf ggü. Vorplan |
-| `delta_limit_battery_percent` | 10 | 0–100 | Anti-Flatter: engerer Delta-Satz für die Batterie |
-| `freigabe_hysteresis_runs` | 2 | ≥1 | Anti-Flatter: Freigabe-Wechsel erst nach N konsistenten Läufen |
-| `min_hold_minutes` | 15 | ≥0 | Anti-Flatter: keine erneute Freigabe-Änderung in diesem Fenster |
-| `snap_power_w` / `snap_soc_percent` / `snap_amp_a` / `snap_forecast_kwh` | 50 / 1 / 0.1 / 0.1 | frei | Eingangs-Quantisierung (A3): Rundungsraster der an die KI gegebenen Werte |
+| `min_confidence_percent` | 70 | 0–100 | **Config existiert, Validator-Stufe 6 nicht implementiert** |
 | `collect_interval_s` | 30 | 5–300 | Haupt-Poll-Takt (Mess-Rollen, Geräte, Prognose) |
 | `publish_suggestions` | true | bool | `sensor.ep_*_vorschlag` nach HA schreiben; `false` = reiner Beobachten-Modus |
 | `hems_base_url` | leer | frei | leer = keine HEMS-Anbindung, keine Geräte-Discovery |

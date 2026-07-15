@@ -252,66 +252,6 @@ async def test_run_passes_previous_plan_as_anchor(tmp_path):
     assert heizstab["freigabe_vorschlag"] is True
 
 
-# Vollständige, sonst gültige Pläne, die sich nur in der Heizstab-Freigabe unterscheiden.
-_STABLE_TRUE = {
-    "devices": [
-        {"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": True,
-         "geschutzte_mindestleistung_w_vorschlag": 800.0},
-        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
-    ],
-    "confidence": 80, "reasoning": "x", "warnings": [],
-}
-_STABLE_FALSE = {
-    "devices": [
-        {"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": False,
-         "geschutzte_mindestleistung_w_vorschlag": 800.0},
-        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
-    ],
-    "confidence": 80, "reasoning": "x", "warnings": [],
-}
-
-
-async def test_run_hysteresis_holds_freigabe_flip(tmp_path):
-    # A2-Kernbeweis: kippt das Modell die Freigabe, hält die Hysterese sie, bis N (=2) konsistente
-    # Läufe den Wechsel bestätigen. Zwei quasi-identische Läufe → kein sofortiger Freigabe-Wechsel.
-    provider = _SequenceProvider([_STABLE_TRUE, _STABLE_FALSE])
-    planner, _ = _planner(tmp_path, provider)
-
-    def _frei(result):
-        return next(d for d in result.plan["devices"] if d["name"] == "heizstab")[
-            "freigabe_vorschlag"
-        ]
-
-    r1 = await planner.run(now=NOW)
-    assert _frei(r1) is True
-
-    r2 = await planner.run(now=NOW)  # Modell will false -> gehalten (bleibt true)
-    assert _frei(r2) is True
-    assert any("gehalten" in c for c in r2.validation["clamped"])
-
-    r3 = await planner.run(now=NOW)  # zweiter konsistenter false -> Wechsel bestätigt
-    assert _frei(r3) is False
-    assert any("Hysterese bestätigt" in c for c in r3.validation["clamped"])
-
-
-async def test_run_rejects_low_confidence_and_does_not_publish(tmp_path):
-    # A4: Konfidenz unter der Schwelle (Default 70 %) -> Plan abgelehnt, nichts nach HA geschrieben.
-    low_conf = {**_STABLE_TRUE, "confidence": 50}
-    ha = _FakeHA()
-    planner, db = _planner(tmp_path, _FakeProvider(low_conf), ha_client=ha)
-
-    result = await planner.run(now=NOW)
-
-    assert not result.ok
-    assert any("Mindestkonfidenz" in e for e in result.validation["errors"])
-    assert result.published is None
-    assert ha.calls == []
-    assert (
-        db.execute("SELECT COUNT(*) AS n FROM audit WHERE action='plan_rejected'").fetchone()["n"]
-        == 1
-    )
-
-
 async def test_run_includes_weather_in_context(tmp_path):
     planner, _ = _planner(
         tmp_path, _FakeProvider(_VALID_DATA),

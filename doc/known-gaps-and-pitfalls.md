@@ -17,12 +17,15 @@ zusätzlich das Event-basierte Nachplanungs-Konzept (E-Auto Stecker, Abfahrtszei
 Änderung, SOC-Ziel-Änderung, PV-/Lastprognose-Abweichung, …) aus dem alten
 Decision-Log berücksichtigen ([decisions-log.md](decisions-log.md)).
 
-### Validator-Stufe 4 (Daten-Frische) fehlt noch
+### `min_confidence_percent` unbenutzt
 
-Stufen 5 (Anti-Flatter/Delta-Limit + Freigabe-Hysterese + Mindesthaltezeit) und 6
-(Mindestkonfidenz-Gate, `min_confidence_percent`) sind seit v0.0.51 implementiert (A2/A4).
-Offen bleibt nur **Stufe 4 (Daten-Frische)**: sie braucht Zeitstempel-/Qualitäts-Mitführung
-im Collector-Snapshot, die es heute nicht gibt. Siehe [validation-safety.md](validation-safety.md).
+Seit Projektbeginn in der Config, im Validator-Modul-Docstring als offene "Stufe 6"
+vermerkt, aber sonst im gesamten Code nirgends gelesen.
+
+### Validator-Stufen 4–6 fehlen
+
+Daten-Frische, Delta-Limit zum Vorplan, Mindestkonfidenz-Gate — alle drei im
+`validator.py`-Docstring als TODO markiert. Siehe [validation-safety.md](validation-safety.md).
 
 ### Steuermodi/Betriebsmodi nicht verdrahtet
 

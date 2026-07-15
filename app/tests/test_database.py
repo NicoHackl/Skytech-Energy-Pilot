@@ -11,7 +11,7 @@ def test_migrations_create_core_tables(tmp_path):
     }
     expected = {
         "config", "audit", "errors", "ai_calls", "entity_map", "allowlist", "plans",
-        "hems_feedback", "device_extras", "device_prompts", "device_plan_state",
+        "hems_feedback", "device_extras", "device_prompts",
         "ziele", "schema_migrations",
     }
     assert expected <= tables

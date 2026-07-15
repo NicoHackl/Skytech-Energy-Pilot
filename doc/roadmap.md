@@ -27,8 +27,7 @@ publiziert + manueller "Erneut nach HA schreiben"-Button.
 
 **Offen:** automatische periodische Planung (Scheduler) — siehe
 [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#kein-automatischer-scheduler).
-Validator-Stufen 5 (Anti-Flatter/Delta-Limit) und 6 (Mindestkonfidenz) seit v0.0.51
-implementiert (A2/A4); nur Stufe 4 (Daten-Frische) noch offen.
+Validator-Stufen 4–6 (Frische/Delta-Limit/Mindestkonfidenz) ebenfalls offen.
 
 ## M3 — HEMS-Schnittstelle — ◐ nur ein Teilstück ("Durchstich 1")
 
@@ -42,8 +41,8 @@ bewirkt) und Ebene 2 (versionierter Plan-Endpunkt im HEMS-Repo) sind **nicht**
 gebaut — Vorschläge landen zwar als Sensoren in HA, aber nichts wertet sie
 automatisch aus. Steuermodi Manuell/Hybrid/Automatisch nicht wirksam
 ([control-modes.md](control-modes.md)). Externer Schreibzugriff (iOS/Java-Backend)
-nicht umgesetzt. Plan-Ablauf+Fallback-Logik und HEMS-Doppelvalidierung offen; das
-Delta-Limit zwischen Plänen ist seit v0.0.51 lokal in EP umgesetzt (A2).
+nicht umgesetzt. Plan-Ablauf+Fallback-Logik, HEMS-Doppelvalidierung, Delta-Limit
+zwischen Plänen — alles offen.
 
 ## M4 — Shadow Mode — ☐ offen
 

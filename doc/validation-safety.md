@@ -26,13 +26,13 @@
 | 1 | Schema — `plan_schema.schema_errors()` gegen `PLAN_JSON_SCHEMA` (Draft 2020-12, `jsonschema`-Library) | ✅ implementiert, harter Reject bei Fehler |
 | 2 | Wertebereiche/Schreibvertrag je Gerät — fehlende Pflichtfelder deterministisch auffüllen, unbekanntes Feld → Fehler, Schutzleistung auf `[min_power, max_power]` geklemmt, Extra-Felder numerisch geklemmt bzw. Select-Werte außerhalb des Pools verworfen. Zusätzlich: Prioritäten werden zu einer lückenlosen 10er-Rangfolge normalisiert (`_normalize_priorities()`) | ✅ implementiert |
 | 3 | Zeitlogik — `valid_from < valid_until`, Plan nicht bereits abgelaufen | ✅ implementiert |
-| 4 | Daten-Frische der Eingabewerte | ❌ **nicht implementiert** (braucht Zeitstempel-/Qualitäts-Mitführung im Collector) |
-| 5 | Anti-Flatter / Delta-Limit zum Vorplan (±20 % Leistung, Batterie ±10 %, D-021) + Freigabe-Hysterese (N Läufe) + Mindesthaltezeit | ✅ implementiert (v0.0.51) als reine `validator.smooth_plan()`; DB-frei, vom Planner auf gültigen Plänen aufgerufen, Pro-Gerät-Zustand in `device_plan_state` |
-| 6 | Mindestkonfidenz-Schwelle (`min_confidence_percent`, Default 70) | ✅ implementiert (v0.0.51); Konfidenz unter Schwelle → Reject, Plan wird nicht veröffentlicht (fehlende Konfidenz lehnt nicht ab) |
+| 4 | Daten-Frische der Eingabewerte | ❌ **nicht implementiert** |
+| 5 | Delta-Limit zum Vorplan (Default ±20 % Leistung / ±10 % SOC-Ziel, D-021) | ❌ **nicht implementiert** |
+| 6 | Mindestkonfidenz-Schwelle (`min_confidence_percent`, Default 70) | ❌ **nicht implementiert**, Config-Wert existiert, wird nirgends gelesen |
 
-Stufe 4 ist im Validator-Modul-Docstring weiterhin als offenes TODO markiert (Eingaben
-fehlen). Stufen 5/6 greifen; die Anti-Flatter-Schicht läuft als Post-Validierungs-Glättung
-(`smooth_plan()`), damit der Validator DB-frei/testbar bleibt.
+Stufen 4–6 sind im Validator-Modul-Docstring als offenes TODO markiert ("Eingaben
+fehlen") — vor jeder Aussage "Delta-Limit greift" oder "Mindestkonfidenz blockiert
+Pläne" den aktuellen Code prüfen, nicht der alten Spec vertrauen.
 
 **D-054:** `technische_freigabe=false` blockiert `freigabe_vorschlag=true` NICHT mehr hart
 (weder als Reject in Stufe 2 noch als Sofort-Override in der Freigabe-Hysterese, Stufe 5).
