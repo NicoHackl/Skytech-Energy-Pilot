@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from energy_pilot.constraints import DeviceConstraint
 from energy_pilot.devices import BINARY
-from energy_pilot.objectives import Objective
+from energy_pilot.objectives import Objective, Ziel
 from energy_pilot.plan_schema import suggestion_keys
 from energy_pilot.weather import ONECALL_TIMELINES
 
@@ -28,34 +28,115 @@ _KIND_TO_GEMINI: dict[str, str] = {
 }
 
 
-def _condense_state(state: dict) -> list[dict]:
-    """Verdichtet den State-Snapshot je Rolle auf das Nötigste (Werte + Mittel)."""
+# --- A3: Eingangs-Quantisierung / Snapping ---------------------------------------------------
+# Default-Snap-Schritte je Größe; via Addon-Config (quantize-Dict) überschreibbar. Ziel: kleine
+# Sensor-Schwankungen verändern den Prompt nicht mehr → gleicher Input → gleiche KI-Antwort
+# (nutzt ai_temperature=0/ai_seed=42 endlich aus).
+SNAP_POWER_W = 50
+SNAP_SOC_PERCENT = 1
+SNAP_AMP_A = 0.1
+SNAP_FORECAST_KWH = 0.1
+_DEFAULT_QUANTIZE: dict[str, float] = {
+    "power_w": SNAP_POWER_W,
+    "soc_percent": SNAP_SOC_PERCENT,
+    "amp_a": SNAP_AMP_A,
+    "forecast_kwh": SNAP_FORECAST_KWH,
+}
+
+# --- B2: Trend-Features ---------------------------------------------------------------------
+# Trend aus kurz- vs. langfristigem Mittel. Relative Schwelle plus absoluter Boden (W) gegen
+# Rauschen nahe Null; darunter gilt der Verlauf als „stabil".
+TREND_REL = 0.05
+TREND_ABS_W = 25.0
+
+
+def _is_number(value: object) -> bool:
+    """True für echte Zahlen (bool zählt NICHT als Zahl)."""
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _snap(value: object, step: float) -> object:
+    """Rundet eine Zahl auf das nächste Vielfache von `step`; nicht-Zahlen bleiben unverändert."""
+    if not _is_number(value) or not step:
+        return value
+    return round(round(value / step) * step, 3)
+
+
+def _snap_by_unit(value: object, unit: str | None, q: dict) -> object:
+    """Rundet einheitengerecht: W/%/A auf grobe Stufen, sonst auf 2 Nachkommastellen."""
+    if not _is_number(value):
+        return value
+    if unit == "W":
+        return _snap(value, q.get("power_w", SNAP_POWER_W))
+    if unit == "%":
+        return _snap(value, q.get("soc_percent", SNAP_SOC_PERCENT))
+    if unit == "A":
+        return _snap(value, q.get("amp_a", SNAP_AMP_A))
+    return round(float(value), 2)
+
+
+def _trend(short: object, long: object) -> str | None:
+    """Verlauf aus kurz- (mean_1m) vs. langfristigem (mean_60m) Mittel; None, wenn eines fehlt."""
+    if not _is_number(short) or not _is_number(long):
+        return None
+    delta = float(short) - float(long)
+    threshold = max(TREND_ABS_W, TREND_REL * abs(float(long)))
+    if abs(delta) < threshold:
+        return "stabil"
+    return "steigend" if delta > 0 else "fallend"
+
+
+def _round_minute(ts: object) -> object:
+    """Rundet einen ISO-Zeitstempel auf Minutenauflösung (A3); nicht-ISO-Strings unverändert.
+
+    Reruns innerhalb derselben Minute ergeben so denselben Prompt. Der in der DB gespeicherte
+    Plan behält die exakten Zeiten (der Planner setzt sie getrennt von diesem Kontext).
+    """
+    if not isinstance(ts, str):
+        return ts
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return ts
+    return dt.replace(second=0, microsecond=0).isoformat()
+
+
+def _condense_state(state: dict, quantize: dict | None = None) -> list[dict]:
+    """Verdichtet den State-Snapshot je Rolle: quantisierte Werte + Mittel + Trend (A3/B2)."""
+    q = quantize or _DEFAULT_QUANTIZE
     out: list[dict] = []
     for role, info in state.items():
+        unit = info.get("unit")
         entry: dict[str, object] = {
             "role": role,
             "label": info.get("label"),
-            "unit": info.get("unit"),
+            "unit": unit,
         }
-        if "value" in info:  # Zustandsgrößen: nur Letztwert (SOC, Temperatur …)
-            entry["value"] = info.get("value")
-        else:  # Messgrößen: Letztwert + 1/15/60-min-Mittel (nur vorhandene)
-            entry["latest"] = info.get("latest")
+        if "value" in info:  # Zustandsgrößen: nur (gerundeter) Letztwert (SOC, Temperatur …)
+            entry["value"] = _snap_by_unit(info.get("value"), unit, q)
+        else:  # Messgrößen: Letztwert + 1/15/60-min-Mittel (nur vorhandene), plus Trend
+            entry["latest"] = _snap_by_unit(info.get("latest"), unit, q)
             for key in ("mean_1m", "mean_15m", "mean_60m"):
                 if info.get(key) is not None:
-                    entry[key] = info[key]
+                    entry[key] = _snap_by_unit(info[key], unit, q)
+            # Trend aus den ROHEN Mitteln ableiten (vor dem Snapping), sonst verschwindet er.
+            trend = _trend(info.get("mean_1m"), info.get("mean_60m"))
+            if trend is not None:
+                entry["trend"] = trend
         out.append(entry)
     return out
 
 
-def _condense_forecast(forecast: dict) -> dict:
-    """Reduziert die PV-Prognose auf die summierten Werte (keine Einzel-Ausrichtungen)."""
+def _condense_forecast(forecast: dict, quantize: dict | None = None) -> dict:
+    """Reduziert die PV-Prognose auf die summierten (gerundeten) Werte (keine Ausrichtungen)."""
     if not forecast:
         return {}
+    q = quantize or _DEFAULT_QUANTIZE
+    step = q.get("forecast_kwh", SNAP_FORECAST_KWH)
     return {
         "unit": forecast.get("unit"),
         "values": [
-            {"key": v.get("key"), "label": v.get("label"), "total": v.get("total")}
+            {"key": v.get("key"), "label": v.get("label"), "total": _snap(v.get("total"), step)}
             for v in forecast.get("values", [])
         ],
     }
@@ -321,6 +402,35 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
     return entry
 
 
+# Aus dem Vorplan als Anker relevant (A1): Gerätename + gesetzte Vorschlagsfelder. Diese Keys
+# überträgt `plan_to_dict` bereits flach je Gerät (feste Felder + `extra_<obj>_vorschlag`).
+_PREV_SKIP_KEYS = frozenset({"name"})
+
+
+def _condense_previous_plan(previous: dict | None) -> dict:
+    """Verdichtet den zuletzt gespeicherten Plan als Anker für den nächsten Lauf (A1).
+
+    Übergibt der KI nur die Gerät-Vorschlagswerte (Name + gesetzte Vorschlagsfelder) und die
+    frühere Konfidenz — Zeitstempel, Reasoning und Warnungen bleiben draußen (Datenminimum,
+    Iron Rule 7). So kann die KI ohne materiellen Grund nah am Vorplan bleiben und dämpft
+    Lauf-zu-Lauf-Sprünge. Leer, wenn es keinen (Geräte-)Vorplan gibt.
+    """
+    if not previous:
+        return {}
+    plan = previous.get("plan") or {}
+    devices = [
+        {k: v for k, v in d.items() if k in _PREV_SKIP_KEYS or k.endswith("_vorschlag")}
+        for d in plan.get("devices") or []
+        if isinstance(d, dict) and d.get("name")
+    ]
+    if not devices:
+        return {}
+    out: dict[str, object] = {"devices": devices}
+    if plan.get("confidence") is not None:
+        out["confidence"] = plan.get("confidence")
+    return out
+
+
 def build_context(
     state: dict,
     forecast: dict,
@@ -333,17 +443,22 @@ def build_context(
     horizon_h: int = 24,
     weather_detail: str = "compact",
     now: datetime | None = None,
+    previous_plan: dict | None = None,
+    quantize: dict | None = None,
 ) -> dict:
     """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, Iron Rule 7).
 
     `now` (UTC) steuert das stündliche Wetter-Tagesfenster der One-Call-Quelle; ohne Angabe
-    gilt die aktuelle Zeit.
+    gilt die aktuelle Zeit. `previous_plan` (Ausgabe von `Planner.latest_plan()`) wird als
+    verdichteter Anker `previous_plan` eingehängt (A1 – Stabilität über Aufrufe); fehlt er,
+    entfällt der Schlüssel. `quantize` (Snap-Schritte je Größe) steuert die Eingangs-Rundung
+    (A3); ohne Angabe gelten die Modul-Defaults `_DEFAULT_QUANTIZE`.
     """
-    return {
-        "valid_from": valid_from,
-        "valid_until": valid_until,
-        "state": _condense_state(state),
-        "forecast": _condense_forecast(forecast),
+    context: dict[str, object] = {
+        "valid_from": _round_minute(valid_from),
+        "valid_until": _round_minute(valid_until),
+        "state": _condense_state(state, quantize),
+        "forecast": _condense_forecast(forecast, quantize),
         "weather": _condense_weather(
             weather or {}, horizon_h=horizon_h, detail=weather_detail, now=now
         ),
@@ -352,6 +467,47 @@ def build_context(
             {"key": o.key, "label": o.label, "weight": o.weight} for o in objectives
         ],
     }
+    prev = _condense_previous_plan(previous_plan)
+    if prev:
+        context["previous_plan"] = prev
+    return context
+
+
+def build_classification_context(
+    state: dict,
+    forecast: dict,
+    constraints: list[DeviceConstraint],
+    ziele: list[Ziel],
+    *,
+    valid_from: str,
+    valid_until: str,
+    weather: dict | None = None,
+    horizon_h: int = 24,
+    weather_detail: str = "compact",
+    now: datetime | None = None,
+    previous_plan: dict | None = None,
+    quantize: dict | None = None,
+) -> dict:
+    """Kontext für den vorgelagerten Klassifizierungs-Aufruf (D-055).
+
+    Exakt dieselbe Datenbasis wie `build_context` (Datenminimum, Iron Rule 7) – nur der Key
+    `objectives` (Gewicht bereits bekannt) wird durch `ziele` ersetzt: die user-definierten
+    Zieldefinitionen (id/name/beschreibung/geraete) OHNE Gewicht. Die Klassifizierungs-KI
+    leitet daraus die Gewichtung ab (`objectives_from_classification`), die dann in den
+    eigentlichen Plan-Kontext (`build_context`) einfließt.
+    """
+    context = build_context(
+        state, forecast, constraints, [],
+        valid_from=valid_from, valid_until=valid_until,
+        weather=weather, horizon_h=horizon_h, weather_detail=weather_detail,
+        now=now, previous_plan=previous_plan, quantize=quantize,
+    )
+    del context["objectives"]
+    context["ziele"] = [
+        {"id": z.id, "name": z.name, "beschreibung": z.beschreibung, "geraete": list(z.devices)}
+        for z in ziele
+    ]
+    return context
 
 
 # Standard-Instruktion für die Planung. Über die EP-Oberfläche editierbar (in der
@@ -365,8 +521,9 @@ DEFAULT_PLANNING_PROMPT = (
     "Harte Regeln:\n"
     "- Halte die harten Grenzen jedes Geräts strikt ein; überschreite sie nie.\n"
     "- Gib pro Gerät NUR die Felder aus, die in dessen `allowed_fields` stehen.\n"
-    "- Eine technisch gesperrte Last (technische_freigabe=false) darfst du nicht "
-    "freigeben.\n"
+    "- `technische_freigabe` ist nur der AKTUELLE Zustand des Geräts, kein Verbot für den "
+    "Planzeitraum: du darfst eine gerade gesperrte Last freigeben, wenn sie im "
+    "Gültigkeitszeitraum des Plans voraussichtlich arbeiten darf.\n"
     "- Vergib den Geräten (NICHT der Batterie) eine eindeutige Rangfolge als "
     "`prio_vorschlag`: beginne bei 10 (höchste Priorität) und steigere in "
     "10er-Schritten – 10, 20, 30 … Keine Werte doppelt, keine Lücken, höchstens 100.\n"
@@ -384,7 +541,13 @@ DEFAULT_PLANNING_PROMPT = (
     "dessen Bedeutung. Hat ein Zusatzwert `suggest=true`, liefere deinen Vorschlag exakt "
     "unter dem Feldnamen aus `vorschlagsfeld` (nur diese Felder sind in `allowed_fields`).\n"
     "- Hat ein Gerät das Feld `funktion`, ist das eine vom User verfasste Beschreibung seiner "
-    "Funktion/Besonderheiten; berücksichtige sie bei der Planung dieses Geräts.\n\n"
+    "Funktion/Besonderheiten; berücksichtige sie bei der Planung dieses Geräts.\n"
+    "- Bei Messgrößen im `state` zeigt `trend` (steigend/fallend/stabil) den Verlauf aus kurz- "
+    "gegen langfristiges Mittel; plane aus dem Verlauf, nicht aus einem einzelnen Momentwert.\n"
+    "- Ist `previous_plan` vorhanden, ist das dein zuletzt veröffentlichter Plan (je Gerät die "
+    "vorigen Vorschlagswerte). Bleibe ohne materiellen Grund nah daran: ändere Priorität oder "
+    "Freigabe nur, wenn die aktuellen Daten es klar erfordern – nicht wegen kleiner "
+    "Schwankungen. Das hält den Plan über die Läufe hinweg stabil.\n\n"
     "Gib zusätzlich `confidence` (0–100), eine kurze deutsche `reasoning`-Begründung "
     "und optionale `warnings` aus. Antworte ausschließlich als JSON gemäß dem "
     "vorgegebenen Schema."
@@ -399,6 +562,41 @@ def build_prompt(context: dict, template: str | None = None) -> str:
     Template immer angehängt, damit der Kontext nie versehentlich fehlt.
     """
     instruction = (template or "").strip() or DEFAULT_PLANNING_PROMPT
+    data = json.dumps(context, ensure_ascii=False, indent=2)
+    return f"{instruction}\n\nDaten:\n{data}\n"
+
+
+# Standard-Instruktion für die Klassifizierung (D-055). Läuft VOR dem Planungs-Aufruf, bekommt
+# dieselben Daten (`build_classification_context`) und leitet nur die Gewichtung der user-
+# definierten Ziele ab; über die EP-Oberfläche editierbar (in der `config`-Tabelle persistiert).
+DEFAULT_CLASSIFICATION_PROMPT = (
+    "Du bist der Ziel-Klassifizierer des Home-Assistant-Addons „Skytech Energy Pilot“. "
+    "Du erzeugst KEINEN Energieplan, sondern leitest aus den folgenden Daten eine Gewichtung "
+    "(0–100 %) für jedes vom User definierte Ziel ab – als Vorbereitung für den nachfolgenden "
+    "Planungs-Aufruf.\n\n"
+    "Regeln:\n"
+    "- `ziele` listet die vom User definierten Ziele: `id`, `name`, `beschreibung` und "
+    "`geraete` (die diesem Ziel zugeordneten Gerätenamen aus `devices`, kann leer sein für "
+    "geräteunabhängige/globale Ziele).\n"
+    "- Leite je Ziel-`id` ein Gewicht 0–100 ab, wie wichtig/dringend dieses Ziel JETZT ist – "
+    "auf Basis von `state` (aktuelle Werte, Trends), `forecast` (PV-Prognose), `weather`, den "
+    "harten Grenzen/Zusatzwerten der zugeordneten `geraete` und `previous_plan` (falls "
+    "vorhanden, für Stabilität über Läufe hinweg).\n"
+    "- Höheres Gewicht = wichtiger/dringender im aktuellen Kontext, NICHT eine feste Rangfolge.\n"
+    "- Antworte für JEDE Ziel-`id` aus `ziele` mit exakt einem Gewicht; erfinde keine Ziele.\n"
+    "- Gib zusätzlich eine kurze deutsche `reasoning`-Begründung aus. Antworte ausschließlich "
+    "als JSON gemäß dem vorgegebenen Schema."
+)
+
+
+def build_classification_prompt(context: dict, template: str | None = None) -> str:
+    """Baut den Klassifizierungs-Prompt: (editierbare) Instruktion + angehängter Datenblock.
+
+    Identischer Aufbau wie `build_prompt` (D-055): `template` ist die optional vom User
+    gepflegte Instruktion; fehlt sie, gilt `DEFAULT_CLASSIFICATION_PROMPT`. Der `Daten:`-Block
+    wird unabhängig vom Template immer angehängt.
+    """
+    instruction = (template or "").strip() or DEFAULT_CLASSIFICATION_PROMPT
     data = json.dumps(context, ensure_ascii=False, indent=2)
     return f"{instruction}\n\nDaten:\n{data}\n"
 
@@ -492,6 +690,31 @@ def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
         },
         "required": ["devices", "confidence", "reasoning"],
         "propertyOrdering": ["devices", "confidence", "reasoning", "warnings"],
+    }
+
+
+def build_classification_response_schema(ziele: list[Ziel]) -> dict:
+    """Gemini-Antwort-Schema der Klassifizierung: ein Gewicht je Ziel-`id`, ALLE Pflicht (D-055).
+
+    Gleiches Muster wie `build_response_schema` (Pflichtfeld je bekanntem Schlüssel,
+    `propertyOrdering` für stabile Ausgaben) – hier ein Property je Ziel statt je Gerät.
+    """
+    ids = [str(z.id) for z in ziele]
+    return {
+        "type": "OBJECT",
+        "properties": {
+            "gewichtung": {
+                "type": "OBJECT",
+                "properties": {
+                    i: {"type": "INTEGER", "description": "Gewicht 0–100 %."} for i in ids
+                },
+                "required": ids,
+                "propertyOrdering": ids,
+            },
+            "reasoning": {"type": "STRING"},
+        },
+        "required": ["gewichtung"],
+        "propertyOrdering": ["gewichtung", "reasoning"],
     }
 
 

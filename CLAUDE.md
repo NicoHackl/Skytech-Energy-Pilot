@@ -1,7 +1,7 @@
 # CLAUDE.md — Skytech Energy Pilot
 
-> Kompakte Arbeitsgrundlage für mich (Claude). Vollständige Spezifikation: [info.md](info.md).
-> Regeln in [user-regeln.md](user-regeln.md) haben **immer Vorrang** vor [info.md](info.md).
+> Kompakte Arbeitsgrundlage für mich (Claude). Ausführliche technische Referenz: [doc/](doc/README.md).
+> Bei Widerspruch gilt: [user-beispiele/](user-beispiele/) (.txt, vom User) > diese Datei > [doc/](doc/README.md).
 
 ## Was ist das Projekt?
 Skytech **Energy Pilot (EP)** = eigenständiges Home-Assistant-Addon. KI-gestützte, **vorausschauende strategische** Energieplanung (Horizont 24–48 h). EP plant, **HEMS regelt**. EP steuert **niemals** Geräte direkt.
@@ -11,15 +11,16 @@ Skytech **Energy Pilot (EP)** = eigenständiges Home-Assistant-Addon. KI-gestüt
 - Beide müssen zusammenarbeiten. EP ohne HEMS sinnlos; HEMS ohne EP voll funktionsfähig.
 
 ## Eiserne Projekt Regeln (nicht verhandelbar)
-1. Die Datei **info.md** und **alle** Dateine in dem Ordner **plan** sind durch KI auf Projekterklärung vom User erstellt worden.
-   - Die **.txt** Dateien in **user-beispiele** sind vom User erstellt worde und haben **IMMER** höhere Priorität wie die KI generierten
-   - Wenn zwischen den **.txt** Dateien in **user-beispiele** und den KI generierten Dokumente eine inkonsitenz herscht dann sind die KI generierten Dokumente **info.md** und alle Dateien im Ordner **plan** auszubessern und auf den Stand von den **.txt** Dateien zu bringen
+1. Die Dateien im Ordner **doc/** sind durch KI auf Projekterklärung vom User erstellt worden (frühere **info.md**/**plan/** wurden am 2026-07-10 gelöscht, Ersatz ist **doc/**, siehe [doc/README.md](doc/README.md)).
+   - Die **.txt** Dateien in **user-beispiele** sind vom User erstellt worden und haben **IMMER** höhere Priorität wie die KI generierten
+   - Wenn zwischen den **.txt** Dateien in **user-beispiele** und den KI generierten Dokumenten eine Inkonsistenz herrscht, dann ist **doc/** auszubessern und auf den Stand der **.txt** Dateien zu bringen
 2. Passe bei allen relevanten Änderungen die eine **Auswirkung auf die Darstellung, Information und Funktion** in Homeassistant haben die Versionsnummer in **config.yaml** an
    - Die Versionsnummer in der **config.yaml** wird immer die Patch-nummer um eins erhöht z.b. 1.2.2 -> 1.2.3
 3. Es ist verpflichtend bei jeder **funktionalen oder Designtechnischen Änderung am Code** einen entsprechenden Eintrag in der **changelog.md** zu verfassen
 
 ## Eiserne Regeln (nicht verhandelbar)
-1. **Git:** committen/pushen **nur** in Branch `claude/main` — **auch im HEMS-Repo** (D-022) und dies auch nach **jeder Relevanten Änderung** durchführen. CI-Tests laufen nur auf `claude/main` (D-024) nach jeder abgeschlossenen Aufgabe wird ein Commit and Push durchgeführt.
+1. **Git:** committen/pushen **nur** im aktiv ausgecheckten Branch pushen — **auch im HEMS-Repo** (D-022, umbenannt von `claude/main` D-053) und dies auch nach **jeder Relevanten Änderung** durchführen. CI-Tests laufen auf `claude/stage`, `stage/dev`, `stage/beta`, `stage/stable` (D-024/D-053) nach jeder abgeschlossenen Aufgabe wird ein Commit and Push durchgeführt.
+   - **Release-Channels (D-053):** 3 Branches `stage/dev` / `stage/beta` / `stage/stable`, je eigenes `config.yaml` (eigener `slug`/`name`, Suffix „(Dev)"/„(Beta)" bei Dev/Beta) — User fügt das Repo per Branch-URL (`...#stage/dev` etc.) dreifach in HA hinzu, jeder Branch erscheint als eigenes Addon/Channel. **Promotion nur manuell auf Zuruf** (`claude/stage` → `stage/dev` → `stage/beta` → `stage/stable`), kein Automatismus.
 2. **Sprache Code:** Variablen/Funktionen/Klassen **Englisch**, Kommentare **Deutsch**.
 3. **Sprache HA-Entitäten/Helfer:** **Deutsch**.
 4. **Namens-Domäne nach Datenrichtung (D-029):** vom **User gepflegte technische Gerätewerte → `ems_*`** (HEMS-Domäne, EP **liest** nur); **EP-Vorschlagswerte → `ep_*`** (EP **schreibt**). **Ausnahme (D-035):** ein `ep_*`-Wert kann auch ein user-/extern-gepflegter Grenzwert sein, den EP **liest** (z.B. `input_number.ep_heizstab_max_temperatur`). Vollständiger Datenfluss: [user-beispiele/variablen-zugriff.md](user-beispiele/variablen-zugriff.md).
@@ -32,23 +33,23 @@ Skytech **Energy Pilot (EP)** = eigenständiges Home-Assistant-Addon. KI-gestüt
 7. **Datenminimum:** Nur nötige, verdichtete Daten an externe KI. Niemals die ganze HA-DB.
 8. **Fallback:** Bei Cloud-/KI-Ausfall blockiert EP **nie** die Anlage; HEMS läuft lokal weiter.
 
-## Steuermodi (user-regeln §04) — Langzeitziel, vollständig umzusetzen
-Eigene Achse, getrennt von den Betriebsmodi (Beobachten→Vorschlagen→Shadow→Autopilot). Details: [plan/12-steuermodi.md](plan/12-steuermodi.md).
+## Steuermodi — Langzeitziel, vollständig umzusetzen
+Eigene Achse, getrennt von den Betriebsmodi (Beobachten→Vorschlagen→Shadow→Autopilot). Details: [doc/control-modes.md](doc/control-modes.md).
 - **Manuell:** User steuert alles, KI nichts.
 - **Hybrid:** User fixiert Werte → für KI **harte Vorgaben**, KI plant darum herum (darf sie nie ändern).
 - **Automatisch:** KI/EP-Werte haben **Vorrang** vor User-Eingaben.
 - **Geltung (D-020):** global=Hybrid → zusätzlich pro Gerät verfeinerbar; global=Manuell/Automatisch → gilt für alle (kein Per-Gerät-Override).
 - Technische harte Grenzen + HEMS-Doppelvalidierung bleiben in allen Modi aktiv.
 
-## Getroffene Entscheidungen (Quelle: plan/entscheidungen.md)
+## Getroffene Entscheidungen (Quelle: doc/decisions-log.md)
 - **Sensorwerte:** Live übergeben; EP mittelt selbst über **1 / 15 / 60 min** parallel (keine Ereigniskopplung über Mittel). Gemittelt: Leistungs-/Flussgrößen. Letztwert: SOC, Temperaturen, Zeiten, Zustände. Langzeitprognose nutzt nur 60-min.
 - **HEMS-Anbindung:** V1 nur über HA-Helfer/`/api/set`; später versionierte Plan-API **im HEMS-Repo** (dort darf ich dann auch committen, paralleles lokales Arbeiten wird eingerichtet).
-- **KI-Provider:** Start **Google Gemini**, Default-Modell **`gemini-2.5-flash`** (Free, ~10 req/min → drosseln; zuvor `gemini-3.5-flash`, hing in der Praxis → D-025). Provider/Modell **in Addon-Config** umschaltbar. Keys nie in Logs/Entitäten.
+- **KI-Provider (D-056):** drei umschaltbare Anbieter — **Gemini** (Default `gemini-2.5-flash`), **Claude/Anthropic** (Default `claude-sonnet-5`), **OpenAI/GPT** (Default `gpt-5`). Radio-Selektor `provider` + je Anbieter ein Untermenü `providers.<name>` (api_key/model/timeout_s/rate_limit_per_min). Alle drei als schlanke aiohttp-REST-Clients (kein SDK), gemeinsame `AIProvider`-Abstraktion; `schema_convert.to_json_schema` übersetzt das Gemini-Antwortschema für Claude/OpenAI. `ai_temperature`/`ai_seed` geteilt (Claude ignoriert Sampling). Keys nie in Logs/Entitäten. (Gemini-Historie: `gemini-3.5-flash` hing → D-025.)
 - **V1-Verhalten:** KI liefert nur **Vorschlagswerte** (UI/Sensoren/Logs), keine Übernahme.
 - **HA-Helfer:** werden **nicht** automatisch angelegt. Ich liefere fertige `<domain>_ep.yaml` in [claude-ha-config-dateien/](claude-ha-config-dateien/) (Vorlage: [user-beispiele/](user-beispiele/)).
 - **Naming nach Domäne (D-029):** `ems_*` = User-/Geräte-Eingaben (EP liest), `ep_*` = EP-Vorschläge (EP schreibt). Beispiele: liest `ems_heizstab_technische_freigabe`, `ems_heizlüfter_1_leistung_w`; schreibt `sensor.ep_heizstab_prio_vorschlag`, `sensor.ep_heizlüfter_1_freigabe_vorschlag`. (Frühere `ziel_soc`-Beispiele überholt, D-030.)
 - **Prognose/Preis:** bestehende HA-Sensoren, Entitätsnamen in Addon-Config gepflegt.
-- **Zielgewichtung:** in Addon-Config pflegbar, initial aus info.md §7.
+- **Ziele (D-055):** User definiert eigene Ziele (id/Name/Beschreibung/Geräte-Liste, KEIN Gewicht) im Tab "Grenzen und Ziele" (DB-Tabelle `ziele`, kein Addon-Config-Abschnitt mehr). Ein vorgelagerter Klassifizierungs-LLM-Aufruf (gleiche Datenbasis wie der Plan-Aufruf) leitet je Planungslauf die Gewichtung ab; eigener editierbarer Klassifizierungs-Prompt im Plan-Tab. Details: [doc/configuration.md](doc/configuration.md).
 - **Logging:** Auto-Export eines KI-lesbaren Bundles bei ERROR/CRITICAL.
 - **CI:** muss u.a. HEMS↔EP-Zusammenspiel testen; Start-Coverage 60 %.
 - **Leitprinzip Konfigurierbarkeit:** so gut wie **alles** in der Addon-Config einstellbar (Mindestkonfidenz 70 %, Delta-Limit ±20 %/±10 %, Provider/Modell, Intervalle, Gewichte, Sensor-Mappings …) — Defaults von mir, aber überschreibbar.
@@ -86,16 +87,13 @@ Beobachten → Vorschlagen → Shadow Mode → Autopilot.
 - **Logging:** umfangreich, in EP-UI einsehbar, **maschinenlesbarer Export** (JSON) für KI-Fehleranalyse.
 
 ## Projektstruktur dieser Doku
-- [info.md](info.md) — vollständige Spezifikation.
-- [user-regeln.md](user-regeln.md) — verbindliche Regeln (Vorrang).
-- [user-fragen.md](user-fragen.md) — Fragen des Users + meine Antworten.
-- [plan/](plan/) — Aufteilung in Themenblöcke (HA, Backend, API, KI, Steuermodi …).
-- [plan/entscheidungen.md](plan/entscheidungen.md) — **Decision Log**: alle beantworteten Design-Entscheidungen (Quelle der Wahrheit fürs „warum").
-- [plan/roadmap.md](plan/roadmap.md) — Meilensteine.
-- [claude-fragen/](claude-fragen/) — versionierte offene Fragen von mir an den User (beantwortete → entscheidungen.md).
+- [doc/](doc/README.md) — ausführliche technische Referenz (Architektur, Namensschema, Steuermodi, Geräte, Planungs-Engine, Validierung, Config, API, Datenmodell, bekannte Lücken, Decision-Log, Roadmap, Contributing). Ersetzt die am 2026-07-10 gelöschten Dateien `info.md`/`plan/*`/`user-regeln.md`/`user-fragen.md` (weiterhin per Git-Historie abrufbar: `git show ad48b23^:info.md`).
+- [doc/decisions-log.md](doc/decisions-log.md) — **Decision Log**: alle beantworteten Design-Entscheidungen (Quelle der Wahrheit fürs „warum").
+- [doc/roadmap.md](doc/roadmap.md) — Meilensteine, Status gegen tatsächlichen Code geprüft.
+- [claude-fragen/](claude-fragen/) — versionierte offene Fragen von mir an den User (beantwortete → doc/decisions-log.md).
 - [claude-ha-config-dateien/](claude-ha-config-dateien/) — fertige `<domain>_ep.yaml` HA-Helfer-Pakete für den User.
-- [user-beispiele/](user-beispiele/) — Vorlagen des Users (z.B. Helfer-YAML-Format).
+- [user-beispiele/](user-beispiele/) — Vorlagen des Users (z.B. Helfer-YAML-Format), **immer Vorrang**.
 
 ## Arbeitsweise
-- Vor Implementierung relevanten plan/-Block lesen. Offene Punkte in claude-fragen/ ergänzen statt raten.
-- Doku kompakt halten; bei Widersprüchen user-regeln.md > info.md.
+- Vor Implementierung relevante doc/-Datei lesen. Offene Punkte in claude-fragen/ ergänzen statt raten.
+- Doku kompakt halten; bei Widersprüchen user-beispiele/ > CLAUDE.md > doc/.

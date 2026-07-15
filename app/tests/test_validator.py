@@ -168,11 +168,13 @@ def test_unknown_extra_field_rejected_by_write_contract():
     assert any("Schreibvertrag" in e for e in result.errors)
 
 
-def test_freigabe_override_of_technical_block_rejected():
+def test_freigabe_true_despite_current_technical_block_allowed():
+    # D-054: `technische_freigabe=false` ist nur der AKTUELLE Ist-Zustand, kein Verbot fuer
+    # den gesamten Planzeitraum. heizluefter_1 ist in _constraints() aktuell gesperrt
+    # (technische_freigabe=False, Zeile 36), der Plan darf ihn trotzdem freigeben.
     plan = _plan([{"name": "heizluefter_1", "prio_vorschlag": 3, "freigabe_vorschlag": True}])
     result = validate(plan, _constraints(), now=NOW)
-    assert not result.ok
-    assert any("technische" in e.lower() for e in result.errors)
+    assert result.ok
 
 
 def test_write_contract_violation_rejected():
@@ -346,3 +348,44 @@ def test_battery_excluded_from_priority_ranking():
     devs = {d["name"]: d for d in result.normalized_plan["devices"]}
     assert "prio_vorschlag" not in devs["batterie"]
     assert devs["heizstab"]["prio_vorschlag"] == 10
+
+
+# --- Stufe 6: Mindestkonfidenz (A4) ----------------------------------------------------------
+
+def _complete_plan(**overrides):
+    """Vollständiger, sonst gültiger Plan für alle Geräte (für die Confidence-Tests)."""
+    return _plan(
+        [
+            {"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+             "geschutzte_mindestleistung_w_vorschlag": 800.0,
+             "extra_heizstab_max_temperatur_vorschlag": 55.0},
+            {"name": "heizluefter_1", "prio_vorschlag": 20, "freigabe_vorschlag": False},
+            {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+        ],
+        **overrides,
+    )
+
+
+def test_confidence_gate_rejects_below_threshold():
+    result = validate(_complete_plan(confidence=50), _constraints(), now=NOW, min_confidence=70)
+    assert not result.ok
+    assert any("Mindestkonfidenz" in e for e in result.errors)
+    # Der normalisierte Plan bleibt für UI/DB erhalten (nur nicht veröffentlicht).
+    assert result.normalized_plan is not None
+
+
+def test_confidence_gate_passes_at_threshold():
+    result = validate(_complete_plan(confidence=70), _constraints(), now=NOW, min_confidence=70)
+    assert result.ok
+
+
+def test_confidence_gate_ignores_missing_confidence():
+    # Fehlende Konfidenz lehnt NICHT ab (Iron Rule 8 – EP blockiert nie).
+    result = validate(_complete_plan(confidence=None), _constraints(), now=NOW, min_confidence=70)
+    assert result.ok
+
+
+def test_no_confidence_gate_without_threshold():
+    # Ohne min_confidence bleibt Stufe 6 inaktiv (Rückwärtskompatibilität).
+    result = validate(_complete_plan(confidence=5), _constraints(), now=NOW)
+    assert result.ok

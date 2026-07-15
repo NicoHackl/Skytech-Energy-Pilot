@@ -6,18 +6,37 @@ import json
 import os
 from dataclasses import dataclass
 
-# Standardwerte gemäß Decision Log (siehe plan/entscheidungen.md).
+# Unterstützte KI-Anbieter (D-056) + Default-Modell je Anbieter. Der aktive Anbieter wird über
+# die Top-Level-Option `provider` gewählt; jeder Anbieter hat ein eigenes Untermenü unter
+# `providers.<name>` (api_key/model/timeout_s/rate_limit_per_min).
+PROVIDER_CHOICES = ("gemini", "claude", "openai")
+DEFAULT_PROVIDER = "gemini"
+DEFAULT_MODELS: dict[str, str] = {
+    "gemini": "gemini-2.5-flash",
+    "claude": "claude-sonnet-5",
+    "openai": "gpt-5",
+}
+DEFAULT_TIMEOUT_S = 30
+# Rate-Limit-Default je Anbieter (Gemini-Free ~10/min; Claude/OpenAI höher).
+DEFAULT_RATE_LIMITS: dict[str, int] = {"gemini": 10, "claude": 50, "openai": 60}
+
+# Standardwerte gemäß Decision Log (siehe doc/decisions-log.md).
 DEFAULTS: dict[str, object] = {
     "log_level": "info",
-    "provider": "gemini",
-    "model": "gemini-2.5-flash",
-    # KI-Provider-Schlüssel (D-007/D-041); leer => Planung deaktiviert. Wird nie geloggt.
-    "api_key": "",
-    # Timeout je KI-Aufruf (s) und Rate-Limit-Drossel (Aufrufe/min; Gemini-Free ~10).
-    "ai_request_timeout_s": 30,
-    "ai_rate_limit_per_min": 10,
+    # Aktiver KI-Anbieter (D-056); je Anbieter ein eigenes Untermenü unter `providers`.
+    "provider": DEFAULT_PROVIDER,
+    "providers": {
+        name: {
+            "api_key": "",
+            "model": DEFAULT_MODELS[name],
+            "timeout_s": DEFAULT_TIMEOUT_S,
+            "rate_limit_per_min": DEFAULT_RATE_LIMITS[name],
+        }
+        for name in PROVIDER_CHOICES
+    },
     # Determinismus des KI-Aufrufs (D-050): niedrige Temperatur + fixer Seed => bei gleichem
     # Kontext stabil dieselben Vorschlagsfelder (behebt schwankende Ausgaben je Lauf/Modell).
+    # Geteilt über alle Anbieter (Gemini/OpenAI nutzen sie; Claude ignoriert Sampling-Params).
     "ai_temperature": 0.0,
     "ai_seed": 42,
     # Fehlende Pflicht-Vorschlagsfelder per gezieltem Nachforder-Aufruf ergänzen (ein Versuch),
@@ -28,6 +47,20 @@ DEFAULTS: dict[str, object] = {
     "forecast_horizon_h": 24,
     "min_confidence_percent": 70,
     "collect_interval_s": 30,
+    # Anti-Flatter-Schicht (A2 / Validator Stufe 5, D-021): begrenzt Lauf-zu-Lauf-Sprünge.
+    # Delta-Clamp der geschützten Mindestleistung je Lauf (Prozent ggü. Vorplan; Batterie
+    # eigener, engerer Satz). Freigabe-Hysterese: Wechsel erst nach N konsistenten Läufen.
+    # Mindesthaltezeit: keine erneute Freigabe-Änderung innerhalb dieser Minuten.
+    "delta_limit_power_percent": 20,
+    "delta_limit_battery_percent": 10,
+    "freigabe_hysteresis_runs": 2,
+    "min_hold_minutes": 15,
+    # Eingangs-Quantisierung (A3): an die KI gegebene Werte auf grobe Stufen runden, damit
+    # kleine Sensor-Schwankungen den Prompt nicht verändern (nutzt ai_temperature=0/ai_seed).
+    "snap_power_w": 50,
+    "snap_soc_percent": 1,
+    "snap_amp_a": 0.1,
+    "snap_forecast_kwh": 0.1,
     # Vorschlagswerte als sensor.ep_*_vorschlag nach HA schreiben (M2-Schreibweg, D-008).
     # False => reiner Beobachten-Modus: Plan bleibt in UI/DB, EP schreibt nichts nach HA.
     "publish_suggestions": True,
@@ -71,8 +104,6 @@ DEFAULTS: dict[str, object] = {
             "refresh_1day": 180,
         },
     },
-    # Weiche Zielgewichte (Prozent, D-011); leeres Dict => Defaults aus info.md §7 (objectives.py).
-    "objective_weights": {},
 }
 
 DEFAULT_OPTIONS_PATH = "/data/options.json"
@@ -124,3 +155,87 @@ class AddonConfig:
             or os.environ.get("HASSIO_TOKEN")
             or os.environ.get("HA_TOKEN")
         )
+
+
+@dataclass(frozen=True)
+class ActiveProvider:
+    """Aufgelöste Verbindungs-Config des aktiven KI-Anbieters (D-056)."""
+
+    name: str
+    api_key: str
+    model: str
+    timeout_s: float
+    rate_limit_per_min: int
+    temperature: float | None
+    seed: int | None
+
+
+def _coerce_int(value: object, default: int) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_float(value: object, default: float) -> float:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def resolve_active_provider(values: dict) -> ActiveProvider:
+    """Löst den aktiven Anbieter + seine Verbindungs-Config aus den Addon-Optionen auf (D-056).
+
+    Liest `provider` (Selektor) und die passende Untergruppe `providers.<name>`; fehlende Felder
+    fallen auf die Anbieter-Defaults zurück. `temperature`/`seed` sind geteilt (Top-Level).
+
+    Legacy-Migration: Bestehende Gemini-Installationen hatten die Felder flach auf oberster Ebene
+    (`api_key`/`model`/`ai_request_timeout_s`/`ai_rate_limit_per_min`). Ist die Gemini-Untergruppe
+    (noch) leer, wird auf diese alten Top-Level-Werte zurückgefallen – so verliert ein Update den
+    Schlüssel nicht. Nur für Gemini, da frühere Installationen ausschließlich Gemini kannten.
+    """
+    name = str(values.get("provider") or "").strip().lower()
+    if name not in PROVIDER_CHOICES:
+        name = DEFAULT_PROVIDER
+
+    providers = values.get("providers")
+    group = providers.get(name) if isinstance(providers, dict) else None
+    group = group if isinstance(group, dict) else {}
+
+    is_legacy_gemini = name == DEFAULT_PROVIDER
+
+    def _pick(field: str, legacy_key: str, default: object) -> object:
+        raw = group.get(field)
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            if is_legacy_gemini:
+                legacy = values.get(legacy_key)
+                if legacy is not None and not (isinstance(legacy, str) and not legacy.strip()):
+                    return legacy
+            return default
+        return raw
+
+    api_key = str(_pick("api_key", "api_key", "") or "").strip()
+    model = str(_pick("model", "model", DEFAULT_MODELS[name]) or DEFAULT_MODELS[name]).strip()
+    timeout_s = _coerce_float(
+        _pick("timeout_s", "ai_request_timeout_s", DEFAULT_TIMEOUT_S), float(DEFAULT_TIMEOUT_S)
+    )
+    rate_limit = _coerce_int(
+        _pick("rate_limit_per_min", "ai_rate_limit_per_min", DEFAULT_RATE_LIMITS[name]),
+        DEFAULT_RATE_LIMITS[name],
+    )
+
+    temperature_raw = values.get("ai_temperature")
+    temperature = _coerce_float(temperature_raw, 0.0) if temperature_raw is not None else None
+    seed_raw = values.get("ai_seed")
+    seed = _coerce_int(seed_raw, 0) if seed_raw is not None else None
+
+    return ActiveProvider(
+        name=name,
+        api_key=api_key,
+        model=model,
+        timeout_s=timeout_s,
+        rate_limit_per_min=rate_limit,
+        temperature=temperature,
+        seed=seed,
+    )

@@ -1,7 +1,7 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
-name: Skytech Energy Pilot
-version: "0.0.48"
-slug: skytech_energy_pilot
+name: Skytech Energy Pilot (Dev)
+version: "0.0.56"
+slug: skytech_energy_pilot_dev
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
 arch:
@@ -13,20 +13,35 @@ init: false
 ingress: true
 ingress_port: 8098
 panel_icon: mdi:robot
-panel_title: Energy Pilot
+panel_title: Energy Pilot (Dev)
 # Zugriff auf die Home-Assistant-Core-API (liefert SUPERVISOR_TOKEN)
 homeassistant_api: true
 options:
   log_level: info
+  # Aktiver KI-Anbieter (D-056): Gemini, Claude (Anthropic) oder OpenAI (GPT). Jeder Anbieter
+  # hat sein eigenes aufklappbares Untermenü unter `providers` (Schlüssel/Modell/Timeout/Rate).
   provider: gemini
-  model: gemini-2.5-flash
-  # KI-Provider-Schlüssel (D-007/D-041); leer => KI-Planung deaktiviert. Wird nie geloggt.
-  api_key: ""
-  # Timeout je KI-Aufruf (s) und Rate-Limit-Drossel (Aufrufe/min; Gemini-Free ~10).
-  ai_request_timeout_s: 30
-  ai_rate_limit_per_min: 10
+  # Pro-Anbieter-Verbindungs-Config. Nur das Untermenü des aktiven `provider` wird genutzt.
+  # api_key leer => KI-Planung deaktiviert. Der Schlüssel wird nie geloggt.
+  providers:
+    gemini:
+      api_key: ""
+      model: gemini-2.5-flash
+      timeout_s: 30
+      rate_limit_per_min: 10
+    claude:
+      api_key: ""
+      model: claude-sonnet-5
+      timeout_s: 30
+      rate_limit_per_min: 50
+    openai:
+      api_key: ""
+      model: gpt-5
+      timeout_s: 30
+      rate_limit_per_min: 60
   # Determinismus (D-050): Sampling-Temperatur (0 = deterministisch) + fixer Seed sorgen dafür,
   # dass gleicher Kontext stabil dieselben Vorschlagsfelder liefert (statt je Lauf/Modell zu schwanken).
+  # Geteilt über alle Anbieter (Gemini/OpenAI nutzen sie; Claude ignoriert Sampling-Parameter).
   ai_temperature: 0.0
   ai_seed: 42
   # Fehlende Pflicht-Vorschlagsfelder per gezieltem Nachforder-Aufruf ergänzen (ein Versuch),
@@ -91,17 +106,9 @@ options:
       daily_call_budget: 1000
       enable_alerts: true
       refresh_alerts: 30
-  # Weiche Zielgewichte (Prozent 0–100, D-011). Initialwerte aus info.md §7.
-  # Harte Grenzen sind nicht hier, sondern werden aus den ems_*-Werten abgeleitet (constraints.py).
-  objective_weights:
-    versorgungssicherheit: 100
-    eauto_ladeziel: 100
-    warmwasserkomfort: 100
-    netzbezug: 90
-    stromkosten: 85
-    eigenverbrauch: 80
-    einspeisung: 70
-    batterieschonung: 50
+  # Weiche Ziele (D-055): user-definiert im Tab "Grenzen und Ziele" (DB-Tabelle `ziele`),
+  # keine Addon-Config mehr. Gewichtung leitet ein vorgelagerter Klassifizierungs-LLM-Aufruf
+  # je Planungslauf ab. Harte Grenzen werden weiterhin aus den ems_*-Werten abgeleitet (constraints.py).
   # Sensor-Zuordnung als eigene aufklappbare Gruppe (entity_ = HA-Entität).
   # Warmwassertemperatur ist NICHT systemweit, sondern gerätespezifisch (Geräte-Tab).
   sensoren:
@@ -114,11 +121,23 @@ options:
     entity_battery_soc: ""
 schema:
   log_level: list(debug|info|warning|error)
-  provider: list(gemini|openai)
-  model: str
-  api_key: password?
-  ai_request_timeout_s: int(5,600)?
-  ai_rate_limit_per_min: int(1,60)?
+  provider: list(gemini|claude|openai)
+  providers:
+    gemini:
+      api_key: password?
+      model: str?
+      timeout_s: int(5,600)?
+      rate_limit_per_min: int(1,1000)?
+    claude:
+      api_key: password?
+      model: str?
+      timeout_s: int(5,600)?
+      rate_limit_per_min: int(1,1000)?
+    openai:
+      api_key: password?
+      model: str?
+      timeout_s: int(5,600)?
+      rate_limit_per_min: int(1,1000)?
   ai_temperature: float(0,2)?
   ai_seed: int?
   ai_repair_missing: bool?
@@ -159,15 +178,6 @@ schema:
       daily_call_budget: int(1,100000)?
       enable_alerts: bool?
       refresh_alerts: int(1,1440)?
-  objective_weights:
-    versorgungssicherheit: int(0,100)?
-    eauto_ladeziel: int(0,100)?
-    warmwasserkomfort: int(0,100)?
-    netzbezug: int(0,100)?
-    stromkosten: int(0,100)?
-    eigenverbrauch: int(0,100)?
-    einspeisung: int(0,100)?
-    batterieschonung: int(0,100)?
   sensoren:
     entity_pv_power: str?
     entity_house_load: str?

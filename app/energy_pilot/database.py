@@ -1,7 +1,7 @@
 """SQLite-Initialisierung mit einfachem, versioniertem Migrations-Mechanismus.
 
-Vollständiges Zielschema siehe plan/05-daten-und-speicherung.md. M0 legt nur die
-Kerntabellen plus die Migrationsverwaltung an; weitere Tabellen folgen versioniert.
+Vollständiges Schema siehe doc/data-model.md. M0 legt nur die Kerntabellen plus die
+Migrationsverwaltung an; weitere Tabellen folgen versioniert.
 """
 
 from __future__ import annotations
@@ -132,6 +132,38 @@ MIGRATIONS: list[tuple[int, str]] = [
         8,
         """
         ALTER TABLE device_extras ADD COLUMN write_original INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
+    (
+        9,
+        # Pro-Gerät-Zustand der Anti-Flatter-Schicht (A2 / Validator Stufe 5): letzte
+        # veröffentlichte Freigabe/Prio, der in der Hysterese laufende Kandidat samt Zähler
+        # und der Zeitstempel der letzten akzeptierten Freigabe-Änderung (Mindesthaltezeit).
+        """
+        CREATE TABLE IF NOT EXISTS device_plan_state (
+            device_name TEXT PRIMARY KEY,
+            last_freigabe INTEGER,
+            last_prio INTEGER,
+            pending_freigabe INTEGER,
+            pending_count INTEGER DEFAULT 0,
+            last_change_ts TEXT
+        );
+        """,
+    ),
+    (
+        10,
+        # User-definierte Ziele (D-055): ersetzen die statischen `objective_weights` aus der
+        # Addon-Config. Ein vorgelagerter Klassifizierungs-Aufruf leitet daraus je Planungslauf
+        # die Gewichtung ab (siehe planner.py). `devices_json` = JSON-Array der Gerätenamen.
+        """
+        CREATE TABLE IF NOT EXISTS ziele (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            beschreibung TEXT NOT NULL DEFAULT '',
+            devices_json TEXT NOT NULL DEFAULT '[]',
+            sort_order INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
         """,
     ),
 ]

@@ -8,6 +8,7 @@ from energy_pilot.config import AddonConfig
 from energy_pilot.database import init_db
 from energy_pilot.devices import CONTROLLABLE, Device
 from energy_pilot.logging_setup import setup_logging
+from energy_pilot.objectives import upsert_ziel
 from energy_pilot.planner import Planner
 
 NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
@@ -236,6 +237,81 @@ async def test_run_no_repair_when_first_response_complete(tmp_path):
     assert db.execute("SELECT COUNT(*) AS n FROM ai_calls WHERE ok=1").fetchone()["n"] == 1
 
 
+async def test_run_passes_previous_plan_as_anchor(tmp_path):
+    # A1: erster Lauf ohne Anker; zweiter Lauf bekommt den gespeicherten Vorplan verdichtet
+    # als `previous_plan` in den KI-Kontext (Stabilität über Aufrufe).
+    planner, _ = _planner(tmp_path, _FakeProvider(_VALID_DATA))
+
+    first = await planner.run(now=NOW)
+    assert "previous_plan" not in first.context
+
+    second = await planner.run(now=NOW)
+    prev = second.context["previous_plan"]
+    heizstab = next(d for d in prev["devices"] if d["name"] == "heizstab")
+    assert heizstab["prio_vorschlag"] == 10
+    assert heizstab["freigabe_vorschlag"] is True
+
+
+# Vollständige, sonst gültige Pläne, die sich nur in der Heizstab-Freigabe unterscheiden.
+_STABLE_TRUE = {
+    "devices": [
+        {"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": True,
+         "geschutzte_mindestleistung_w_vorschlag": 800.0},
+        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+    ],
+    "confidence": 80, "reasoning": "x", "warnings": [],
+}
+_STABLE_FALSE = {
+    "devices": [
+        {"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": False,
+         "geschutzte_mindestleistung_w_vorschlag": 800.0},
+        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+    ],
+    "confidence": 80, "reasoning": "x", "warnings": [],
+}
+
+
+async def test_run_hysteresis_holds_freigabe_flip(tmp_path):
+    # A2-Kernbeweis: kippt das Modell die Freigabe, hält die Hysterese sie, bis N (=2) konsistente
+    # Läufe den Wechsel bestätigen. Zwei quasi-identische Läufe → kein sofortiger Freigabe-Wechsel.
+    provider = _SequenceProvider([_STABLE_TRUE, _STABLE_FALSE])
+    planner, _ = _planner(tmp_path, provider)
+
+    def _frei(result):
+        return next(d for d in result.plan["devices"] if d["name"] == "heizstab")[
+            "freigabe_vorschlag"
+        ]
+
+    r1 = await planner.run(now=NOW)
+    assert _frei(r1) is True
+
+    r2 = await planner.run(now=NOW)  # Modell will false -> gehalten (bleibt true)
+    assert _frei(r2) is True
+    assert any("gehalten" in c for c in r2.validation["clamped"])
+
+    r3 = await planner.run(now=NOW)  # zweiter konsistenter false -> Wechsel bestätigt
+    assert _frei(r3) is False
+    assert any("Hysterese bestätigt" in c for c in r3.validation["clamped"])
+
+
+async def test_run_rejects_low_confidence_and_does_not_publish(tmp_path):
+    # A4: Konfidenz unter der Schwelle (Default 70 %) -> Plan abgelehnt, nichts nach HA geschrieben.
+    low_conf = {**_STABLE_TRUE, "confidence": 50}
+    ha = _FakeHA()
+    planner, db = _planner(tmp_path, _FakeProvider(low_conf), ha_client=ha)
+
+    result = await planner.run(now=NOW)
+
+    assert not result.ok
+    assert any("Mindestkonfidenz" in e for e in result.validation["errors"])
+    assert result.published is None
+    assert ha.calls == []
+    assert (
+        db.execute("SELECT COUNT(*) AS n FROM audit WHERE action='plan_rejected'").fetchone()["n"]
+        == 1
+    )
+
+
 async def test_run_includes_weather_in_context(tmp_path):
     planner, _ = _planner(
         tmp_path, _FakeProvider(_VALID_DATA),
@@ -311,6 +387,58 @@ async def test_run_without_provider_reports_not_configured(tmp_path):
     assert result.error == "provider_not_configured"
     assert db.execute("SELECT COUNT(*) AS n FROM ai_calls").fetchone()["n"] == 0
     assert db.execute("SELECT COUNT(*) AS n FROM plans").fetchone()["n"] == 0
+
+
+async def test_run_classification_without_ziele_reports_none_configured(tmp_path):
+    planner, _ = _planner(tmp_path, _FakeProvider())
+
+    result = await planner.run_classification(now=NOW)
+
+    assert not result.ok
+    assert result.error == "keine_ziele_konfiguriert"
+    assert result.objectives is None
+    assert result.context is None
+
+
+async def test_run_classification_without_provider_reports_not_configured(tmp_path):
+    planner, db = _planner(tmp_path, None)
+    upsert_ziel(db, ziel_id=None, name="Warmwasserkomfort", devices=[])
+
+    result = await planner.run_classification(now=NOW)
+
+    assert not result.ok
+    assert result.error == "provider_not_configured"
+
+
+async def test_run_classification_returns_weighted_objectives(tmp_path):
+    planner, db = _planner(tmp_path, _FakeProvider())
+    ziel = upsert_ziel(db, ziel_id=None, name="Warmwasserkomfort", devices=["heizstab"])
+    planner.provider = _FakeProvider(
+        {"gewichtung": {str(ziel.id): 90}, "reasoning": "dringend, da kalt"}
+    )
+
+    result = await planner.run_classification(now=NOW)
+
+    assert result.ok
+    assert result.objectives == [{"key": str(ziel.id), "label": "Warmwasserkomfort", "weight": 90}]
+    assert result.reasoning == "dringend, da kalt"
+    assert result.ai_call["tokens_in"] == 11 and result.ai_call["tokens_out"] == 22
+    assert "objectives" not in result.context
+    assert result.context["ziele"][0]["id"] == ziel.id
+    row = db.execute("SELECT COUNT(*) AS n FROM ai_calls").fetchone()
+    assert row["n"] == 1
+
+
+async def test_run_classification_provider_error_is_reported(tmp_path):
+    planner, db = _planner(tmp_path, _FakeProvider(exc=RuntimeError("kaputt")))
+    upsert_ziel(db, ziel_id=None, name="X", devices=[])
+
+    result = await planner.run_classification(now=NOW)
+
+    assert not result.ok
+    assert result.error == "classification_error"
+    assert result.context is not None  # Transparenz: gesendeter Kontext bleibt sichtbar
+    assert result.ai_call["error"]
 
 
 async def test_run_publishes_valid_plan_to_ha(tmp_path):

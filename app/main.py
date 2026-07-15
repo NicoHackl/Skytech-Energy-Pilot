@@ -9,8 +9,9 @@ from aiohttp import web
 from energy_pilot import __version__
 from energy_pilot.aggregation import RollingAggregator
 from energy_pilot.allowlist import SOURCE_WEATHER, EntityAllowlist, collect_entity_ids
+from energy_pilot.claude_provider import ClaudeProvider
 from energy_pilot.collector import StateCollector
-from energy_pilot.config import AddonConfig
+from energy_pilot.config import AddonConfig, resolve_active_provider
 from energy_pilot.database import init_db
 from energy_pilot.device_collector import DeviceCollector
 from energy_pilot.entity_map import mapping_from_options
@@ -18,6 +19,7 @@ from energy_pilot.forecast import orientations_from_config
 from energy_pilot.forecast_collector import ForecastCollector
 from energy_pilot.gemini_provider import GeminiProvider
 from energy_pilot.ha_client import HAClient
+from energy_pilot.openai_provider import OpenAIProvider
 from energy_pilot.hems_client import HEMSClient
 from energy_pilot.hems_status_collector import HEMSStatusCollector
 from energy_pilot.logging_setup import log, setup_logging
@@ -121,21 +123,39 @@ def build() -> web.Application:
     else:
         log(logger, "info", "Wetterprognose inaktiv (kein OpenWeatherMap-Schlüssel)")
 
-    # KI-Provider (D-007/D-041): nur bei vorhandenem Schlüssel + passendem Provider aktiv.
-    # Ohne Schlüssel bleibt die Planung deaktiviert; EP blockiert nie (Iron Rule 8).
-    api_key = str(config.values.get("api_key") or "").strip()
+    # KI-Provider (D-007/D-041/D-056): aktiver Anbieter + Verbindungs-Config aus den Optionen
+    # auflösen (Radio-Selektor `provider` + Untermenü `providers.<name>`). Nur bei vorhandenem
+    # Schlüssel aktiv; ohne Schlüssel bleibt die Planung deaktiviert (EP blockiert nie, Iron Rule 8).
+    active = resolve_active_provider(config.values)
     provider = None
-    if api_key and str(config.provider) == "gemini":
-        seed_opt = config.values.get("ai_seed")
-        provider = GeminiProvider(
-            api_key,
-            model=str(config.model),
-            timeout_s=float(config.ai_request_timeout_s),
-            rate_limit_per_min=int(config.ai_rate_limit_per_min),
-            temperature=float(config.ai_temperature),
-            seed=int(seed_opt) if seed_opt is not None else None,
-        )
-        log(logger, "info", "KI-Provider aktiv", provider="gemini", model=str(config.model))
+    if active.api_key:
+        if active.name == "claude":
+            # Claude akzeptiert keine festen Sampling-Parameter (temperature/seed) mehr.
+            provider = ClaudeProvider(
+                active.api_key,
+                model=active.model,
+                timeout_s=active.timeout_s,
+                rate_limit_per_min=active.rate_limit_per_min,
+            )
+        elif active.name == "openai":
+            provider = OpenAIProvider(
+                active.api_key,
+                model=active.model,
+                timeout_s=active.timeout_s,
+                rate_limit_per_min=active.rate_limit_per_min,
+                temperature=active.temperature,
+                seed=active.seed,
+            )
+        else:  # gemini (Default)
+            provider = GeminiProvider(
+                active.api_key,
+                model=active.model,
+                timeout_s=active.timeout_s,
+                rate_limit_per_min=active.rate_limit_per_min,
+                temperature=active.temperature,
+                seed=active.seed,
+            )
+        log(logger, "info", "KI-Provider aktiv", provider=active.name, model=active.model)
     else:
         log(logger, "warning", "KI-Provider nicht konfiguriert (api_key fehlt) – Planung inaktiv")
 

@@ -6,6 +6,119 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## [Unreleased]
+
+### Hinzugefügt
+- **Multi-Provider: Claude und OpenAI zusätzlich zu Gemini (D-056).** Der KI-Anbieter ist
+  jetzt zwischen **Google Gemini**, **Anthropic Claude** und **OpenAI (GPT)** umschaltbar.
+  In der Addon-Config wählt ein Radio/Dropdown (`provider`) den aktiven Anbieter; jeder
+  Anbieter hat ein eigenes aufklappbares Untermenü `providers.<name>` mit Schlüssel, Modell,
+  Zeitlimit und Ratenbegrenzung. Alle drei sind schlanke aiohttp-REST-Clients (kein SDK) über
+  die gemeinsame `AIProvider`-Abstraktion; `schema_convert.py` übersetzt das
+  Antwort-Schema für Claude (`output_config.format`) und OpenAI (`response_format`, Strict).
+  Default-Modelle: Gemini `gemini-2.5-flash`, Claude `claude-sonnet-5`, OpenAI `gpt-5`.
+  **Config-Migration:** Die früheren flachen Top-Level-Keys (`model`/`api_key`/
+  `ai_request_timeout_s`/`ai_rate_limit_per_min`) sind entfernt. Bestehende Gemini-
+  Installationen laufen dank Legacy-Fallback zunächst weiter; den Schlüssel nach dem Update
+  bitte ins Gemini-Untermenü eintragen. `ai_temperature`/`ai_seed` bleiben geteilt (Claude
+  ignoriert Sampling-Parameter).
+
+### Geändert
+- **"Klassifizierung erzeugen"-Button im Plan-Tab (D-055 Folge-Anpassung).** Neuer Button
+  löst den Klassifizierungs-Aufruf isoliert aus (`POST /api/classification/run`,
+  `Planner.run_classification()`), unabhängig vom eigentlichen Plan-Lauf – zum gezielten
+  Testen von Zieldefinitionen/Klassifizierungs-Prompt. Zeigt analog zu "Plan erzeugen" die
+  gesendeten Daten und das Ergebnis (Gewichtung je Ziel + Begründung).
+- **User-definierte Ziele statt statischer Zielgewichte (D-055).** Die feste Addon-Config
+  `objective_weights` (8 Ziele, Gewicht 0–100 %) ist entfernt. Im Tab "Grenzen und Ziele"
+  definiert der User jetzt eigene Ziele (Name, Beschreibung, zugeordnete Geräte) OHNE
+  Gewicht (`GET/POST/DELETE /api/ziele`, DB-Tabelle `ziele`). Ein vorgelagerter
+  Klassifizierungs-LLM-Aufruf bekommt dieselbe Datenbasis wie der Plan-Aufruf plus die
+  Zieldefinitionen und leitet daraus je Planungslauf die Gewichtung ab (eigener
+  editierbarer Klassifizierungs-Prompt im Plan-Tab, `GET/POST /api/classification-prompt`).
+  Scheitert die Klassifizierung oder der Plan-Aufruf, gilt der gesamte Lauf als
+  gescheitert. Migration ohne Seed-Daten – bestehende Installationen starten mit einer
+  leeren Ziele-Liste.
+- **Harte Freigabe-Sperre entfernt (D-054).** `technische_freigabe=false` beschreibt nur
+  den AKTUELLEN Ist-Zustand eines Geräts, kein Verbot für den gesamten Gültigkeitszeitraum
+  des Plans (24–48 h). EP darf `freigabe_vorschlag=true` jetzt auch dann vorschlagen, wenn
+  das Gerät aktuell technisch gesperrt ist. Entfernt: harter Reject in Validator-Stufe 2
+  (`_check_device`) sowie der Sofort-Override in der Freigabe-Hysterese (`smooth_plan()`).
+  Weiterhin: dient als sicherer Fallback-Startwert, wenn die KI `freigabe_vorschlag` auslässt.
+- **Branch-Strategie: `claude/main` → `claude/stage` + 3 Release-Channels (D-053).**
+  Arbeits-Branch umbenannt. Neu: `stage/dev`/`stage/beta`/`stage/stable`, je eigenes
+  `config.yaml` (Slug-/Namens-Suffix), damit HA sie per Branch-URL als 3 separate
+  Addon-Channels (Dev/Beta/Stable) anzeigt. Promotion zwischen den Branches nur
+  manuell auf Zuruf, kein Automatismus. CI (`ci.yaml`) läuft ab sofort auf allen
+  4 Branches statt nur auf `claude/main`.
+
+## [0.0.51] - 2026-07-11
+
+### Hinzugefügt
+- **Stabilitäts-Kern aus `plan/longterm_plan_claude.md` (A2/A3/A4/B2).** Deterministische
+  Ruhe über Läufe („Determinismus rahmt, KI füllt"):
+  - **A2 – Anti-Flatter (Validator Stufe 5).** Neue reine `smooth_plan()` in `validator.py`:
+    Delta-Limit der geschützten Mindestleistung je Lauf (±20 %, Batterie ±10 %, D-021),
+    Freigabe-Hysterese (Wechsel erst nach N=2 konsistenten Läufen), Mindesthaltezeit
+    (Default 15 min). **Sicherheit vor Stabilität:** eine technisch gesperrte Last wird nie
+    auf „frei" gehalten. Der Planner lädt/speichert den Pro-Gerät-Zustand (neue Tabelle
+    `device_plan_state`, Migration 9), glättet nur gültige Pläne und hängt die Glättungs-
+    Notizen an das Klemm-Log.
+  - **A3 – Eingangs-Quantisierung.** An die KI gegebene Werte werden gerundet (Leistung 50 W,
+    SOC 1 %, Ampere 0,1 A, PV-Prognose 0,1 kWh; Zeitstempel auf die Minute). So verändert
+    kleines Sensor-Rauschen den Prompt nicht mehr → gleicher Input → gleiche Antwort
+    (nutzt `ai_temperature=0`/`ai_seed=42` endlich aus).
+  - **A4 – Confidence-Gate (Validator Stufe 6).** `min_confidence_percent` (Default 70 %)
+    wird endlich gelesen: unsichere Pläne werden abgelehnt und **nicht** nach HA geschrieben;
+    der zuletzt gültige Sensorwert bleibt stehen.
+  - **B2 – Trend-Features.** Je Messgröße ein `trend` (steigend/fallend/stabil) aus kurz-
+    gegen langfristiges Mittel — die KI plant aus dem Verlauf statt aus einem Momentwert.
+  - **C1 – Tests.** Neue `test_stability.py` plus Confidence-/Quantisierungs-/Trend- und
+    Doppellauf-Hysterese-Tests (420 Tests grün).
+  - Neue Addon-Config-Keys: `delta_limit_power_percent`, `delta_limit_battery_percent`,
+    `freigabe_hysteresis_runs`, `min_hold_minutes`, `snap_power_w`, `snap_soc_percent`,
+    `snap_amp_a`, `snap_forecast_kwh` (Leitprinzip „alles konfigurierbar").
+- Bewusst zurückgestellt (Begründung in `plan/longterm_plan_claude.md`): A5 (Freshness,
+  braucht Collector-Zeitstempel), A6 (Basisplan), B1 (Feedback-Rückführung), B3 (Urgency-
+  Formel), B4 (Reason-Codes), B5 (Bilanz), C2/C3 (Shadow/KPI/Kritiker).
+
+## [0.0.50] - 2026-07-11
+
+### Hinzugefügt
+- **A1 – Vorplan als Anker in die Planung (Stabilität über Aufrufe).** `Planner.run()`
+  lädt vor dem KI-Aufruf den zuletzt gespeicherten Plan (`latest_plan()`) und reicht ihn
+  verdichtet als `previous_plan` in den KI-Kontext (`plan_context.build_context()` neuer
+  Parameter `previous_plan`). Übergeben werden nur Gerät-Vorschlagswerte (Name + gesetzte
+  `*_vorschlag`-Felder) plus die frühere Konfidenz — kein Reasoning/Warnings/Zeitstempel
+  (Datenminimum, Iron Rule 7). Der Default-Planungs-Prompt weist die KI an, ohne
+  materiellen Grund nah am Vorplan zu bleiben und Prio/Freigabe nicht wegen kleiner
+  Schwankungen zu ändern. Erster Lauf (kein Vorplan) hängt keinen Anker an. Grundlage für
+  die spätere Anti-Flatter-Glättung (A2). Siehe `plan/longterm_plan_claude.md` Abschn. 3.
+
+## [0.0.49] - 2026-07-10
+
+### Geändert
+- **Alte Doku ersetzt durch neuen Ordner `doc/`.** `info.md`, `plan/*.md`,
+  `user-regeln.md` und `user-fragen.md` wurden vom User gelöscht (Commit `ad48b23`).
+  Neu geschrieben, diesmal am **tatsächlichen Code** verifiziert statt an der
+  ursprünglichen Planung: `doc/architecture.md`, `entity-naming.md`, `control-modes.md`,
+  `devices.md`, `planning-engine.md`, `validation-safety.md`, `configuration.md`,
+  `api-reference.md`, `data-model.md`, `known-gaps-and-pitfalls.md`, `decisions-log.md`
+  (verdichtetes D-001…D-052), `roadmap.md`, `contributing.md`. `known-gaps-and-pitfalls.md`
+  hält u. a. fest, dass es **keinen automatischen Planungs-Scheduler** gibt und die
+  Validator-Stufen 4–6 (Frische/Delta-Limit/Mindestkonfidenz) fehlen — bislang nirgends
+  schriftlich festgehalten. `CLAUDE.md` verweist jetzt auf `doc/` statt auf die
+  gelöschten Dateien.
+- **Tote Doku-Verweise im Code bereinigt.** Kommentare/Docstrings, die auf
+  `info.md §…`, `plan/*.md` oder `user-regeln.md §…` verwiesen, zeigen jetzt auf die
+  passende `doc/*.md`-Datei (`roles.py`, `ai_provider.py`, `config.py`, `database.py`,
+  `constraints.py`, `objectives.py`, `allowlist.py`, `gemini_provider.py`,
+  `logging_setup.py`). Der `hems_client.py`-Docstring behauptete zusätzlich fälschlich
+  einen Addon-Config-Fallback bei der Geräte-Discovery, den es seit D-046 nicht mehr
+  gibt — korrigiert.
+- **Grenzen-&-Ziele-Tab:** Der Hinweistext zu den Zielgewichten verwies auf das
+  gelöschte `info.md §7` — jetzt ohne toten Verweis.
+
 ## [0.0.48] - 2026-07-09
 
 ### Geändert

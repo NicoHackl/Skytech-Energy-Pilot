@@ -1,7 +1,7 @@
 """Entity Allowlist: zentrales Register der von EP freigegebenen HA-Entitäten.
 
-EP liest nur explizit konfigurierte/freigegebene Entitäten (info.md §6.1/§13,
-plan/01 + plan/08). Die freigegebenen IDs leiten sich vollständig aus den drei
+EP liest nur explizit konfigurierte/freigegebene Entitäten (siehe doc/validation-safety.md).
+Die freigegebenen IDs leiten sich vollständig aus den drei
 Konfigurationsquellen ab (Messgrößen-Rollen, Geräte-`ems_*`-Felder, PV-
 Prognosesensoren) — keine Doppelpflege.
 

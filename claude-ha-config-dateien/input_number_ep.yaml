@@ -1,10 +1,6 @@
 # Skytech Energy Pilot – input_number Helfer
 # NUR EP-eigene Helfer (ep_*). Inhalt unter "input_number:" in der HA-Config einfügen.
 #
-# WICHTIG (D-029): Technische Geräte-Grenzwerte sind HEMS-Domäne (ems_*), NICHT von EP.
-# EP liest sie nur. Sie sind im HEMS DEFINIERT (D-036) und müssen hier NICHT angelegt werden.
-# HEMS erzeugt sie dynamisch pro Gerät; EP ermittelt die echten Entity-IDs zur Laufzeit
-# über den HEMS-Endpunkt GET /api/device_controls_schema (kein ems_*-Template von EP).
 #
 # Nur zur Orientierung – ems_*-Werte, die EP LIEST (tatsächliche Namen kommen vom HEMS-Schema):
 #   ems_batterie_max_technisch_w     -> max. Ladeleistung Batterie
@@ -13,32 +9,7 @@
 #   ems_heizluefter_1_leistung_w     -> Ist-/Lastleistung Heizlüfter 1 (fest 1500 W, D-031)
 #   ems_heizluefter_2_leistung_w     -> Ist-/Lastleistung Heizlüfter 2 (fest 1500 W, D-031)
 
-# --- Heizstab max. Wassertemperatur: NICHT HEMS-relevant (D-035) ---
-# NUR der Grenzwert ist ein Helfer (der User pflegt ihn, EP LIEST nur):
-ep_heizstab_max_temperatur:
-  name: EP Heizstab max. Wassertemperatur
-  min: 0
-  max: 95
-  step: 1
-  unit_of_measurement: "°C"
-  icon: mdi:thermometer-water
-# Der zugehörige Vorschlag ep_heizstab_max_temperatur_vorschlag ist KEIN Helfer,
-# sondern eine EP-eigene sensor.-Entität (EP schreibt, D-030/D-035) -> hier bewusst nicht angelegt.
 
-# --- EP-Planungsparameter (ep_*, EP-eigen; optional auch in Addon-Config; siehe info.md §15) ---
-ep_planungsintervall:
-  name: EP Planungsintervall
-  min: 15
-  max: 60
-  step: 5
-  unit_of_measurement: "min"
-
-ep_prognosehorizont:
-  name: EP Prognosehorizont
-  min: 12
-  max: 48
-  step: 1
-  unit_of_measurement: "h"
 
 ep_mindestkonfidenz:
   name: EP Mindestkonfidenz

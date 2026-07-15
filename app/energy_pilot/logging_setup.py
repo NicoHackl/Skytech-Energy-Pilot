@@ -1,8 +1,8 @@
 """Strukturiertes JSON-Logging mit Ringpuffer (UI) und maschinenlesbarem Export.
 
-Erfüllt user-regeln.md §02: umfangreiches, UI-einsehbares Logging plus
+Erfüllt die CLAUDE.md-Querschnittsvorgabe: umfangreiches, UI-einsehbares Logging plus
 maschinenlesbarer Export für die KI-gestützte Fehleranalyse. Secrets werden
-grundsätzlich maskiert (Sicherheitsvorgabe info.md §13).
+grundsätzlich maskiert (siehe doc/validation-safety.md).
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ def log(
     """Bequeme Hilfsfunktion für strukturiertes Logging mit Kontextfeldern.
 
     `exc_info` hängt bei unerwarteten Ausnahmen den Traceback an (landet als `error`-Feld im
-    JSONL-Export → maschinenlesbare KI-Fehleranalyse, user-regeln §02). Bei erwarteten,
+    JSONL-Export → maschinenlesbare KI-Fehleranalyse). Bei erwarteten,
     bereits sprechend formulierten Fehlern (z.B. `HTTPStatusError`) weglassen – dort genügt
     die Meldung im `context`, ein Traceback wäre nur Rauschen.
     """

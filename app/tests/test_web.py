@@ -442,12 +442,63 @@ async def test_discovery_populates_and_persists_allowlist(aiohttp_client, tmp_pa
     assert persisted == data["count"]
 
 
-async def test_objectives_endpoint_returns_defaults(aiohttp_client, app):
+async def test_ziele_get_empty_by_default(aiohttp_client, app):
     client = await aiohttp_client(app)
-    data = await (await client.get("/api/objectives")).json()
-    weights = {o["key"]: o["weight"] for o in data["objectives"]}
-    assert weights["versorgungssicherheit"] == 100
-    assert weights["batterieschonung"] == 50
+    data = await (await client.get("/api/ziele")).json()
+    assert data == {"ziele": []}
+
+
+async def test_ziele_post_creates_and_lists(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/ziele", json={
+        "name": "Warmwasserkomfort",
+        "beschreibung": "Genug warmes Wasser sicherstellen",
+        "devices": ["heizstab"],
+    })
+    body = await res.json()
+    assert res.status == 200 and body["ok"] is True
+    assert body["ziel"]["name"] == "Warmwasserkomfort"
+    assert body["ziel"]["devices"] == ["heizstab"]
+
+    data = await (await client.get("/api/ziele")).json()
+    assert len(data["ziele"]) == 1
+    assert data["ziele"][0]["beschreibung"] == "Genug warmes Wasser sicherstellen"
+
+
+async def test_ziele_post_updates_existing_ziel(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    created = await (await client.post("/api/ziele", json={"name": "A", "devices": []})).json()
+    ziel_id = created["ziel"]["id"]
+
+    res = await client.post("/api/ziele", json={
+        "id": ziel_id, "name": "B", "beschreibung": "neu", "devices": ["heizstab"],
+    })
+    body = await res.json()
+    assert body["ok"] is True and body["ziel"]["id"] == ziel_id and body["ziel"]["name"] == "B"
+
+    data = await (await client.get("/api/ziele")).json()
+    assert len(data["ziele"]) == 1
+    assert data["ziele"][0]["name"] == "B"
+
+
+async def test_ziele_delete_removes(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    created = await (await client.post("/api/ziele", json={"name": "A", "devices": []})).json()
+    res = await client.request("DELETE", "/api/ziele", json={"id": created["ziel"]["id"]})
+    assert (await res.json())["ok"] is True
+    assert (await (await client.get("/api/ziele")).json())["ziele"] == []
+
+
+async def test_ziele_post_rejects_empty_name(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/ziele", json={"name": "  ", "devices": []})
+    assert res.status == 400
+
+
+async def test_ziele_post_rejects_unknown_device(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/ziele", json={"name": "A", "devices": ["spuelmaschine"]})
+    assert res.status == 400
 
 
 async def test_constraints_endpoint_without_collector_is_empty(aiohttp_client, app):
