@@ -8,6 +8,37 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Geändert
+- **Modus-Gate für „In Original schreiben" (D-057).** Ein KI-Vorschlag wird nur noch dann in
+  die Original-Entität zurückgeschrieben, wenn die Modus-Achse für das Gerät die Steuerquelle
+  `ep` ergibt. **Steht ein Gerät auf `manuell`, bleibt der vom User gepflegte Wert stehen** —
+  bisher überschrieb EP ihn unabhängig vom Modus. Gelesen werden dieselben HEMS-Helfer wie im
+  HEMS selbst: global `input_select.ems_regelmodus`, je Gerät `input_select.ems_<prefix>_modus`
+  (`auto` = KI/EP, `manuell` = normale Regeln, `aus` = aus). Die Logik in `control_mode.py` ist
+  eine Portierung von HEMS `Device.resolve_source` inklusive dessen Asymmetrie: global `auto`
+  überstimmt ein Gerät auf `manuell`, nur `aus` am Gerät vetot global `auto`.
+  - Bewusst **nur** die Modus-Achse: `ems_pv_regelung_aktiv`, `hard_lockout` und das
+    `allowed_modes`-Typ-Gate des HEMS werden nicht nachgebaut (Zusatz-Entitäten sind
+    advisorisch/nicht HEMS-relevant, `hard_lockout` ist ein PV-Notabwurf, `allowed_modes` steht
+    in der HEMS-Addon-Config).
+  - **Unverändert:** die `sensor.ep_*_vorschlag`-Spiegelsensoren werden weiterhin immer
+    geschrieben — der Vorschlag bleibt auch im manuellen Modus sichtbar, er wird nur nicht
+    übernommen. Ebenso unverändert bleibt der Schalter „In Original schreiben" je
+    Zusatz-Entität (D-052); der Modus ist eine **zusätzliche** Bedingung.
+  - **Fail-safe:** fehlt der globale Helfer oder antwortet HA mit einem Fehler, gilt `aus` und
+    es wird nichts ins Original geschrieben (mit Warnung im Log). Ein fehlender **Geräte**-Helfer
+    verhält sich wie im HEMS und fällt auf `manuell` durch.
+  - Gesperrte Schreibvorgänge erscheinen als `skipped` im Publish-Ergebnis, im Audit
+    (`suggestions_published`) und in der UI (Geräte-Tab: Modus-Zeile je Gerät und Hinweis
+    „gesperrt" an „In Original schreiben"; Plan-Tab: eigene Zeile im Schreib-Ergebnis).
+  - Das Gate sitzt in `publish_suggestions()` und greift damit auch auf dem manuellen
+    „Erneut schreiben"-Pfad (`POST /api/plan/publish`), nicht nur im automatischen Planlauf.
+
+### Behoben
+- **HEMS-Regelmodus `manuell` wurde in der EP-UI als roher Wert angezeigt.** Im HEMS-Tab stand
+  `manuell` statt „Manuell", weil die Label-Tabelle die im HEMS ergänzte Option nie
+  nachgezogen hatte.
+
 ### Hinzugefügt
 - **Multi-Provider: Claude und OpenAI zusätzlich zu Gemini (D-056).** Der KI-Anbieter ist
   jetzt zwischen **Google Gemini**, **Anthropic Claude** und **OpenAI (GPT)** umschaltbar.

@@ -18,6 +18,7 @@ import logging
 import sqlite3
 from collections.abc import Iterable
 
+from energy_pilot.control_mode import HA_GLOBAL_MODE, device_mode_entity
 from energy_pilot.devices import Device, read_fields
 from energy_pilot.entity_map import EntityMapping
 from energy_pilot.forecast import PVOrientation
@@ -28,6 +29,7 @@ SOURCE_MEASUREMENT = "measurement"
 SOURCE_DEVICE = "device"
 SOURCE_FORECAST = "forecast"
 SOURCE_WEATHER = "weather"
+SOURCE_MODE = "mode"
 
 
 def collect_entity_ids(
@@ -39,6 +41,10 @@ def collect_entity_ids(
 
     Liefert `entity_id -> source`. Geräte-IDs stammen aus dem zentralen Read-
     Schema (`read_fields`), damit es keine zweite Quelle der Wahrheit gibt.
+
+    Die Modus-Helfer (D-057) kommen bewusst **nicht** aus `read_fields`: sie sind kein
+    Gerätewert für die KI, sondern steuern nur den Original-Schreibweg. Sie stehen hier, damit
+    der Soft-Guard sie beim Lesen nicht als Verstoß meldet.
     """
     entities: dict[str, str] = {}
     for entity_map in (mapping or {}).values():
@@ -47,6 +53,10 @@ def collect_entity_ids(
     for device in devices or ():
         for field in read_fields(device):
             entities.setdefault(field.entity_id, SOURCE_DEVICE)
+        entities.setdefault(device_mode_entity(device.entity_prefix), SOURCE_MODE)
+        # Der globale Modus wird nur zusammen mit Geräten gelesen (ohne Geräte entscheidet er
+        # nichts) – deshalb steht er hier und nicht bedingungslos im Register.
+        entities.setdefault(HA_GLOBAL_MODE, SOURCE_MODE)
     for orientation in orientations or ():
         for entity_id in orientation.entities.values():
             if entity_id:

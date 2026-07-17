@@ -28,8 +28,12 @@ const SRC_LABELS = {
 };
 const srcDe = (s) => SRC_LABELS[s] || s || "–";
 // Technischer HEMS-Regelmodus-Wert als lesbare deutsche Anzeige (aus input_select.ems_regelmodus).
-const MODE_LABELS = { aus: "Aus", auto: "Automatik", nur_heizen: "Nur Heizen", nur_laden: "Nur Laden" };
+// Semantik überall: auto = KI/EP, manuell = normale Regeln, aus = aus.
+const MODE_LABELS = { aus: "Aus", auto: "Automatik", manuell: "Manuell", nur_heizen: "Nur Heizen", nur_laden: "Nur Laden" };
 const modeDe = (m) => MODE_LABELS[m] || m || "–";
+// Aufgelöste Steuerquelle je Gerät (D-057), bestimmt ob ein KI-Vorschlag ins Original darf.
+const CONTROL_SRC_LABELS = { ep: "KI (Energy Pilot)", user: "Manuell (Nutzerwerte)", aus: "Aus" };
+const controlSrcDe = (s) => CONTROL_SRC_LABELS[s] || s || "–";
 
 // Robust gegen Nicht-JSON-Antworten (HA-Ingress-Fehlerseite bei Timeout/502): liefert
 // eine lesbare Meldung statt „Unexpected token '<'". Ersetzt die frühere fetchJson().
@@ -280,6 +284,7 @@ function DeviceCard({ device: d, onChanged }) {
   const cls = d.class === "controllable" ? "regelbar" : "binär";
   return html`
     <h2 style="font-size:1rem;margin-top:1rem;">${d.label} <small style="font-weight:normal;color:#888;">(${cls})</small></h2>
+    <${DeviceMode} device=${d} />
     <table>
       <thead><tr><th>Größe</th><th class="num">Wert</th><th>Entität</th><th>Quelle</th></tr></thead>
       <tbody>${d.fields.map((f, i) => {
@@ -292,6 +297,22 @@ function DeviceCard({ device: d, onChanged }) {
     </table>
     <${Extras} device=${d} onChanged=${onChanged} />
     <${DevicePrompt} device=${d} onChanged=${onChanged} />`;
+}
+
+// Modus-Achse je Gerät (D-057): der Modus wird im HEMS gepflegt, EP liest ihn nur.
+// Erklärt sichtbar, warum „In Original schreiben" gerade greift oder nicht.
+function DeviceMode({ device: d }) {
+  const src = d.control_source;
+  const writes = src === "ep";
+  return html`<p style="font-size:.8rem;color:#888;margin:.2rem 0 .4rem;">
+    Modus: <strong style="color:${writes ? "#2a8" : "#c80"};">${modeDe(d.mode)}</strong>
+    <small> (global: ${modeDe(d.global_mode)})</small>
+    → Steuerquelle <strong>${controlSrcDe(src)}</strong>.
+    ${writes
+      ? " KI-Vorschläge dürfen in Original-Entitäten geschrieben werden."
+      : " KI-Vorschläge werden nicht in Original-Entitäten geschrieben."}
+    <small> Gepflegt im HEMS: <code>${d.mode_entity_id}</code></small>
+  </p>`;
 }
 
 // Freitext-Beschreibung des Geräts für die KI (D-051).
@@ -363,10 +384,18 @@ function extraTypeInfo(x) {
   if (x.kind === "text") return "Text";
   return "auto";
 }
-// D-052: effektiver „In Original schreiben"-Zustand.
-function OrigState({ x }) {
+// D-052: effektiver „In Original schreiben"-Zustand, inkl. Modus-Gate (D-057).
+// `source` ist die Steuerquelle des Geräts: nur bei "ep" wird tatsächlich ins Original
+// geschrieben. Ohne diesen Hinweis wirkte der Haken aktiv und täte stumm nichts.
+function OrigState({ x, source }) {
   if (!x.ai_suggestion) return html`<span style="color:#888;">–</span>`;
-  if (x.should_write_original) return "Ja";
+  if (x.should_write_original) {
+    if (source && source !== "ep") {
+      const why = source === "aus" ? "Modus aus" : "Modus manuell";
+      return html`Ja <small style="color:#c80;">(gesperrt: ${why})</small>`;
+    }
+    return "Ja";
+  }
   if (x.write_original) return html`Ja <small style="color:#888;">(nicht wirksam, kein Helfer)</small>`;
   return "Nein";
 }
@@ -446,7 +475,7 @@ function Extras({ device: d, onChanged }) {
               <td>${x.ai_suggestion
                 ? html`<code>${x.suggestion_entity_id}</code>`
                 : html`<span style="color:#888;">–</span>`}</td>
-              <td><${OrigState} x=${x} /></td>
+              <td><${OrigState} x=${x} source=${d.control_source} /></td>
               <td class="num src-${x.source}">${fmtExtraValue(x)}</td>
               <td style="font-size:.72rem;color:#888;max-width:16rem;">${x.ai_hint || ""}</td>
               <td style="white-space:nowrap;">
@@ -947,9 +976,13 @@ function PlanTab() {
     setBusy(true);
     try {
       const d = await api("api/plan/publish", { method: "POST" });
+      // Modusbedingt Übersprungenes (D-057) mitzählen: sonst wirkt „5 geschrieben" so, als
+      // wäre alles durchgelaufen, obwohl ein Original-Schreibweg stumm gesperrt war.
+      const skipped = (d.skipped || []).length;
       setStatus(
         d.ok
-          ? ` ✅ ${(d.written || []).length} Sensor(en) geschrieben`
+          ? ` ✅ ${(d.written || []).length} Sensor(en) geschrieben` +
+              (skipped ? ` – ${skipped} gesperrt (Modus)` : "")
           : ` ❌ ${d.reason || (d.failed || []).map((f) => f.entity_id).join(", ")}`
       );
     } catch (e) {
@@ -1083,7 +1116,9 @@ function PlanResult({ data }) {
 function PlanPublished({ pub }) {
   const written = pub.written && pub.written.length ? pub.written : null;
   const failed = pub.failed && pub.failed.length ? pub.failed : null;
-  if (!written && !failed && !pub.reason) return "";
+  // D-057: modusbedingt gesperrte Original-Schreibwege – kein Fehler, aber sichtbar.
+  const skipped = pub.skipped && pub.skipped.length ? pub.skipped : null;
+  if (!written && !failed && !skipped && !pub.reason) return "";
   return html`<${Fragment}>
     <h2 style="font-size:1rem;margin-top:1rem;">Nach HA geschrieben</h2>
     ${written
@@ -1096,7 +1131,12 @@ function PlanPublished({ pub }) {
           (f, i) => html`<${Fragment} key=${i}>${i ? ", " : ""}<code>${f.entity_id}</code> (${f.error})</${Fragment}>`
         )}</p>`
       : ""}
-    ${!written && !failed && pub.reason ? html`<p style="font-size:.85rem;color:#888;">${pub.reason}</p>` : ""}
+    ${skipped
+      ? html`<p style="font-size:.85rem;color:#888;">⏸ Nicht ins Original geschrieben (Modus): ${skipped.map(
+          (s, i) => html`<${Fragment} key=${i}>${i ? ", " : ""}<code>${s.entity_id}</code> (${s.reason})</${Fragment}>`
+        )}</p>`
+      : ""}
+    ${!written && !failed && !skipped && pub.reason ? html`<p style="font-size:.85rem;color:#888;">${pub.reason}</p>` : ""}
   </${Fragment}>`;
 }
 

@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 
 from energy_pilot.ai_provider import AIProvider, ProviderError, ProviderResponse
 from energy_pilot.config import AddonConfig
+from energy_pilot.control_mode import HA_GLOBAL_MODE
 from energy_pilot.database import init_db
-from energy_pilot.devices import CONTROLLABLE, Device
+from energy_pilot.devices import CONTROLLABLE, Device, DeviceExtra
+from energy_pilot.http_errors import HTTPStatusError
 from energy_pilot.logging_setup import setup_logging
 from energy_pilot.objectives import upsert_ziel
 from energy_pilot.planner import Planner
@@ -82,14 +84,25 @@ class _Devices:
 
 
 class _FakeHA:
-    """HA-Client-Doppel: zeichnet die set_state-Aufrufe des Publishers auf."""
+    """HA-Client-Doppel: zeichnet set_state/call_service auf, bedient die Modus-Helfer (D-057)."""
 
-    def __init__(self):
+    def __init__(self, modes=None):
         self.calls = []
+        self.service_calls = []
+        self._modes = dict(modes or {})
+
+    async def get_state(self, entity_id):
+        if entity_id not in self._modes:
+            raise HTTPStatusError(service="Home Assistant", status=404, reason="Not Found")
+        return {"entity_id": entity_id, "state": self._modes[entity_id]}
 
     async def set_state(self, entity_id, state, attributes=None):
         self.calls.append((entity_id, state, attributes))
         return {"entity_id": entity_id, "state": state}
+
+    async def call_service(self, domain, service, entity_id, data=None):
+        self.service_calls.append((domain, service, entity_id, data))
+        return {"entity_id": entity_id}
 
 
 # Gültiger Modell-Output (heizstab + batterie), wird in mehreren Tests genutzt.
@@ -449,3 +462,31 @@ async def test_publish_latest_without_valid_plan_reports_reason(tmp_path):
 
     assert not result["ok"]
     assert "kein gültiger Plan" in result["reason"]
+
+
+async def test_publish_latest_respects_manual_mode(tmp_path):
+    """D-057 auch auf dem „Erneut schreiben"-Pfad.
+
+    Regression gegen ein Gate, das nur in `Planner.run()` landet: `publish_latest()` ist ein
+    zweiter, unabhängiger Aufruf von `publish_suggestions` – deshalb sitzt das Gate dort drin.
+    """
+    extra = DeviceExtra(
+        read_entity_id="input_number.ep_heizstab_max_temperatur",
+        ai_suggestion=True, write_original=True,
+    )
+    devices = _Devices()
+    devices.devices = [
+        Device("batterie", "Batterie", "batterie", CONTROLLABLE, "watt"),
+        Device("heizstab", "Heizstab", "heizstab", CONTROLLABLE, "watt", extras=(extra,)),
+    ]
+    ha = _FakeHA(modes={HA_GLOBAL_MODE: "manuell", "input_select.ems_heizstab_modus": "manuell"})
+    planner, _ = _planner(tmp_path, _FakeProvider(_VALID_DATA), ha_client=ha)
+    planner.device_collector = devices
+    await planner.run(now=NOW)
+    ha.service_calls.clear()
+
+    result = await planner.publish_latest()
+
+    assert result["ok"]
+    assert ha.service_calls == []  # Nutzerwert bleibt stehen
+    assert result["skipped"][0]["entity_id"] == "input_number.ep_heizstab_max_temperatur"

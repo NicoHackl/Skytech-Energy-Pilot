@@ -3,6 +3,12 @@
 Die Gerätewerte sind Grenzen/Zustände und werden als Letztwert geführt (kein
 gleitendes Mittel, konsistent mit Decision D-001). Quelle je Wert wird
 mitgeführt (`live` | `none`), damit UI/Diagnose Lücken sichtbar machen.
+
+Zusätzlich wird je Zyklus der Steuermodus je Gerät mitgelesen (D-057) — **rein für die
+Anzeige** im Geräte-Tab. Das Gate für den Original-Schreibweg liest den Modus unabhängig davon
+frisch zum Schreibzeitpunkt (`suggestion_publisher.publish_suggestions`); dieser Cache darf
+nie über einen Schreibvorgang entscheiden, sonst entschiede ein bis zu einen Poll-Zyklus alter
+Wert darüber, ob ein Nutzerwert überschrieben wird.
 """
 
 from __future__ import annotations
@@ -10,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 
+from energy_pilot.control_mode import SOURCE_OFF, device_mode_entity, read_modes
 from energy_pilot.conversion import INVALID_STATES, safe_float
 from energy_pilot.devices import Device, ReadField, read_fields
 from energy_pilot.ha_client import HAClient
@@ -64,6 +71,8 @@ class DeviceCollector:
         self.discovery_source: str = "none"
         # device.name -> field.key -> {"value": ..., "source": "live|none"}
         self.last_values: dict[str, dict[str, dict]] = {}
+        # device.name -> {"global_mode", "mode", "source"} (D-057, nur Anzeige – nie das Gate)
+        self.last_modes: dict[str, dict] = {}
         self.last_collect_ts: float | None = None
         self.last_error: str | None = None
 
@@ -72,7 +81,7 @@ class DeviceCollector:
         self.discovery_source = source
 
     async def collect_once(self, now: float | None = None) -> None:
-        """Liest für jedes Gerät alle Lese-Entitäten einmal ein."""
+        """Liest für jedes Gerät alle Lese-Entitäten einmal ein (inkl. Modus für die Anzeige)."""
         now = time.time() if now is None else now
         for device in self.devices:
             field_values: dict[str, dict] = {}
@@ -80,6 +89,7 @@ class DeviceCollector:
                 value, source, attrs = await self._read_field(field)
                 field_values[field.key] = {"value": value, "source": source, "attrs": attrs}
             self.last_values[device.name] = field_values
+        self.last_modes = await read_modes(self.ha_client, self.devices, logger=self.logger)
         self.last_collect_ts = now
 
     async def _read_field(self, field: ReadField) -> tuple[object | None, str, dict]:
@@ -112,10 +122,15 @@ class DeviceCollector:
         (D-047) werden separat (`/api/devices` → `extras`) geführt, damit sie im UI nicht doppelt
         (Standard-Tabelle **und** Zusatz-Editor) erscheinen. Gelesen werden sie dennoch (siehe
         `collect_once`).
+
+        `mode`/`control_source` (D-057) liegen geräteweit **neben** `fields` — nicht zu
+        verwechseln mit dem `source`-Schlüssel *innerhalb* eines Feldes, der `live|none`
+        bedeutet (Datenherkunft, nicht Steuerquelle).
         """
         result: list[dict] = []
         for device in self.devices:
             values = self.last_values.get(device.name, {})
+            mode_entry = self.last_modes.get(device.name, {})
             extra_keys = {ex.read_key for ex in device.extras}
             fields_out = []
             for field in read_fields(device):
@@ -140,6 +155,11 @@ class DeviceCollector:
                     "class": device.device_class,
                     "output_unit": device.output_unit,
                     "ai_prompt": device.ai_prompt,
+                    # Modus-Achse (D-057): roher Gerätemodus + aufgelöste Steuerquelle.
+                    "mode": mode_entry.get("mode"),
+                    "global_mode": mode_entry.get("global_mode"),
+                    "control_source": mode_entry.get("source", SOURCE_OFF),
+                    "mode_entity_id": device_mode_entity(device.entity_prefix),
                     "fields": fields_out,
                 }
             )

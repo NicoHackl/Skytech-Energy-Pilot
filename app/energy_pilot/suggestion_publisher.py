@@ -13,9 +13,17 @@ schreiben" aktiv (`DeviceExtra.should_write_original`), schreibt EP den Vorschla
 Original-Entität zurück. Das gilt **nur** für echte Helfer-Domänen; `sensor.*` bleibt immer
 read-only, dort entsteht nur der `_vorschlag`-Sensor.
 
+**Modus-Gate (D-057):** der Original-Schreibweg greift zusätzlich nur, wenn die Modus-Achse
+für das Gerät die Quelle `ep` ergibt (`control_mode.resolve_source`) — im manuellen Modus
+gehört der Wert dem User und wird nie überschrieben. Das Gate sitzt bewusst hier und nicht an
+den Aufrufstellen: `publish_suggestions()` ist der einzige gemeinsame Nenner der beiden
+Schreibpfade (`Planner.run()` und `Planner.publish_latest()`, der „Erneut schreiben"-Button).
+Die `sensor.ep_*_vorschlag`-Spiegelsensoren bleiben ungegated — sie sind EP-eigene Ausgaben
+und sollen den Vorschlag gerade auch im manuellen Modus sichtbar machen.
+
 Trennung: `build_suggestion_entities()`/`build_original_writes()` sind rein (testbar, ohne
-IO); `publish_suggestions()` schreibt über den HA-Client und fängt Fehler je Entität ab — die
-App blockiert nie (Iron Rule 8).
+IO); `publish_suggestions()` liest die Modus-Quellen und schreibt über den HA-Client und fängt
+Fehler je Entität ab — die App blockiert nie (Iron Rule 8).
 """
 
 from __future__ import annotations
@@ -26,6 +34,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from energy_pilot.control_mode import SOURCE_EP, SOURCE_OFF, read_sources
 from energy_pilot.logging_setup import log
 from energy_pilot.plan_schema import SUGGESTION_FIELDS
 
@@ -79,6 +88,10 @@ class PublishResult:
     ok: bool
     written: list[str] = field(default_factory=list)
     failed: list[dict] = field(default_factory=list)
+    # Modusbedingt übersprungene Original-Schreibvorgänge (D-057). Kein Fehler, sondern
+    # korrektes Verhalten – deshalb ohne Einfluss auf `ok`. Ohne diese Liste wirkte ein
+    # aktives „In Original schreiben" stumm wirkungslos.
+    skipped: list[dict] = field(default_factory=list)
     reason: str = ""
 
     def as_dict(self) -> dict:
@@ -86,6 +99,7 @@ class PublishResult:
             "ok": self.ok,
             "written": self.written,
             "failed": self.failed,
+            "skipped": self.skipped,
             "reason": self.reason,
         }
 
@@ -204,14 +218,30 @@ def _service_payload(extra: DeviceExtra, value: object) -> tuple[str, str, dict]
     return None
 
 
-def build_original_writes(plan: dict, devices: list[Device]) -> list[OriginalWrite]:
-    """Leitet aus einem validierten Plan die Original-Schreibvorgänge ab (D-052).
+def _skip_reason(source: str) -> str:
+    """Klartext-Begründung, warum die Modus-Achse einen Original-Schreibvorgang sperrt."""
+    if source == SOURCE_OFF:
+        return "Modus aus (oder Modus nicht lesbar) – kein Schreiben in die Original-Entität"
+    return "Modus manuell – der Nutzerwert bleibt stehen"
+
+
+def build_original_writes(
+    plan: dict, devices: list[Device], sources: dict[str, str]
+) -> tuple[list[OriginalWrite], list[dict]]:
+    """Leitet aus einem validierten Plan die Original-Schreibvorgänge ab (D-052/D-057).
 
     Nur für Zusatz-Entitäten mit `should_write_original` (aktives `write_original`, aktiver
-    `ai_suggestion` **und** schreibbare Helfer-Domäne, kein `sensor.*`).
+    `ai_suggestion` **und** schreibbare Helfer-Domäne, kein `sensor.*`) **und** nur, wenn die
+    Modus-Achse für das Gerät die Quelle `ep` ergibt (D-057).
+
+    `sources` bildet `device.name -> 'aus' | 'user' | 'ep'` ab (`control_mode.read_sources`).
+    Ein unbekanntes Gerät gilt als `aus` – lieber nicht schreiben als einen Nutzerwert
+    überschreiben. Liefert `(writes, skipped)`; `skipped` trägt je gesperrter Entität
+    `{entity_id, device, source, reason}` für UI und Audit.
     """
     by_name = {device.name: device for device in devices}
     writes: list[OriginalWrite] = []
+    skipped: list[dict] = []
     for entry in plan.get("devices", []):
         if not isinstance(entry, dict):
             continue
@@ -221,6 +251,7 @@ def build_original_writes(plan: dict, devices: list[Device]) -> list[OriginalWri
         device = by_name.get(name)
         if device is None:
             continue
+        source = sources.get(name, SOURCE_OFF)
         for extra in device.extras:
             if not extra.should_write_original:
                 continue
@@ -229,6 +260,16 @@ def build_original_writes(plan: dict, devices: list[Device]) -> list[OriginalWri
                 continue
             payload = _service_payload(extra, value)
             if payload is None:
+                continue
+            if source != SOURCE_EP:
+                skipped.append(
+                    {
+                        "entity_id": extra.read_entity_id,
+                        "device": name,
+                        "source": source,
+                        "reason": _skip_reason(source),
+                    }
+                )
                 continue
             domain, service, data = payload
             writes.append(
@@ -241,7 +282,7 @@ def build_original_writes(plan: dict, devices: list[Device]) -> list[OriginalWri
                     field_name=extra.plan_field,
                 )
             )
-    return writes
+    return writes, skipped
 
 
 async def publish_suggestions(
@@ -255,7 +296,12 @@ async def publish_suggestions(
     """Schreibt die Vorschlagswerte eines validierten Plans als HA-Sensoren.
 
     Zusätzlich (D-052): schreibt aktivierte `should_write_original`-Zusatzentitäten per
-    HA-Service in ihre Original-Entität zurück (`build_original_writes`).
+    HA-Service in ihre Original-Entität zurück (`build_original_writes`) – aber nur, wenn die
+    Modus-Achse für das Gerät die Quelle `ep` ergibt (D-057). Gesperrte Schreibvorgänge landen
+    in `skipped` und lassen `ok` unberührt (kein Fehler, sondern gewolltes Verhalten).
+
+    Der Modus wird **frisch zum Schreibzeitpunkt** gelesen (`control_mode.read_sources`), nie
+    aus einem Cache: ein veralteter Modus darf nie über einen Schreibvorgang entscheiden.
 
     Fehler je Entität werden gefangen (`written`/`failed`) – die Methode wirft nie
     (Iron Rule 8). Ohne HA-Client passiert nichts (klare Begründung im Ergebnis).
@@ -263,7 +309,6 @@ async def publish_suggestions(
     """
     plan_id = plan.get("plan_id")
     entities = build_suggestion_entities(plan, devices)
-    original_writes = build_original_writes(plan, devices)
 
     if ha_client is None:
         if logger is not None:
@@ -271,7 +316,14 @@ async def publish_suggestions(
                 plan_id=plan_id)
         return PublishResult(ok=False, reason="kein HA-Client konfiguriert")
 
-    if not entities and not original_writes:
+    # Modus nur lesen, wenn überhaupt ein Original-Schreibweg aktiv ist: sonst wären es
+    # 1+N nutzlose HA-Abrufe je Lauf – plus eine irreführende „Modus nicht lesbar"-Warnung in
+    # Anlagen, die „In Original schreiben" nie aktiviert haben.
+    needs_modes = any(extra.should_write_original for d in devices for extra in d.extras)
+    sources = await read_sources(ha_client, devices, logger=logger) if needs_modes else {}
+    original_writes, skipped = build_original_writes(plan, devices, sources)
+
+    if not entities and not original_writes and not skipped:
         return PublishResult(ok=True, reason="keine Vorschlagswerte im Plan")
 
     written: list[str] = []
@@ -294,14 +346,14 @@ async def publish_suggestions(
                 {"entity_id": write.entity_id, "error": str(exc).strip() or exc.__class__.__name__}
             )
 
-    result = PublishResult(ok=not failed, written=written, failed=failed)
+    result = PublishResult(ok=not failed, written=written, failed=failed, skipped=skipped)
     _audit(db, plan_id, result)
     if logger is not None:
         log(
             logger,
             "info" if result.ok else "warning",
             "Vorschläge nach HA geschrieben" if result.ok else "Vorschläge teilweise geschrieben",
-            context={"written": written, "failed": failed},
+            context={"written": written, "failed": failed, "skipped": skipped},
             plan_id=plan_id,
         )
     return result
@@ -310,7 +362,10 @@ async def publish_suggestions(
 def _audit(db: sqlite3.Connection | None, plan_id: object, result: PublishResult) -> None:
     if db is None:
         return
-    detail = json.dumps({"written": result.written, "failed": result.failed}, ensure_ascii=False)
+    detail = json.dumps(
+        {"written": result.written, "failed": result.failed, "skipped": result.skipped},
+        ensure_ascii=False,
+    )
     try:
         db.execute(
             "INSERT INTO audit (actor, action, subject, detail_json) VALUES (?, ?, ?, ?)",

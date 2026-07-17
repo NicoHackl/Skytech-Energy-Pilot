@@ -2,6 +2,7 @@
 
 import pytest
 
+from energy_pilot.control_mode import HA_GLOBAL_MODE
 from energy_pilot.device_collector import DeviceCollector, parse_bool, parse_by_kind, parse_text
 from energy_pilot.devices import CONTROLLABLE, Device, DeviceExtra
 
@@ -99,6 +100,42 @@ async def test_without_ha_client_all_none():
 
 def test_snapshot_empty_without_devices():
     assert DeviceCollector(None).snapshot() == []
+
+
+# -- Modus-Achse für die Anzeige (D-057) -----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_snapshot_exposes_mode_and_control_source():
+    """Der Collector spiegelt den Modus für die UI – das Gate liest davon unabhängig frisch."""
+    collector = DeviceCollector(
+        _FakeHAClient(
+            {
+                HA_GLOBAL_MODE: "manuell",
+                "input_select.ems_heizstab_modus": "auto",
+                "input_boolean.ems_heizstab_technische_freigabe": "on",
+            }
+        )
+    )
+    collector.set_devices([HEIZSTAB])
+
+    await collector.collect_once(now=1.0)
+    snap = collector.snapshot()[0]
+
+    assert snap["mode"] == "auto"
+    assert snap["global_mode"] == "manuell"
+    assert snap["control_source"] == "ep"  # Gerät auto bei global manuell => KI
+    assert snap["mode_entity_id"] == "input_select.ems_heizstab_modus"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_control_source_blocked_without_ha_client():
+    collector = DeviceCollector(None)
+    collector.set_devices([HEIZSTAB])
+
+    await collector.collect_once(now=1.0)
+
+    assert collector.snapshot()[0]["control_source"] == "aus"
 
 
 # -- Typgerechtes Lesen aller Domänen + Attribut-Erfassung (D-048) ----------
