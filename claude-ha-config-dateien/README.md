@@ -1,6 +1,6 @@
 # HA-Konfigurationsdateien für Skytech Energy Pilot
 
-Fertige Home-Assistant-Helfer-Pakete, die der User **selbst** in seine HA-Konfiguration einfügt (Entscheidung D-005, siehe [../plan/entscheidungen.md](../plan/entscheidungen.md)). EP legt Helfer **nicht** automatisch an.
+Fertige Home-Assistant-Helfer-Pakete, die der User **selbst** in seine HA-Konfiguration einfügt (Entscheidung D-005, siehe [../docs/design-entscheidungen.md](../docs/design-entscheidungen.md)). EP legt Helfer **nicht** automatisch an.
 
 ## Einbinden in Home Assistant
 Pro Domäne gibt es eine Datei `<domain>_ep.yaml`. Den Inhalt jeweils **unter den passenden Domain-Block** in deiner `configuration.yaml` (oder ein eingebundenes Package) kopieren, z.B.:
