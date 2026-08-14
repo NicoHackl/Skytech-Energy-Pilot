@@ -37,28 +37,32 @@ async def test_index_serves_spa(aiohttp_client, app):
     assert "Skytech Energy Pilot" in await resp.text()
 
 
-async def test_static_serves_frontend_assets(aiohttp_client, app):
-    # SPA lädt Preact/htm + app.js relativ (Ingress-tauglich, ohne führenden Slash).
+async def test_index_verweist_relativ_auf_das_buendel(aiohttp_client, app):
+    """Kein Verweis darf mit `/` beginnen — sonst bricht die Oberfläche unter dem Ingress.
+
+    Das Ingress-Präfix (`/api/hassio_ingress/<token>/`) steht erst zur Laufzeit fest; ein
+    absoluter Pfad landet daneben auf der HA-Core-API (docs/frontend.md).
+    """
     client = await aiohttp_client(app)
     index = await (await client.get("/")).text()
-    for ref in [
-        "static/vendor/preact.umd.js",
-        "static/vendor/hooks.umd.js",
-        "static/vendor/htm.umd.js",
-        "static/app.js",
-    ]:
-        assert ref in index, ref
-    # Die Static-Route liefert die vendored Assets + app.js aus.
-    for path in [
-        "/static/app.js",
-        "/static/vendor/preact.umd.js",
-        "/static/vendor/hooks.umd.js",
-        "/static/vendor/htm.umd.js",
-    ]:
+    assert 'src="./assets/' in index or 'src="assets/' in index
+    assert 'href="./assets/' in index or 'href="assets/' in index
+    assert 'src="/assets/' not in index and 'href="/assets/' not in index
+
+
+async def test_assets_route_liefert_das_buendel(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    for path in ("/assets/app.js", "/assets/index.css"):
         res = await client.get(path)
         assert res.status == 200, path
-    body = await (await client.get("/static/app.js")).text()
-    assert "render(" in body and "preactHooks" in body
+
+
+async def test_design_und_theme_sind_gesetzt(aiohttp_client, app):
+    """Designsprache `ha` (eiserne Regel 16) und der Theme-Vorgriff im <head>."""
+    client = await aiohttp_client(app)
+    index = await (await client.get("/")).text()
+    assert 'data-design="ha"' in index
+    assert "prefers-color-scheme: dark" in index
 
 
 async def test_health_reports_config(aiohttp_client, app):

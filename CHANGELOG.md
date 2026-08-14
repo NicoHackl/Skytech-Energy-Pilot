@@ -9,6 +9,30 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 ## [Unreleased]
 
 ### Geändert
+- **Oberfläche komplett neu gebaut: React 18 + TypeScript + Vite (D-059, 0.0.59 → 0.0.60).**
+  Die bisherige Preact-/htm-SPA ist abgelöst. **Alle neun Bereiche und ihr voller
+  Funktionsumfang bleiben erhalten** — Status, Daten, Geräte, Prognose, Grenzen & Ziele,
+  Plan, HEMS, Einstellungen und Logs, samt Zusatz-Entitäten-Editor, Ziele-Editor, beiden
+  Prompt-Editoren, allen Testknöpfen und dem JSONL-Export.
+  - **Navigation als Sidebar** statt Tab-Leiste, unter 820 px als ausfahrbares Panel.
+  - **Hell/Dunkel jetzt umschaltbar** (Knopf in der Kopfzeile jeder Seite). Die Wahl
+    überlebt das Neuladen; ohne eigene Wahl gilt weiterhin die Systemeinstellung. Bisher
+    folgte die Oberfläche starr dem Betriebssystem.
+  - **Einheitliche Rückmeldungen:** Ergebnisse von Aktionen erscheinen als kurze Einblendung
+    statt als Text neben dem Knopf; Lade-, Leer- und Fehlerzustand sind auf jeder Seite
+    ausgestaltet — ein Leerzustand führt jetzt immer zur nächsten sinnvollen Aktion.
+  - **Logs zusätzlich nach Level filterbar**, Zeitangaben durchgängig in Berliner Zeit.
+  - Unter der Haube: Typprüfung zur Bauzeit (`tsc --noEmit`), ein Design-System aus Tokens
+    mit `data-design="ha"` (Akzent `#18BCF2`), ein einziger typisierter API-Client. Vier
+    Ingress-bedingte Abweichungen (Pfade ohne führenden Slash, `HashRouter`, `base: './'`,
+    kein Auth-Provider) sind in [docs/adr/D-059-frontend-react.md](docs/adr/D-059-frontend-react.md)
+    begründet.
+  - **Auslieferung:** das gebaute Bündel liegt als `frontend/dist` im Repo, das Addon-Image
+    kopiert es nur — die Installation bleibt ohne Node so schnell wie bisher. Die CI baut
+    gegen und schlägt an, wenn das Bündel nicht zum Quellcode passt.
+- **Datumsangaben durchgängig als `TT.MM.JJJJ` in Berliner Zeit** (eiserne Regel 15), auch
+  rückwirkend in diesem Changelog. Maschinenformate (Log-JSON, Datenbank, Plan-Zeitstempel)
+  bleiben unverändert ISO/UTC.
 - **Regelwerk und Doku auf die gemeinsame Agenten-Struktur umgestellt.** Die verbindlichen
   Projektregeln stehen jetzt genau einmal — in [`AGENTS.md`](AGENTS.md) im Repo-Root.
   `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md` und `.cursor/rules/` sind reine
@@ -44,7 +68,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     v9 zurückgebaut). Ebenso korrigiert: `planning_interval_min` gilt als „ungenutzt", steuert
     real aber die Plan-Gültigkeitsdauer — ungenutzt sind nur `plan_update_interval_min` und
     `min_confidence_percent`.
-  - **Veraltete Verweise im Code** auf die 2026-07-10 gelöschte Doku (`08-…md`, „Doc 04/06/07")
+  - **Veraltete Verweise im Code** auf die 10.07.2026 gelöschte Doku (`08-…md`, „Doc 04/06/07")
     durch die passenden `docs/`-Dateien ersetzt; Kommentare, die den mit D-046 entfernten
     Geräte-Config-Fallback noch als existent beschrieben, richtiggestellt.
 
@@ -153,7 +177,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     `snap_amp_a`, `snap_forecast_kwh`. Alle späteren Features (D-053 bis D-056) bleiben
     unverändert funktionsfähig.
 
-## [0.0.51] - 2026-07-11
+## [0.0.51] - 11.07.2026
 
 ### Hinzugefügt
 - **Stabilitäts-Kern aus `plan/longterm_plan_claude.md` (A2/A3/A4/B2).** Deterministische
@@ -183,7 +207,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   braucht Collector-Zeitstempel), A6 (Basisplan), B1 (Feedback-Rückführung), B3 (Urgency-
   Formel), B4 (Reason-Codes), B5 (Bilanz), C2/C3 (Shadow/KPI/Kritiker).
 
-## [0.0.50] - 2026-07-11
+## [0.0.50] - 11.07.2026
 
 ### Hinzugefügt
 - **A1 – Vorplan als Anker in die Planung (Stabilität über Aufrufe).** `Planner.run()`
@@ -196,7 +220,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   Schwankungen zu ändern. Erster Lauf (kein Vorplan) hängt keinen Anker an. Grundlage für
   die spätere Anti-Flatter-Glättung (A2). Siehe `plan/longterm_plan_claude.md` Abschn. 3.
 
-## [0.0.49] - 2026-07-10
+## [0.0.49] - 10.07.2026
 
 ### Geändert
 - **Alte Doku ersetzt durch neuen Ordner `docs/`.** `info.md`, `plan/*.md`,
@@ -220,7 +244,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 - **Grenzen-&-Ziele-Tab:** Der Hinweistext zu den Zielgewichten verwies auf das
   gelöschte `info.md §7` — jetzt ohne toten Verweis.
 
-## [0.0.48] - 2026-07-09
+## [0.0.48] - 09.07.2026
 
 ### Geändert
 - **One Call 4.0: freie Kombination der Vorhersagemodelle statt Einzel-Auswahl für die KI.** Die
@@ -236,7 +260,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   - Wetter-Tab: die Zeile zeigt statt „KI-Timeline: 1h" jetzt „KI nutzt: <aktive Modelle>"
     (`snapshot.ai_models`).
 
-## [0.0.47] - 2026-07-09
+## [0.0.47] - 09.07.2026
 
 ### Geändert
 - **Wetter an die KI (One Call): stündliche Reihe auf den heutigen Tag begrenzt + Tagesausblick
@@ -253,7 +277,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     Tagesreihe kommt fest aus der `1day`-Timeline. Der `OneCallCollector`-Snapshot trägt je Timeline
     zusätzlich den `timezone_offset_s` (fürs Ortszeit-Fenster). UI-Anzeige und HEMS-Weg unverändert.
 
-## [0.0.46] - 2026-07-08
+## [0.0.46] - 08.07.2026
 
 ### Behoben
 - **HEMS-Tab: „Geschützte Mindestleistung" zeigte gar keinen HEMS-Ist-Wert mehr.** Nach 0.0.45
@@ -268,7 +292,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   `GET /api/hems/status?refresh=1` einen **Live-Abruf** des HEMS (`collect_once(force=True)`, umgeht
   die Drosselung); der reguläre Auto-Poll (alle 10 s) bleibt unverändert leichtgewichtig.
 
-## [0.0.45] - 2026-07-08
+## [0.0.45] - 08.07.2026
 
 ### Behoben
 - **Plan-Rückkopplung (HEMS-Tab): „Geschützte Mindestleistung" zeigte den effektiven Schutz statt
@@ -280,7 +304,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   Status voraus). Fehlt das Feld (älterer HEMS-Stand), bleibt der Status sicher „unbekannt" statt
   auf den falschen `schutz_w` zurückzufallen. Betrifft Watt **und** Ampere (Wallbox).
 
-## [0.0.44] - 2026-07-05
+## [0.0.44] - 05.07.2026
 
 ### Geändert
 - **Logging: Original-Fehlermeldungen der Backends werden jetzt mitgeloggt.** Bislang gingen bei
@@ -300,7 +324,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     fehlgeschlagenen Komponente geloggt → maschinenlesbar im JSONL-Export (KI-Fehleranalyse,
     user-regeln §02). `log()` akzeptiert dafür nun `exc_info`.
 
-## [0.0.43] - 2026-07-05
+## [0.0.43] - 05.07.2026
 
 ### Behoben
 - **One-Call-4.0-Unwetterwarnungen: falscher Endpunkt behoben (Wetter-Test-Fehler
@@ -317,7 +341,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     Detail-Call gegen dasselbe Tagesbudget). **Ohne aktive Warnung** fällt kein Call an
     (`Alerts ✅ 0`); ohne aktive Timeline ein klarer Hinweis statt eines HTTP-Fehlers.
 
-## [0.0.42] - 2026-07-05
+## [0.0.42] - 05.07.2026
 
 ### Geändert
 - **Addon-Konfiguration vollständig deutsch beschriftet (HA-Formular).** Die
@@ -336,7 +360,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     `sensoren.fields`.
   Der technische Schlüssel in `config.yaml`/`schema` bleibt unverändert – nur die Anzeige.
 
-## [0.0.41] - 2026-07-05
+## [0.0.41] - 05.07.2026
 
 ### Geändert
 - **Durchgängig lesbare deutsche Anzeigetexte (UI-Audit).** Verbliebene technische/englische
@@ -358,7 +382,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   `manuell` → `Manuell` usw.). Bei `input_select` ist der Options-Text zugleich der gespeicherte
   Wert; die Optionen werden derzeit von keinem Code gelesen, daher rein anzeigeseitig.
 
-## [0.0.40] - 2026-07-05
+## [0.0.40] - 05.07.2026
 
 ### Entfernt
 - **Sensor-Fallback-Werte komplett entfernt.** In der Addon-Konfiguration (Gruppe „Sensoren")
@@ -372,7 +396,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   ist. Rolle `water_temperature` aus `roles.py` und die Felder aus `config.yaml` entfernt; die
   Konfiguration erfolgt künftig pro Gerät im Geräte-Tab (vgl. Zusatz-Entität „Max. Wassertemperatur", D-047).
 
-## [0.0.39] - 2026-07-04
+## [0.0.39] - 04.07.2026
 
 ### Geändert
 - **Frontend-Architektur auf Preact + htm umgestellt (kein Build-Schritt).** Die Ingress-SPA wird
@@ -388,7 +412,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   - Verifiziert: `ruff`, 37 Web-Tests (inkl. neuem Static-Route-Test) sowie ein Headless-Render
     (jsdom) aller neun Tabs mit leeren **und** realistischen Daten – ohne Render-Fehler.
 
-## [0.0.38] - 2026-07-04
+## [0.0.38] - 04.07.2026
 
 ### Hinzugefügt
 - **Responsive Darstellung (Handy/Tablet).** Die Ingress-Oberfläche passt sich an kleine
@@ -401,7 +425,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     MutationObserver als `data-label` (fürs Karten-Layout). Alle Tabs, API-Aufrufe, IDs und
     Event-Handler bleiben unverändert.
 
-## [0.0.37] - 2026-07-04
+## [0.0.37] - 04.07.2026
 
 ### Geändert
 - **Weboberfläche im Home-Assistant-Design neu gestaltet.** Layout, Farben und Aufbau der
@@ -417,7 +441,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     Tab-Navigation, Karten-Wrapper); die per JavaScript erzeugten Inhalte werden über die
     bestehenden Klassennamen HA-konform gestylt.
 
-## [0.0.36] - 2026-07-03
+## [0.0.36] - 03.07.2026
 
 ### Hinzugefügt
 - **„In Original schreiben" für Zusatz-Entitäten (D-052).** Zusätzlich zur Checkbox „KI liefert
@@ -437,7 +461,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     `publish_suggestions`), `server.py` (`device_extra_post`-Validierung + `_extras_payload`),
     `index.html` (Checkbox, an KI-Vorschlag gekoppelt, Anzeige des effektiven Zustands).
 
-## [0.0.35] - 2026-07-03
+## [0.0.35] - 03.07.2026
 
 ### Geändert
 - **Geräte-Tab übersichtlicher: nur noch EIN Gerät auf einmal (Dropdown-Auswahl).** Statt alle
@@ -460,7 +484,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     `device_collector.py` (Snapshot-Feld `ai_prompt`), `server.py` (neuer Endpoint
     `POST /api/devices/prompt`), `index.html`.
 
-## [0.0.34] - 2026-07-03
+## [0.0.34] - 03.07.2026
 
 ### Behoben
 - **Schwankende KI-Vorschlagsfelder stabilisiert – EP liefert jetzt IMMER alle geforderten
@@ -482,7 +506,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   - Betrifft `gemini_provider.py`, `plan_context.py`, `validator.py`, `planner.py`, `config.py`,
     `config.yaml`. Neue Addon-Optionen `ai_temperature`, `ai_seed`, `ai_repair_missing`.
 
-## [0.0.33] - 2026-07-03
+## [0.0.33] - 03.07.2026
 
 ### Behoben
 - **Ursache des „Plan erzeugen"-Fehlers gefunden: das Default-Modell `gemini-3.5-flash`.**
@@ -505,7 +529,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   Backend nicht abfangen kann), erscheint eine lesbare Meldung mit Hinweis aufs Addon-Log –
   nie wieder das kryptische „SyntaxError: Unexpected token '<'".
 
-## [0.0.32] - 2026-07-03
+## [0.0.32] - 03.07.2026
 
 ### Behoben
 - **„Plan erzeugen" scheiterte trotz 0.0.31 weiter mit „SyntaxError: Unexpected token '<',
@@ -521,7 +545,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   unverändert JSON-sicher. Dieselbe Absicherung greift jetzt auch für `POST /api/plan/publish`
   und `GET /api/plan` (Serialisierung ebenfalls in den Guard gezogen).
 
-## [0.0.31] - 2026-07-03
+## [0.0.31] - 03.07.2026
 
 ### Behoben
 - **„Plan erzeugen" scheiterte mit „SyntaxError: The string did not match the expected
@@ -540,7 +564,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 - **Paket-Version (`app/energy_pilot/__init__.py`) auf den Stand der Add-on-Version gebracht**
   (war 0.0.23 → 0.0.31), damit Statusseite/Logs die korrekte Version zeigen.
 
-## [0.0.30] - 2026-07-02
+## [0.0.30] - 02.07.2026
 
 ### Hinzugefügt
 - **Zusatz-Entitäten unterstützen jetzt auch `input_select`/`select` (D-049).** Die im Select
@@ -550,7 +574,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   außerhalb des Pools (advisorisch → der Sensor wird dann nicht geschrieben, der Plan bleibt gültig).
   Der Geräte-Tab zeigt die verfügbaren Optionen je Select-Zusatzentität an.
 
-## [0.0.29] - 2026-07-02
+## [0.0.29] - 02.07.2026
 
 ### Geändert
 - **Zusatz-Entitäten unterstützen jetzt alle HA-Domänen, nicht nur `input_number` (D-048).**
@@ -567,7 +591,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   Der Geräte-Tab zeigt je Zusatz-Entität den erkannten Typ samt Grenzen/Format; das Antwort-Schema
   der KI bekommt den passenden Typ (NUMBER/BOOLEAN/STRING).
 
-## [0.0.28] - 2026-07-02
+## [0.0.28] - 02.07.2026
 
 ### Hinzugefügt
 - **Konfigurierbare Zusatz-Entitäten je Gerät (D-047).** Im **Geräte-Tab** kann der User jetzt
@@ -592,7 +616,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   advisorisch sind, klemmt der Validator die Wassertemperatur nicht mehr gegen eine harte Grenze;
   der Freitext steuert die KI.
 
-## [0.0.27] - 2026-07-02
+## [0.0.27] - 02.07.2026
 
 ### Behoben
 - **Plan-Rückkopplung: geschützte Mindestleistung wird jetzt auch für Ampere-Geräte (Wallbox)
@@ -604,7 +628,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   `schutz_w` über Phasen × Spannung nach Ampere um) mit eigener Ampere-Toleranz (±0.1 A). Setzt
   HEMS mit `schutz_a` im `/api/status` voraus.
 
-## [0.0.26] - 2026-07-02
+## [0.0.26] - 02.07.2026
 
 ### Geändert
 - **Geräte-Discovery ausschließlich über das HEMS** (D-046). Sind HEMS und Energy Pilot
@@ -627,7 +651,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 - Addon-Config-Option `devices` (Fallback-Geräteliste) inkl. `config.yaml`-Schema – ersatzlos,
   da die Geräte nun vollständig vom HEMS kommen.
 
-## [0.0.25] - 2026-07-01
+## [0.0.25] - 01.07.2026
 
 ### Behoben
 - **Geräte-Identität hängt jetzt am technischen `name`, nicht mehr am Anzeige-`label`.**
@@ -644,7 +668,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   wie bisher auf das Präfix zurückgefallen. Ein Label-Rename ändert die Zuordnung damit nicht
   mehr. Setzt HEMS ≥ 1.0.26 voraus, ist aber abwärtskompatibel.
 
-## [0.0.24] - 2026-06-28
+## [0.0.24] - 28.06.2026
 
 ### Behoben
 - **HEMS-Tab: Geräte-Matching slug-tolerant (Umlaut/Trenner/Groß-Klein).** Binäre Geräte
@@ -657,7 +681,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   gegen beide HEMS-Achsen slug-gefaltet. Einwortige kleingeschriebene Geräte (Batterie, Heizstab)
   waren nie betroffen.
 
-## [0.0.23] - 2026-06-26
+## [0.0.23] - 26.06.2026
 
 ### Hinzugefügt
 - **M3 Durchstich 1 — HEMS-Status-Rückkopplung (Read-Back-Loop):** EP liest den HEMS-Zustand
@@ -685,7 +709,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   (`online=false`, kein Crash). Echte Plan-Übergabe (Ebene 2 / B4) und Steuermodi (B3) folgen in
   späteren M3-Slices.
 
-## [0.0.22] - 2026-06-26
+## [0.0.22] - 26.06.2026
 
 ### Hinzugefügt
 - **One Call API 4.0: paginierte Calls je Timeline + Pflicht-Tages-Call-Budget (D-045, beantwortet
@@ -710,7 +734,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   priorisieren) baut darauf auf. Schlüssel weiterhin nur als `appid`-Query-Param, nie geloggt
   (Iron Rule 6).
 
-## [0.0.21] - 2026-06-26
+## [0.0.21] - 26.06.2026
 
 ### Hinzugefügt
 - **OpenWeatherMap One Call API 4.0 als umschaltbare Wetterquelle (D-044, beantwortet W2):**
@@ -734,7 +758,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 - **forecast3h-Default-Refresh 30 → 60 min (W3, D-044):** Die 5-Tage/3-Stunden-Prognose ändert
   sich serverseitig nur alle paar Stunden; 60 min sparen Abrufe ohne Informationsverlust.
 
-## [0.0.20] - 2026-06-25
+## [0.0.20] - 25.06.2026
 
 ### Hinzugefügt
 - **Wetterprognose fließt in die KI-Planung (D-043, beantwortet W1):** Der Planungskontext
@@ -754,7 +778,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   harten Grenzen unabhängig vom Prompt (Iron Rules 5/6). Prompt-Änderungen werden auditiert
   (nur Länge, kein Volltext).
 
-## [0.0.19] - 2026-06-25
+## [0.0.19] - 25.06.2026
 
 ### Geändert
 - **OpenWeatherMap-Fehler zeigen jetzt den Originalgrund:** Bei HTTP 401/404/429 (und anderen
@@ -777,7 +801,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   OWM-seitiges Schlüsselthema (meist: Key noch nicht aktiviert), **kein** Free-Plan-/Limit-Problem
   (das wäre HTTP 429; die 5-Tage/3-Stunden-Prognose ist im Free-Tier ohne Zahlungsmethode enthalten).
 
-## [0.0.18] - 2026-06-25
+## [0.0.18] - 25.06.2026
 
 ### Behoben
 - **Start-Crash bei aktiver Wetterprognose:** Die HA-Zone wurde mit einer Liste statt
@@ -786,7 +810,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   abbrach, sobald ein OpenWeatherMap-Schlüssel gesetzt war. Die Zone wird jetzt korrekt als
   `{zone_entity: "weather"}` registriert (neue Allowlist-Quelle `SOURCE_WEATHER`).
 
-## [0.0.17] - 2026-06-25
+## [0.0.17] - 25.06.2026
 
 ### Hinzugefügt
 - **Wettervorhersage über OpenWeatherMap (direkt im EP):** EP ruft die
@@ -811,7 +835,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   die interne API an das HEMS übergeben. Ob/wie sie in den KI-Planungskontext einfließen,
   ist offen → [claude-fragen/claude-fragen-v8.md](claude-fragen/claude-fragen-v8.md).
 
-## [0.0.16] - 2026-06-19
+## [0.0.16] - 19.06.2026
 
 ### Hinzugefügt
 - **Vorschlagssensoren — KI-Vorschläge nach Home Assistant schreiben (Abschluss M2):**
@@ -835,7 +859,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 - **Neue Addon-Option `publish_suggestions`** (Default `true`): auf `false` bleibt EP im
   reinen Beobachten-Modus (Plan in UI/DB, **kein** HA-Schreiben).
 
-## [0.0.15] - 2026-06-19
+## [0.0.15] - 19.06.2026
 
 ### Geändert
 - **Prioritäten als erzwungene Rangfolge (statt weicher Prompt-Bitte):** Der Validator
@@ -850,20 +874,20 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   gilt für alle Geräte außer der Batterie; Tippfehler bereinigt; `prio_vorschlag`-
   Beschreibung im Antwortschema). Regressionstests ergänzt.
 
-## [0.0.14] - 2026-06-19
+## [0.0.14] - 19.06.2026
 
 ### Geändert
 - **KI-Prompt – Prioritäten-Regel präzisiert:** Die Rangfolge muss bei 10 beginnen und
   in 10er-Schritten aufsteigen (10, 20, 30 …). Versionsnummer nachgezogen.
 
-## [0.0.13] - 2026-06-19
+## [0.0.13] - 19.06.2026
 
 ### Hinzugefügt
 - **KI-Prompt – Prioritäten-Regel:** Geräte-Prioritäten nur in 10er-Schritten von 10–100
   (10 = höchste, 100 = niedrigste). Zunächst nur als Prompt-Vorgabe — ab 0.0.15
   deterministisch im Validator erzwungen.
 
-## [0.0.12] - 2026-06-19
+## [0.0.12] - 19.06.2026
 
 ### Behoben
 - **„KI-Planung fehlgeschlagen" mit leerer Fehlermeldung (`"error": ""`):** Lief der
@@ -877,7 +901,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   sondern fällt auf den Exception-Klassennamen zurück
   ([planner.py](app/energy_pilot/planner.py), Iron Rule 8). Regressionstests ergänzt.
 
-## [0.0.11] - 2026-06-19
+## [0.0.11] - 19.06.2026
 
 ### Hinzugefügt
 - **KI-Planung (Vorschlagswerte, M2):** EP erzeugt jetzt über Google Gemini einen
@@ -904,7 +928,7 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 - Paket-Version (`app/energy_pilot/__init__.py`) auf den Stand der Addon-Version
   gebracht (war 0.0.9 → 0.0.11), damit Statusseite/Logs die korrekte Version zeigen.
 
-## [0.0.10] - 2026-06-19
+## [0.0.10] - 19.06.2026
 
 ### Behoben
 - **Grenzen & Ziele zeigten bei Binärgeräten Min./Max. Leistung:** Im Reiter

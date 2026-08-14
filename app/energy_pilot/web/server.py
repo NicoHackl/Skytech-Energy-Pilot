@@ -1,6 +1,8 @@
-"""aiohttp-Webserver: Ingress-SPA + JSON-API.
+"""aiohttp-Webserver: Ingress-Oberfläche + JSON-API.
 
-Für M0/M1 bewusst einfach/funktional gehalten (vanilla SPA, siehe Decision D-010).
+Liefert das gebaute React-Bündel aus (`frontend/dist`, D-059) und alle `/api/*`-Endpunkte;
+die Übersicht steht in docs/api-referenz.md. Gebaut wird das Bündel nie zur Laufzeit —
+`npm run build` erzeugt es, das Ergebnis liegt im Repo bzw. im Addon-Image.
 """
 
 from __future__ import annotations
@@ -43,8 +45,22 @@ from energy_pilot.settings import (
     set_setting,
 )
 
-TEMPLATES = Path(__file__).parent / "templates"
-STATIC = Path(__file__).parent / "static"
+
+def _frontend_dir() -> Path:
+    """Verzeichnis des gebauten React-Bündels (docs/frontend.md).
+
+    Im Addon-Image liegt es neben diesem Modul (das Dockerfile kopiert `frontend/dist`
+    dorthin); beim lokalen Start aus dem Repo liegt es unter `frontend/dist`. Beide Fälle
+    zeigen auf dasselbe Bündel — gebaut wird es immer über `npm run build`, nie zur Laufzeit.
+    """
+    packaged = Path(__file__).parent / "frontend"
+    if (packaged / "index.html").exists():
+        return packaged
+    return Path(__file__).resolve().parents[3] / "frontend" / "dist"
+
+
+FRONTEND = _frontend_dir()
+ASSETS = FRONTEND / "assets"
 
 # Auto-Retry der Geräte-Discovery (D-046): HA garantiert keine Addon-Startreihenfolge,
 # daher kann das HEMS beim EP-Start noch nicht erreichbar sein. Ohne Config-Fallback liefe
@@ -93,9 +109,9 @@ def create_app(
     app.add_routes(
         [
             web.get("/", index),
-            # Vendored Frontend-Assets (Preact/htm + app.js). Relativer Pfad `static/…`
-            # löst hinter dem HA-Ingress korrekt auf (wie im HEMS-Addon).
-            web.static("/static", STATIC),
+            # Gebautes React-Bündel. Die Verweise in index.html sind relativ (`assets/…`),
+            # damit sie unter dem dynamischen Ingress-Präfix auflösen (docs/frontend.md).
+            web.static("/assets", ASSETS),
             web.get("/api/health", health),
             web.get("/api/logs", logs),
             web.get("/api/logs/export", logs_export),
@@ -308,9 +324,23 @@ async def _stop_poller(app: web.Application) -> None:
 
 
 async def index(request: web.Request) -> web.Response:
-    """Liefert die Ingress-SPA aus."""
-    html = (TEMPLATES / "index.html").read_text(encoding="utf-8")
-    return web.Response(text=html, content_type="text/html")
+    """Liefert die Ingress-Oberfläche aus (gebautes React-Bündel).
+
+    Fehlt das Bündel, ist nicht gebaut worden — dann eine verständliche Anweisung statt
+    eines nackten 404, das im Ingress als leere Seite ankäme.
+    """
+    index_file = FRONTEND / "index.html"
+    if not index_file.exists():
+        return web.Response(
+            text=(
+                "<h1>Oberfläche nicht gebaut</h1>"
+                "<p>Das Frontend-Bündel fehlt. Im Ordner <code>frontend/</code> "
+                "<code>npm install &amp;&amp; npm run build</code> ausführen.</p>"
+            ),
+            content_type="text/html",
+            status=503,
+        )
+    return web.Response(text=index_file.read_text(encoding="utf-8"), content_type="text/html")
 
 
 async def health(request: web.Request) -> web.Response:

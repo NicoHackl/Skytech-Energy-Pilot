@@ -6,8 +6,8 @@ Alle State liegt auf `app[...]`-Keys (Config/DB/Ring-Puffer/Clients/Collector/Pl
 
 | Methode | Pfad | Zweck |
 |---|---|---|
-| GET | `/` | SPA-Shell (`index.html`) |
-| GET | `/static/*` | Frontend-Assets (Preact/htm + `app.js`) |
+| GET | `/` | Oberfläche (`frontend/dist/index.html`) |
+| GET | `/assets/*` | Gebautes React-Bündel (JS/CSS) |
 | GET | `/api/health` | Status/Version/Provider/Modell/`ha_configured` |
 | GET | `/api/logs` | Ringpuffer, filterbar nach `level`/`limit` |
 | GET | `/api/logs/export` | JSONL-Export (maschinenlesbar, Download) |

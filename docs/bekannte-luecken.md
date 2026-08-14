@@ -6,14 +6,6 @@ vertraut — Spec und Code laufen an mehreren Stellen auseinander. Bei jeder gr�
 
 ## Spec-vs-Code-Lücken (Stand aktuelle Codebasis)
 
-### Frontend-Umbau auf React läuft
-
-Eiserne Regel 14 schreibt React + TypeScript + Vite vor ([frontend.md](frontend.md),
-[design-system.md](design-system.md)). Ausgeliefert wird derzeit noch die alte Ingress-SPA aus
-Preact + htm (`app/energy_pilot/web/static/app.js`, vendored, ohne Build-Schritt). Der Umbau ist
-beschlossen und in Arbeit; bis er landet, beschreiben `frontend.md` und `design-system.md` den
-**Zielzustand**, nicht den ausgelieferten Stand. Dieser Eintrag verschwindet mit dem Umbau.
-
 ### Kein automatischer Scheduler
 
 **Kein** Code-Pfad (`main.py`, `web/server.py`, `planner.py`) ruft `Planner.run()` je auf

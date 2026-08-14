@@ -11,3 +11,11 @@ user-beispiele
 .venv
 venv
 *.db
+# Frontend: nur das gebaute Bündel gehört ins Image, nicht die Werkzeugkette.
+frontend/node_modules
+frontend/src
+frontend/package.json
+frontend/package-lock.json
+frontend/tsconfig*.json
+frontend/vite.config.ts
+frontend/index.html

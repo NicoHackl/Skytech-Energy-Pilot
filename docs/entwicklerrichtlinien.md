@@ -55,7 +55,7 @@ Eine Datei hat **eine** Verantwortlichkeit. Wächst sie über ~400 Zeilen, ist d
 - Öffentliche Funktionen bekommen einen deutschen Docstring: Zweck, Besonderheiten, Fehlerfälle.
 - Auskommentierter Code wird **gelöscht**. Dafür gibt es Git.
 - `TODO` bekommt einen Verweis (`# TODO(D-021): …`). Ein namenloses `TODO` wird nie erledigt.
-- Verweise auf Doku-Dateien immer als Pfad unter `docs/` — nie auf die 2026-07-10 gelöschten
+- Verweise auf Doku-Dateien immer als Pfad unter `docs/` — nie auf die 10.07.2026 gelöschten
   Dateien `info.md`, `plan/*.md`, `user-regeln.md`, `user-fragen.md` (Löschung: Commit `ad48b23`).
   Taucht so ein toter Verweis auf, wird er ersetzt oder entfernt, nicht stehen gelassen.
 

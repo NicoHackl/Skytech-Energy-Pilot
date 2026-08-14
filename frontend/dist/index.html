@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- data-design ist für dieses Projekt festgelegt: "ha" (Home Assistant, Akzent #18BCF2).
+     Energy Pilot läuft im HA-Ingress-Panel direkt neben der HA-Oberfläche — eine fremde
+     Akzentfarbe wäre dort ein Fremdkörper (AGENTS.md, eiserne Regel 16).
+     data-theme setzt das Skript unten und danach der ThemeProvider. -->
+<html lang="de" data-design="ha">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f5f7" />
+    <!-- Interne Oberfläche, läuft nur im Heimnetz hinter dem HA-Ingress: -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Skytech Energy Pilot</title>
+    <script>
+      /* Hell/Dunkel vor dem ersten Frame festlegen. Läuft React erst später an,
+         blitzt sonst die helle Oberfläche auf. Fällt localStorage aus (privater
+         Modus), bleibt data-theme leer und styles.css folgt der Systemvorgabe. */
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme')
+          var theme = stored === 'light' || stored === 'dark'
+            ? stored
+            : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          document.documentElement.dataset.theme = theme
+        } catch (error) {
+          /* bewusst leer — die Systemvorgabe im CSS greift */
+        }
+      })()
+    </script>
+    <script type="module" crossorigin src="./assets/app.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

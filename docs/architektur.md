@@ -21,8 +21,9 @@ austauschbar; getrennte Repos/Logs/Versionierung.
 ## Tech-Stack
 
 - Python 3.11, **aiohttp** (Webserver + Ingress), SQLite (WAL-Modus).
-- Frontend: serverseitig gerenderte SPA, vanilla JS + Preact/htm (kein Build-Schritt),
-  HA-Material-Theme nachgebildet, hell/dunkel via `prefers-color-scheme`.
+- Frontend: React 18 + TypeScript (`strict`) + Vite, ausgeliefert als gebautes Bündel aus
+  `frontend/dist` (im Repo mitgeliefert, kein Node im Addon-Image). Design-System mit
+  `data-design="ha"`, sichtbarer Hell/Dunkel-Schalter. Details: [frontend.md](frontend.md).
 - HA-Zugriff über den Supervisor-Core-API-Proxy (`http://supervisor/core/api`),
   Token via `SUPERVISOR_TOKEN`/`HASSIO_TOKEN`/`HA_TOKEN` (erster Treffer gewinnt).
 - Docker-Basis-Image bewusst `python:3.11-slim` **statt** offizielles
@@ -133,4 +134,4 @@ ist er es nicht.
 | `http_errors.py` | Gemeinsame HTTP-Fehlerbehandlung (Secrets nie in URLs/Logs) |
 | `conversion.py` | `safe_float()` — robuste HA-State-Konvertierung |
 | `web/server.py` | aiohttp-App-Factory, alle HTTP-Endpunkte (siehe [api-referenz.md](api-referenz.md)) |
-| `web/static/app.js` | Frontend-SPA (9 Tabs) |
+| `frontend/src/` | React-Oberfläche (9 Seiten), gebaut nach `frontend/dist` |
