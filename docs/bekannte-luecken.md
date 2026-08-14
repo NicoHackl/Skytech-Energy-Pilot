@@ -6,6 +6,14 @@ vertraut — Spec und Code laufen an mehreren Stellen auseinander. Bei jeder gr�
 
 ## Spec-vs-Code-Lücken (Stand aktuelle Codebasis)
 
+### Frontend-Umbau auf React läuft
+
+Eiserne Regel 14 schreibt React + TypeScript + Vite vor ([frontend.md](frontend.md),
+[design-system.md](design-system.md)). Ausgeliefert wird derzeit noch die alte Ingress-SPA aus
+Preact + htm (`app/energy_pilot/web/static/app.js`, vendored, ohne Build-Schritt). Der Umbau ist
+beschlossen und in Arbeit; bis er landet, beschreiben `frontend.md` und `design-system.md` den
+**Zielzustand**, nicht den ausgelieferten Stand. Dieser Eintrag verschwindet mit dem Umbau.
+
 ### Kein automatischer Scheduler
 
 **Kein** Code-Pfad (`main.py`, `web/server.py`, `planner.py`) ruft `Planner.run()` je auf
@@ -13,10 +21,10 @@ einem Timer auf. `planning_interval_min` wird zwar gelesen, aber **nur** als
 Plan-Gültigkeitsdauer (`valid_until = now + planning_interval_min`, `planner.py`) — nicht als
 Takt; `plan_update_interval_min` wird nirgends gelesen. Ein Plan entsteht ausschließlich über
 den manuellen Button/Endpunkt `POST /api/plan/run`. Das widerspricht der in
-`CLAUDE.md` beschriebenen "EP plant alle 15–60 min" — wer einen Scheduler baut, muss
+`AGENTS.md` beschriebenen "EP plant alle 15–60 min" — wer einen Scheduler baut, muss
 zusätzlich das Event-basierte Nachplanungs-Konzept (E-Auto Stecker, Abfahrtszeit-
 Änderung, SOC-Ziel-Änderung, PV-/Lastprognose-Abweichung, …) aus dem alten
-Decision-Log berücksichtigen ([decisions-log.md](decisions-log.md)).
+Decision-Log berücksichtigen ([design-entscheidungen.md](design-entscheidungen.md)).
 
 ### `min_confidence_percent` unbenutzt
 
@@ -26,11 +34,11 @@ vermerkt, aber sonst im gesamten Code nirgends gelesen.
 ### Validator-Stufen 4–6 fehlen
 
 Daten-Frische, Delta-Limit zum Vorplan, Mindestkonfidenz-Gate — alle drei im
-`validator.py`-Docstring als TODO markiert. Siehe [validation-safety.md](validation-safety.md).
+`validator.py`-Docstring als TODO markiert. Siehe [sicherheit-datenschutz.md](sicherheit-datenschutz.md).
 
 ### Steuermodi/Betriebsmodi nicht verdrahtet
 
-Siehe [control-modes.md](control-modes.md) — beide Achsen existieren nur als Spec,
+Siehe [steuermodi.md](steuermodi.md) — beide Achsen existieren nur als Spec,
 kein Code wertet sie aus.
 
 ### Kein Auto-Export des Log-Bundles bei ERROR/CRITICAL
@@ -77,7 +85,7 @@ Retry-Gedanken anwenden, nicht von garantierter Reihenfolge ausgehen.
 
 ### Suffix-Übersetzungsfalle beim künftigen Direkt-Schreibweg
 
-Siehe [entity-naming.md](entity-naming.md#stolperstein-suffix-übersetzung-beim-zukünftigen-direkt-schreibweg).
+Siehe [namensschema.md](namensschema.md#stolperstein-suffix-übersetzung-beim-zukünftigen-direkt-schreibweg).
 
 ### "EP ohne HEMS ist sinnlos"-Prinzip
 
@@ -94,6 +102,6 @@ Geräte stehen im EMS auf manuell, andere auf Automatik, dann weist EP zwar jede
 Gerät eine Priorität zu, aber nur bei Geräten, die im EMS auf Automatik stehen, wird
 auch die EP-Vorschlagspriorität übernommen — bei auf-manuell-stehenden Geräten gilt
 die vom User über HA-Helfer eingestellte Priorität. Muss bei der Implementierung der
-Steuermodi (siehe [control-modes.md](control-modes.md)) berücksichtigt werden; dieser
+Steuermodi (siehe [steuermodi.md](steuermodi.md)) berücksichtigt werden; dieser
 Eintrag kann obsolet werden, sobald M3 umgesetzt ist — dann `upcoming_changes.md`
 und diesen Abschnitt gemeinsam bereinigen.

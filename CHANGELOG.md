@@ -9,8 +9,25 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 ## [Unreleased]
 
 ### Geändert
+- **Regelwerk und Doku auf die gemeinsame Agenten-Struktur umgestellt.** Die verbindlichen
+  Projektregeln stehen jetzt genau einmal — in [`AGENTS.md`](AGENTS.md) im Repo-Root.
+  `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md` und `.cursor/rules/` sind reine
+  Verweise darauf und enthalten selbst keine Regeln mehr; damit gilt für Claude, Gemini, Copilot
+  und Cursor derselbe Stand statt vier auseinanderlaufender Kopien. Die bisherige
+  Projektanweisung ging vollständig in `AGENTS.md` und `docs/` auf.
+  - **`doc/` → `docs/`** mit deutschen Dateinamen (`architektur.md`, `api-referenz.md`,
+    `datenmodell.md`, `bekannte-luecken.md`, `design-entscheidungen.md`, …). Alle Querverweise in
+    Doku, Code-Docstrings und Changelog nachgezogen; kein Link zeigt mehr ins Leere.
+  - **Neu:** `docs/git-workflow.md` und `docs/test-strategie.md` (aus den Entwicklerrichtlinien
+    herausgelöst), `docs/frontend.md` und `docs/design-system.md` (Oberflächen-Vorgaben),
+    `docs/adr/` für ausführliche Entscheidungsdokumente.
+  - **Verweise auf Regelnummern im Code korrigiert:** die Nummerierung der eisernen Regeln hat
+    sich mit `AGENTS.md` geändert; alle „Iron Rule N"-Verweise zeigen wieder auf die gemeinte
+    Regel (Datenminimum, Fallback, keine Secrets).
+  - `CONTRIBUTING.md`, eine Projekt-`README.md`, Issue- und PR-Vorlagen ergänzt.
+  - `changelog.md` heißt jetzt `CHANGELOG.md`.
 - **Projekt gegen die eigenen Vorgaben abgeglichen (Konsistenzlauf, 0.0.58 → 0.0.59).**
-  Prüfung des gesamten Codes gegen `CLAUDE.md`, `doc/*` und das Decision-Log; alle gefundenen
+  Prüfung des gesamten Codes gegen `CLAUDE.md`, `docs/*` und das Decision-Log; alle gefundenen
   Abweichungen bereinigt, **ohne** eine Funktion zu ändern oder zu entfernen. Der fachliche
   Kern (Namensschema, Schreibvertrag, Discovery, Modus-Gate D-057, Validator-Stufen 1–3,
   Multi-Provider D-056, Ziele/Klassifizierung D-055, API, UI-Tabs) stimmte bereits.
@@ -21,14 +38,14 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     `weather.onecall.pages_*`/`daily_call_budget`/`enable_alerts`/`refresh_alerts` fehlten dort
     (in HA unkritisch, da der Supervisor die Optionen vollständig schreibt — beim Start ohne
     `/data/options.json` aber nicht). `DEFAULTS` und `config.yaml` sind wieder 1:1 identisch.
-  - **Doku auf den echten Code-Stand:** `doc/planning-engine.md` behauptete, es gebe keinen
-    OpenAI-Provider (existiert seit D-056), `doc/architecture.md` kannte nur den Gemini-Boot-Pfad
-    und nicht `control_mode.py`, `doc/data-model.md` endete bei Migration v8 (real: v10 `ziele`,
+  - **Doku auf den echten Code-Stand:** `docs/planungs-engine.md` behauptete, es gebe keinen
+    OpenAI-Provider (existiert seit D-056), `docs/architektur.md` kannte nur den Gemini-Boot-Pfad
+    und nicht `control_mode.py`, `docs/datenmodell.md` endete bei Migration v8 (real: v10 `ziele`,
     v9 zurückgebaut). Ebenso korrigiert: `planning_interval_min` gilt als „ungenutzt", steuert
     real aber die Plan-Gültigkeitsdauer — ungenutzt sind nur `plan_update_interval_min` und
     `min_confidence_percent`.
   - **Veraltete Verweise im Code** auf die 2026-07-10 gelöschte Doku (`08-…md`, „Doc 04/06/07")
-    durch die passenden `doc/`-Dateien ersetzt; Kommentare, die den mit D-046 entfernten
+    durch die passenden `docs/`-Dateien ersetzt; Kommentare, die den mit D-046 entfernten
     Geräte-Config-Fallback noch als existent beschrieben, richtiggestellt.
 
 - **Modus-Gate für „In Original schreiben" (D-057).** Ein KI-Vorschlag wird nur noch dann in
@@ -182,20 +199,20 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 ## [0.0.49] - 2026-07-10
 
 ### Geändert
-- **Alte Doku ersetzt durch neuen Ordner `doc/`.** `info.md`, `plan/*.md`,
+- **Alte Doku ersetzt durch neuen Ordner `docs/`.** `info.md`, `plan/*.md`,
   `user-regeln.md` und `user-fragen.md` wurden vom User gelöscht (Commit `ad48b23`).
   Neu geschrieben, diesmal am **tatsächlichen Code** verifiziert statt an der
-  ursprünglichen Planung: `doc/architecture.md`, `entity-naming.md`, `control-modes.md`,
-  `devices.md`, `planning-engine.md`, `validation-safety.md`, `configuration.md`,
-  `api-reference.md`, `data-model.md`, `known-gaps-and-pitfalls.md`, `decisions-log.md`
-  (verdichtetes D-001…D-052), `roadmap.md`, `contributing.md`. `known-gaps-and-pitfalls.md`
+  ursprünglichen Planung: `docs/architektur.md`, `namensschema.md`, `steuermodi.md`,
+  `geraete.md`, `planungs-engine.md`, `sicherheit-datenschutz.md`, `konfiguration.md`,
+  `api-referenz.md`, `datenmodell.md`, `bekannte-luecken.md`, `design-entscheidungen.md`
+  (verdichtetes D-001…D-052), `roadmap.md`, `entwicklerrichtlinien.md`. `bekannte-luecken.md`
   hält u. a. fest, dass es **keinen automatischen Planungs-Scheduler** gibt und die
   Validator-Stufen 4–6 (Frische/Delta-Limit/Mindestkonfidenz) fehlen — bislang nirgends
-  schriftlich festgehalten. `CLAUDE.md` verweist jetzt auf `doc/` statt auf die
+  schriftlich festgehalten. `CLAUDE.md` verweist jetzt auf `docs/` statt auf die
   gelöschten Dateien.
 - **Tote Doku-Verweise im Code bereinigt.** Kommentare/Docstrings, die auf
   `info.md §…`, `plan/*.md` oder `user-regeln.md §…` verwiesen, zeigen jetzt auf die
-  passende `doc/*.md`-Datei (`roles.py`, `ai_provider.py`, `config.py`, `database.py`,
+  passende `docs/*.md`-Datei (`roles.py`, `ai_provider.py`, `config.py`, `database.py`,
   `constraints.py`, `objectives.py`, `allowlist.py`, `gemini_provider.py`,
   `logging_setup.py`). Der `hems_client.py`-Docstring behauptete zusätzlich fälschlich
   einen Addon-Config-Fallback bei der Geräte-Discovery, den es seit D-046 nicht mehr

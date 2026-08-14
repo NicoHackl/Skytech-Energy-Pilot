@@ -5,7 +5,7 @@ Der Collector wird wie die übrigen Sammler im Poller-Zyklus aufgerufen
 (serverseitig ändert sich die 5-Tage-Prognose nur alle paar Stunden). Die
 Koordinaten kommen aus den Attributen `latitude`/`longitude` der konfigurierten
 HA-Zone (`zone.*`); fehlt der API-Schlüssel oder die Zone, bleibt der Collector
-inaktiv und blockiert nichts (Iron Rule 8).
+inaktiv und blockiert nichts (eiserne Regel 13).
 """
 
 from __future__ import annotations
@@ -188,7 +188,7 @@ class OneCallCollector:
     Identische öffentliche Schnittstelle wie `WeatherCollector` (`enabled`, `collect_once`,
     `test_fetch`, `snapshot`, `last_fetch_ts`, `last_error`), damit `main.py`/Webserver/Planner
     je nach `weather.source` denselben Collector-Platzhalter verwenden können. Jede aktivierte
-    Timeline wird unabhängig gedrosselt; Fehler bleiben pro Timeline isoliert (Iron Rule 8).
+    Timeline wird unabhängig gedrosselt; Fehler bleiben pro Timeline isoliert (eiserne Regel 13).
     """
 
     def __init__(
@@ -389,7 +389,7 @@ class OneCallCollector:
         """Löst die Alert-IDs zu Detail-Warnungen auf – je ID ein bezahlter Detail-Call (O3).
 
         Ohne aktive Warnungen (leere ID-Liste) fällt **kein** Call an → `count 0`, kein Fehler
-        (Iron Rule 8). Jeder Detail-Call wird gegen dasselbe Tagesbudget geprüft/abgebucht; bei
+        (eiserne Regel 13). Jeder Detail-Call wird gegen dasselbe Tagesbudget geprüft/abgebucht; bei
         Budget-Erschöpfung wird das Teilergebnis behalten und als budgetbegrenzt gemeldet.
         """
         assert self.client is not None  # durch enabled garantiert

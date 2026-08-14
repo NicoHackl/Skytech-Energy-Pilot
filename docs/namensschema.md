@@ -1,6 +1,6 @@
 # Namensschema `ems_*` / `ep_*`
 
-Zentrale, nicht verhandelbare Regel (Decision D-029, siehe [decisions-log.md](decisions-log.md)):
+Zentrale, nicht verhandelbare Regel (Decision D-029, siehe [design-entscheidungen.md](design-entscheidungen.md)):
 **Namens-Domäne folgt der Datenrichtung.**
 
 | Präfix | Domäne | Wer pflegt/erzeugt | Wer liest/schreibt EP |

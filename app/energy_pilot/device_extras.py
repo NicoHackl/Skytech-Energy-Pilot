@@ -68,7 +68,7 @@ def load_extras(db: sqlite3.Connection | None) -> dict[str, tuple[DeviceExtra, .
             "SELECT device_name, read_entity_id, ai_suggestion, ai_hint, label, unit, "
             "write_original FROM device_extras ORDER BY device_name, sort_order, id"
         ).fetchall()
-    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (Iron Rule 8)
+    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (eiserne Regel 13)
         return {}
     grouped: dict[str, list[DeviceExtra]] = {}
     for row in rows:

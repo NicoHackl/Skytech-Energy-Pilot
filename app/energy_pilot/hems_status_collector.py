@@ -1,7 +1,7 @@
 """HEMS-Status-Collector (M3): pollt den HEMS-Zustand und spiegelt die Plan-Rückkopplung.
 
 Analog zu `weather_collector`/`device_collector`. Je Zyklus:
-1. `GET /api/status` holen — fehlertolerant (Iron Rule 8: HEMS offline ⇒ `online=False`,
+1. `GET /api/status` holen — fehlertolerant (eiserne Regel 13: HEMS offline ⇒ `online=False`,
    kein Crash);
 2. die beobachtete Plan-Übereinstimmung ableiten (`plan_feedback.derive_plan_feedback`);
 3. falls aktiviert, als EP-Status-Sensoren nach HA schreiben (`status_publisher`);

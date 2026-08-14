@@ -23,7 +23,7 @@ und sollen den Vorschlag gerade auch im manuellen Modus sichtbar machen.
 
 Trennung: `build_suggestion_entities()`/`build_original_writes()` sind rein (testbar, ohne
 IO); `publish_suggestions()` liest die Modus-Quellen und schreibt über den HA-Client und fängt
-Fehler je Entität ab — die App blockiert nie (Iron Rule 8).
+Fehler je Entität ab — die App blockiert nie (eiserne Regel 13).
 """
 
 from __future__ import annotations
@@ -304,7 +304,7 @@ async def publish_suggestions(
     aus einem Cache: ein veralteter Modus darf nie über einen Schreibvorgang entscheiden.
 
     Fehler je Entität werden gefangen (`written`/`failed`) – die Methode wirft nie
-    (Iron Rule 8). Ohne HA-Client passiert nichts (klare Begründung im Ergebnis).
+    (eiserne Regel 13). Ohne HA-Client passiert nichts (klare Begründung im Ergebnis).
     Jeder Schreibvorgang wird als `suggestions_published` auditiert.
     """
     plan_id = plan.get("plan_id")

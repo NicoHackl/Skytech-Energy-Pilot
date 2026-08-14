@@ -1,6 +1,6 @@
-"""Kontext-, Prompt- und Antwort-Schema-Aufbau für die KI-Planung (doc/planning-engine.md).
+"""Kontext-, Prompt- und Antwort-Schema-Aufbau für die KI-Planung (docs/planungs-engine.md).
 
-Hier wird der **Datenminimum**-Kontext für die KI zusammengestellt (Iron Rule 7):
+Hier wird der **Datenminimum**-Kontext für die KI zusammengestellt (eiserne Regel 12):
 nur verdichtete, freigegebene Werte (Zustand, PV-Prognose, harte Grenzen, Ziele) –
 kein Roh-Dump der HA-Datenbank. Der Prompt erklärt der KI ihre Rolle als
 Orchestrator und die je Gerät **erlaubten** Vorschlagsfelder; das Antwort-Schema
@@ -202,8 +202,8 @@ def _condense_weather(
     `_condense_onecall`): intraday für heute (bis 21 Uhr Ortszeit), täglich für die Folgetage.
     Sonst (forecast3h):
     `compact` (Default) = Temperatur/Bewölkung/Regenwahrscheinlichkeit je 3-Stunden-Schritt bis
-    zum Planungshorizont (Datenminimum, Iron Rule 7); `full` = komplette 5-Tage-Prognose mit allen
-    Feldern. Leer ohne Prognose.
+    zum Planungshorizont (Datenminimum, eiserne Regel 12); `full` = komplette
+    5-Tage-Prognose mit allen Feldern. Leer ohne Prognose.
     """
     if not weather:
         return {}
@@ -302,7 +302,8 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
         "allowed_fields": suggestion_keys(constraint),
     }
     # User-gepflegte Freitext-Beschreibung dieses Geräts (D-051): erklärt der KI dessen
-    # Funktion/Besonderheiten. Nur wenn gesetzt, um den Kontext schlank zu halten (Iron Rule 7).
+    # Funktion/Besonderheiten. Nur wenn gesetzt, um den Kontext schlank zu halten
+    # (eiserne Regel 12).
     if constraint.ai_prompt:
         entry["funktion"] = constraint.ai_prompt
     if constraint.is_battery:
@@ -331,7 +332,7 @@ def _condense_previous_plan(previous: dict | None) -> dict:
 
     Übergibt der KI nur die Gerät-Vorschlagswerte (Name + gesetzte Vorschlagsfelder) und die
     frühere Konfidenz — Zeitstempel, Reasoning und Warnungen bleiben draußen (Datenminimum,
-    Iron Rule 7). So kann die KI ohne materiellen Grund nah am Vorplan bleiben und dämpft
+    eiserne Regel 12). So kann die KI ohne materiellen Grund nah am Vorplan bleiben und dämpft
     Lauf-zu-Lauf-Sprünge. Leer, wenn es keinen (Geräte-)Vorplan gibt.
     """
     if not previous:
@@ -364,7 +365,7 @@ def build_context(
     now: datetime | None = None,
     previous_plan: dict | None = None,
 ) -> dict:
-    """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, Iron Rule 7).
+    """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, eiserne Regel 12).
 
     `now` (UTC) steuert das stündliche Wetter-Tagesfenster der One-Call-Quelle; ohne Angabe
     gilt die aktuelle Zeit. `previous_plan` (Ausgabe von `Planner.latest_plan()`) wird als
@@ -406,7 +407,7 @@ def build_classification_context(
 ) -> dict:
     """Kontext für den vorgelagerten Klassifizierungs-Aufruf (D-055).
 
-    Exakt dieselbe Datenbasis wie `build_context` (Datenminimum, Iron Rule 7) – nur der Key
+    Exakt dieselbe Datenbasis wie `build_context` (Datenminimum, eiserne Regel 12) – nur der Key
     `objectives` (Gewicht bereits bekannt) wird durch `ziele` ersetzt: die user-definierten
     Zieldefinitionen (id/name/beschreibung/geraete) OHNE Gewicht. Die Klassifizierungs-KI
     leitet daraus die Gewichtung ab (`objectives_from_classification`), die dann in den
@@ -429,7 +430,7 @@ def build_classification_context(
 # Standard-Instruktion für die Planung. Über die EP-Oberfläche editierbar (in der
 # `config`-Tabelle persistiert); der `Daten:`-Block wird IMMER von `build_prompt`
 # angehängt, das Antwort-Schema bleibt code-kontrolliert und der Validator erzwingt die
-# harten Grenzen unabhängig vom Prompt (Iron Rules 5/6).
+# harten Grenzen unabhängig vom Prompt (eiserne Regeln 10/11).
 DEFAULT_PLANNING_PROMPT = (
     "Du bist der Energie-Orchestrator des Home-Assistant-Addons „Skytech Energy Pilot“.\n"
     "Erzeuge aus den folgenden Daten einen vorausschauenden Energieplan als "

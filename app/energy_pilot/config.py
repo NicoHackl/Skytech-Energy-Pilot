@@ -20,7 +20,7 @@ DEFAULT_TIMEOUT_S = 30
 # Rate-Limit-Default je Anbieter (Gemini-Free ~10/min; Claude/OpenAI höher).
 DEFAULT_RATE_LIMITS: dict[str, int] = {"gemini": 10, "claude": 50, "openai": 60}
 
-# Standardwerte gemäß Decision Log (siehe doc/decisions-log.md).
+# Standardwerte gemäß Decision Log (siehe docs/design-entscheidungen.md).
 DEFAULTS: dict[str, object] = {
     "log_level": "info",
     # Aktiver KI-Anbieter (D-056); je Anbieter ein eigenes Untermenü unter `providers`.
@@ -59,7 +59,7 @@ DEFAULTS: dict[str, object] = {
     # collect_interval_s; der Collector drosselt sich selbst).
     "hems_status_interval_s": 60,
     # Plan-/HEMS-Status als sensor.ep_plan_status / sensor.ep_hems_verbindung nach HA
-    # schreiben (M3). False => nur in UI/DB, kein HA-Schreibweg (Iron Rule 8 bleibt aktiv).
+    # schreiben (M3). False => nur in UI/DB, kein HA-Schreibweg (eiserne Regel 13 bleibt aktiv).
     "publish_status": True,
     # PV-Prognose (D-006/D-018/D-026): je Ausrichtung 4 Sensoren, EP summiert je Wert.
     "pv_forecast": [],
@@ -67,7 +67,7 @@ DEFAULTS: dict[str, object] = {
     "pv_forecast_unit": "kWh",
     # Wetterprognose (OpenWeatherMap, direkt im EP abgerufen). api_key leer => Wetterabruf
     # deaktiviert; Koordinaten aus der HA-Zone (Attribute latitude/longitude). Schlüssel wird
-    # nie geloggt (Iron Rule 6). Nur EP-intern, noch nicht als HA-Sensor/HEMS-Übergabe.
+    # nie geloggt (eiserne Regel 7). Nur EP-intern, noch nicht als HA-Sensor/HEMS-Übergabe.
     # source: forecast3h (5-Tage/3-Stunden, Default) | onecall (One Call API 4.0, Abo-pflichtig).
     "weather": {
         "api_key": "",

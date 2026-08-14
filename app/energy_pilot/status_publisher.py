@@ -91,7 +91,7 @@ async def publish_status(
     db: sqlite3.Connection | None = None,
 ) -> dict:
     """Schreibt die EP-Status-Sensoren nach HA. Fehler je Entität werden gefangen
-    (Iron Rule 8); ohne HA-Client passiert nichts (klare Begründung)."""
+    (eiserne Regel 13); ohne HA-Client passiert nichts (klare Begründung)."""
     if ha_client is None:
         return {"ok": False, "written": [], "failed": [], "reason": "kein HA-Client konfiguriert"}
 

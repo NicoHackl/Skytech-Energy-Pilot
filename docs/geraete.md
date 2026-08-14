@@ -7,7 +7,7 @@
 - `DeviceExtra` — gefrorene Dataclass für eine konfigurierte Zusatz-Entität; leitet
   `kind`, `capture_attrs`, `object_id`, `read_key`, `plan_field`,
   `suggestion_entity_id`, `is_writable_helper`, `should_write_original` aus der
-  `read_entity_id`-Domäne ab (siehe [entity-naming.md](entity-naming.md)).
+  `read_entity_id`-Domäne ab (siehe [namensschema.md](namensschema.md)).
 
 ## Discovery — ausschließlich über HEMS (D-046)
 
@@ -48,16 +48,16 @@ Wallbox/E-Auto, Wärmepumpe, dynamische Tarife, mehrere Speicher: bewusst **spä
 gelesenen `ems_*`-Werten (`DeviceCollector`-Snapshot) pro Gerät ein `DeviceConstraint`
 ableitet — inklusive `ConstraintExtra` für jede konfigurierte Zusatz-Entität (mit
 aufgelöstem `kind`/`min`/`max`/`has_date`/`has_time`/`options`). Diese Grenzen sind
-die Grundlage für Validator-Stufe 2 (siehe [validation-safety.md](validation-safety.md)).
+die Grundlage für Validator-Stufe 2 (siehe [sicherheit-datenschutz.md](sicherheit-datenschutz.md)).
 
 ## Zusatz-Entitäten & Pro-Gerät-KI-Beschreibung
 
-Konfiguration und Vorschlags-Semantik: siehe [entity-naming.md](entity-naming.md#zusatz-entitäten-d-047d-048d-049d-052).
+Konfiguration und Vorschlags-Semantik: siehe [namensschema.md](namensschema.md#zusatz-entitäten-d-047d-048d-049d-052).
 
 Seit D-051 hat jedes Gerät zusätzlich ein freies Textfeld **"KI-Beschreibung"**
 (`device_prompts.py`, Tabelle `device_prompts`), das gerätespezifische Eigenheiten
 erklärt (z. B. "speist Fußbodenheizung, träge, bevorzugt Mittagsbetrieb"). Rein
 advisorisch, fließt nur in den Planungs-Prompt ein, wenn gesetzt (Datenminimum),
 geht nie an HEMS. Zwei Prompt-Ebenen existieren parallel: der globale Planungs-Prompt
-(gesamte Strategie, siehe [planning-engine.md](planning-engine.md)) und dieser
+(gesamte Strategie, siehe [planungs-engine.md](planungs-engine.md)) und dieser
 Pro-Gerät-Prompt (Einzelgeräte-Erklärung).

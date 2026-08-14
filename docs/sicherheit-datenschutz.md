@@ -1,9 +1,9 @@
 # Validierung & Sicherheit
 
-## Eiserne Sicherheitsregeln (Quelle: `CLAUDE.md`, hier mit Implementierungsbezug)
+## Eiserne Sicherheitsregeln (Quelle: [`AGENTS.md`](../AGENTS.md), hier mit Implementierungsbezug)
 
 1. **KI = Orchestrator, kein Regler.** Freitext ist nie ein Steuerbefehl — nur
-   strukturiertes Tool/Function-Calling (`responseSchema`, siehe [planning-engine.md](planning-engine.md)).
+   strukturiertes Tool/Function-Calling (`responseSchema`, siehe [planungs-engine.md](planungs-engine.md)).
 2. **Jeder Plan wird lokal validiert** — JSON-Schema + harte Grenzen, Ablaufzeit,
    vollständiges Audit-Log. Harte Grenzen sind nie durch die KI änderbar.
 3. **Kein API-Key in Logs/Entitäten** — durchgesetzt in `logging_setup.py`
@@ -62,10 +62,10 @@ Status-Tab.
 
 Dieses Verhalten liegt größtenteils auf HEMS-Seite (separates Repo) bzw. ist von der
 Übergabe-Ebene 2 (D-032, direkter Schreibweg) abhängig, die noch nicht existiert —
-siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md).
+siehe [bekannte-luecken.md](bekannte-luecken.md).
 
 ## Hybrid-Modus als harte Nebenbedingung
 
 Laut Spec (D-009): im Steuermodus Hybrid werden User-fixierte Werte zu zusätzlichen
 harten Nebenbedingungen — ein sie verletzender Plan ist ungültig, exakt so strikt wie
-technische Grenzen. **Aktuell nicht implementiert**, siehe [control-modes.md](control-modes.md).
+technische Grenzen. **Aktuell nicht implementiert**, siehe [steuermodi.md](steuermodi.md).

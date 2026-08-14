@@ -36,7 +36,7 @@ def test_counter_resets_on_new_utc_day():
 
 
 def test_consume_without_db_is_noop():
-    # Ohne DB blockiert nichts (Iron Rule 8); Zähler bleibt 0/Budget voll.
+    # Ohne DB blockiert nichts (eiserne Regel 13); Zähler bleibt 0/Budget voll.
     onecall_budget.consume(None, 5, now_day="2026-06-26")
     assert onecall_budget.calls_today(None, now_day="2026-06-26") == 0
     assert onecall_budget.remaining(None, 1000, now_day="2026-06-26") == 1000

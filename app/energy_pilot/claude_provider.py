@@ -7,7 +7,7 @@ in der Addon-Config, wird per Header (`x-api-key`, nicht in der URL) gesendet un
 
 Determinismus: Claude-Modelle (Sonnet 5 / Opus 4.8 …) akzeptieren **kein** `temperature`/`seed`
 mehr (400 bei Übergabe), daher werden diese Sampling-Parameter bewusst nicht gesetzt. Die harte
-Grenze bleibt ohnehin der lokale Validator (Iron Rules 5/6).
+Grenze bleibt ohnehin der lokale Validator (eiserne Regeln 10/11).
 """
 
 from __future__ import annotations

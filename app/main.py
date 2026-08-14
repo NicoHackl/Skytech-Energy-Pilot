@@ -85,7 +85,8 @@ def build() -> web.Application:
 
     # Wetterprognose (OpenWeatherMap, direkt im EP): Koordinaten aus der HA-Zone. Die Quelle ist
     # in der Addon-Config umschaltbar (D-044): forecast3h (5-Tage/3-Stunden) oder onecall (One Call
-    # API 4.0). Ohne API-Schlüssel bzw. ohne HA-Client bleibt der Collector inaktiv (Iron Rule 8).
+    # API 4.0). Ohne API-Schlüssel bzw. ohne HA-Client bleibt der Collector inaktiv
+    # (eiserne Regel 13).
     weather_config = weather_config_from_options(config.values)
     if weather_config.source == SOURCE_ONECALL:
         onecall_client = (
@@ -127,7 +128,7 @@ def build() -> web.Application:
     # KI-Provider (D-007/D-041/D-056): aktiver Anbieter + Verbindungs-Config aus den Optionen
     # auflösen (Radio-Selektor `provider` + Untermenü `providers.<name>`). Nur bei vorhandenem
     # Schlüssel aktiv; ohne Schlüssel bleibt die Planung deaktiviert (EP blockiert nie,
-    # Iron Rule 8).
+    # eiserne Regel 13).
     active = resolve_active_provider(config.values)
     provider = None
     if active.api_key:

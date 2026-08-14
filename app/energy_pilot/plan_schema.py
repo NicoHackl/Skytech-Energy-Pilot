@@ -2,7 +2,7 @@
 
 Definiert die **strukturelle** Form eines Energieplans (versioniert über
 `schema_version`, da das Schema später gemeinsam mit HEMS gepflegt wird, offener
-Punkt in doc/entity-naming.md). Hier liegt nur die Struktur-/Typprüfung
+Punkt in docs/namensschema.md). Hier liegt nur die Struktur-/Typprüfung
 (JSON-Schema). Die **fachliche** Grenzprüfung gegen die harten Grenzen
 (constraints.py) macht der Validator (validator.py).
 

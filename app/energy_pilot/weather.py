@@ -26,7 +26,7 @@ DEFAULT_LANG = "de"
 # serverseitig nur alle paar Stunden; häufigere Abrufe wären reine Verschwendung (W3, D-044).
 DEFAULT_REFRESH_MIN = 60
 # Detailgrad der Wetterdaten, die ans LLM gehen (in der Addon-Config umschaltbar):
-# "compact" = Bewölkung/Regen/Temp bis Planungshorizont (Datenminimum, Iron Rule 7),
+# "compact" = Bewölkung/Regen/Temp bis Planungshorizont (Datenminimum, eiserne Regel 12),
 # "full" = volle 5-Tage-Prognose mit allen Feldern (mehr Tokens, mehr Kontext).
 DEFAULT_LLM_DETAIL = "compact"
 LLM_DETAIL_CHOICES = ("compact", "full")
@@ -161,7 +161,7 @@ class WeatherConfig:
 
     @property
     def enabled(self) -> bool:
-        """Wetterabruf nur aktiv, wenn ein API-Schlüssel gepflegt ist (Iron Rule 8)."""
+        """Wetterabruf nur aktiv, wenn ein API-Schlüssel gepflegt ist (eiserne Regel 13)."""
         return bool(self.api_key)
 
 
@@ -190,7 +190,7 @@ def weather_config_from_options(values: dict) -> WeatherConfig:
     """Baut die `WeatherConfig` aus der (verschachtelten) Addon-Option `weather`.
 
     Fehlende Felder fallen auf die Defaults zurück; der Schlüssel wird hier nur
-    durchgereicht und nie geloggt (Iron Rule 6).
+    durchgereicht und nie geloggt (eiserne Regel 7).
     """
     raw = values.get("weather")
     cfg = raw if isinstance(raw, dict) else {}

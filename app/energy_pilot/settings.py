@@ -22,7 +22,7 @@ def get_setting(db: sqlite3.Connection | None, key: str) -> str | None:
         return None
     try:
         row = db.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
-    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (Iron Rule 8)
+    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (eiserne Regel 13)
         return None
     if row is None:
         return None

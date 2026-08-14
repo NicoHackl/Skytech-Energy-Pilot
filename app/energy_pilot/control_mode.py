@@ -15,7 +15,7 @@ Nutzeraussage über die KI-Übernahme, und `allowed_modes` steht in der HEMS-Add
 EP nicht kennt.
 
 Fail-safe: Ist der Modus nicht sicher feststellbar (Helfer fehlt, `unavailable`, HA-Fehler),
-gilt `aus` — dann wird nicht geschrieben. Hier zeigt Iron Rule 8 nach innen: nicht schreiben
+gilt `aus` — dann wird nicht geschrieben. Hier zeigt eiserne Regel 13 nach innen: nicht schreiben
 ist der sichere Zustand, weil der Nutzerwert stehen bleibt.
 """
 
@@ -112,7 +112,7 @@ async def read_modes(
     Liefert `device.name -> {global_mode, mode, source}`; `mode` ist der rohe Gerätezustand
     (für die Anzeige), `source` die aufgelöste Quelle `'aus' | 'user' | 'ep'` (für das Gate).
 
-    Wirft nie (Iron Rule 8): jeder Lesefehler wird gefangen und fail-safe zu 'aus' aufgelöst,
+    Wirft nie (eiserne Regel 13): jeder Lesefehler wird gefangen und fail-safe zu 'aus' aufgelöst,
     damit ein HA-Aussetzer nie zum Überschreiben eines Nutzerwerts führt.
 
     Ohne HA-Client oder ohne lesbaren globalen Modus gilt für **alle** Geräte 'aus' — das

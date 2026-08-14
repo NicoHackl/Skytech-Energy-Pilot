@@ -829,7 +829,7 @@ async def ziele_delete(request: web.Request) -> web.Response:
 
 
 def _audit_ziel(db: sqlite3.Connection, action: str, ziel_id: int, name: str) -> None:
-    """Protokolliert eine Ziel-Änderung (Audit-Log); blockiert nie (Iron Rule 8)."""
+    """Protokolliert eine Ziel-Änderung (Audit-Log); blockiert nie (eiserne Regel 13)."""
     try:
         db.execute(
             "INSERT INTO audit (actor, action, subject, detail_json) VALUES (?, ?, ?, ?)",
@@ -866,7 +866,7 @@ async def prompt_post(request: web.Request) -> web.Response:
     """Speichert die editierte Planungs-Instruktion; leerer Text setzt auf Standard zurück.
 
     Der Datenblock und das JSON-Antwort-Schema bleiben code-kontrolliert und die harten
-    Grenzen erzwingt der Validator unabhängig vom Prompt (Iron Rules 5/6).
+    Grenzen erzwingt der Validator unabhängig vom Prompt (eiserne Regeln 10/11).
     """
     db = request.app.get("db")
     if db is None:
@@ -943,7 +943,7 @@ def _safe_dumps(data: object) -> str:
     """JSON-Dump, der unbekannte Typen (z.B. ein datetime im Transparenz-`context`) zu ihrem
     String entschärft, statt den ganzen Endpoint mit einem 500 (HTML-Seite) zu sprengen.
 
-    Nur ein Sicherheitsnetz für Diagnose-/Anzeigewerte (Iron Rule 8): der eigentliche Plan
+    Nur ein Sicherheitsnetz für Diagnose-/Anzeigewerte (eiserne Regel 13): der eigentliche Plan
     (`plan`) besteht aus validierten Primitivwerten und ist ohnehin JSON-sicher.
     """
     return json.dumps(data, ensure_ascii=False, default=str)
@@ -954,14 +954,14 @@ async def plan_run(request: web.Request) -> web.Response:
 
     Liefert immer eine strukturierte Antwort (`ok` + Validierung + KI-Metadaten +
     gesendeter Kontext für Transparenz). Ist keine KI konfiguriert, kommt `ok=false`
-    mit klarer Meldung – kein Crash (Iron Rule 8).
+    mit klarer Meldung – kein Crash (eiserne Regel 13).
     """
     planner = request.app.get("planner")
     if planner is None:
         return web.json_response(
             {"ok": False, "error": "KI nicht konfiguriert (api_key fehlt)"}, status=503
         )
-    # Iron Rule 8: NICHTS aus diesem Handler darf als HTTP-500 (HTML-Fehlerseite) nach außen
+    # eiserne Regel 13: NICHTS aus diesem Handler darf als HTTP-500 (HTML-Fehlerseite) nach außen
     # dringen – sonst scheitert im Frontend `response.json()` mit „SyntaxError: Unexpected
     # token '<'..." statt einer lesbaren Ursache. Deshalb liegen der Lauf UND die JSON-
     # Serialisierung der Antwort komplett im try: der Transparenz-`context` enthält beliebige
@@ -1049,7 +1049,7 @@ async def plan_publish(request: web.Request) -> web.Response:
     try:
         result = await planner.publish_latest()
         return web.json_response(result, dumps=_safe_dumps)
-    except Exception as exc:  # noqa: BLE001 - kontrollierte, lesbare Fehler (Iron Rule 8)
+    except Exception as exc:  # noqa: BLE001 - kontrollierte, lesbare Fehler (eiserne Regel 13)
         logger = request.app.get("logger")
         if logger is not None:
             logger.error("Plan-Publish fehlgeschlagen", exc_info=exc)
@@ -1063,7 +1063,7 @@ async def plan_get(request: web.Request) -> web.Response:
 
     Läuft beim Öffnen des Plan-Tabs. Ein Lesefehler (z.B. beschädigtes `plan_json`
     in der DB) darf hier nicht als HTTP-500 enden – sonst bricht im Frontend das
-    `response.json()` genauso wie beim Lauf (Iron Rule 8). Fehler ⇒ `{plan: null}`.
+    `response.json()` genauso wie beim Lauf (eiserne Regel 13). Fehler ⇒ `{plan: null}`.
     """
     planner = request.app.get("planner")
     if planner is None:
@@ -1071,7 +1071,7 @@ async def plan_get(request: web.Request) -> web.Response:
     try:
         latest = planner.latest_plan()
         return web.json_response(latest or {"plan": None}, dumps=_safe_dumps)
-    except Exception as exc:  # noqa: BLE001 - kontrollierte, lesbare Fehler (Iron Rule 8)
+    except Exception as exc:  # noqa: BLE001 - kontrollierte, lesbare Fehler (eiserne Regel 13)
         logger = request.app.get("logger")
         if logger is not None:
             logger.error("Letzten Plan lesen fehlgeschlagen", exc_info=exc)

@@ -1,0 +1,36 @@
+name: Funktionswunsch
+description: Eine neue Funktion oder Verbesserung für Skytech Energy Pilot
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem soll gelöst werden
+      description: Das Problem beschreiben, nicht die Lösung. Ohne Problem keine Funktion.
+    validations:
+      required: true
+
+  - type: textarea
+    id: vorschlag
+    attributes:
+      label: Vorschlag
+      description: Wie könnte es aussehen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternativen
+    attributes:
+      label: Betrachtete Alternativen
+      description: Was wurde sonst erwogen und warum reicht es nicht.
+
+  - type: dropdown
+    id: dringlichkeit
+    attributes:
+      label: Dringlichkeit
+      options:
+        - Nice-to-have
+        - Behindert die Arbeit
+        - Blockiert die Arbeit
+    validations:
+      required: true

@@ -26,7 +26,7 @@ Validator (Stufen 1–3), Vorschlags-Sensoren automatisch bei jedem gültigen Pl
 publiziert + manueller "Erneut nach HA schreiben"-Button.
 
 **Offen:** automatische periodische Planung (Scheduler) — siehe
-[known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#kein-automatischer-scheduler).
+[bekannte-luecken.md](bekannte-luecken.md#kein-automatischer-scheduler).
 Validator-Stufen 4–6 (Frische/Delta-Limit/Mindestkonfidenz) ebenfalls offen.
 
 ## M3 — HEMS-Schnittstelle — ◐ nur ein Teilstück ("Durchstich 1")
@@ -40,7 +40,7 @@ selbst unverändert.
 bewirkt) und Ebene 2 (versionierter Plan-Endpunkt im HEMS-Repo) sind **nicht**
 gebaut — Vorschläge landen zwar als Sensoren in HA, aber nichts wertet sie
 automatisch aus. Steuermodi Manuell/Hybrid/Automatisch nicht wirksam
-([control-modes.md](control-modes.md)). Externer Schreibzugriff (iOS/Java-Backend)
+([steuermodi.md](steuermodi.md)). Externer Schreibzugriff (iOS/Java-Backend)
 nicht umgesetzt. Plan-Ablauf+Fallback-Logik, HEMS-Doppelvalidierung, Delta-Limit
 zwischen Plänen — alles offen.
 

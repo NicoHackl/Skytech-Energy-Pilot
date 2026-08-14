@@ -2,7 +2,7 @@
 
 Legt fest, welche Eingangsgrößen gemittelt werden (Leistungs-/Flussgrößen) und
 welche als letzter Wert geführt werden (Zustände/SOC/Temperaturen) – gemäß
-Decision D-001/D-003 (siehe doc/decisions-log.md).
+Decision D-001/D-003 (siehe docs/design-entscheidungen.md).
 """
 
 from __future__ import annotations

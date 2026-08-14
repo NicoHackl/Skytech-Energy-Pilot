@@ -124,7 +124,7 @@ async def test_fetch_forecast_invalid_key_surfaces_owm_message():
     assert "401" in msg
     # OWM-Originalgrund wird durchgereicht, damit der echte Grund sichtbar ist.
     assert "Invalid API key" in msg
-    # Der Schlüssel selbst taucht nie in der Meldung auf (Iron Rule 6).
+    # Der Schlüssel selbst taucht nie in der Meldung auf (eiserne Regel 7).
     assert "bad-key" not in msg
 
 

@@ -30,7 +30,7 @@ Update nicht verloren; nach dem Update sollte er ins Gemini-Untermenü eingetrag
 | `providers.<name>.model` | gemini `gemini-2.5-flash`, claude `claude-sonnet-5`, openai `gpt-5` | frei | Modell je Anbieter |
 | `providers.<name>.timeout_s` | 30 | 5–600 | Timeout je KI-Aufruf |
 | `providers.<name>.rate_limit_per_min` | gemini 10 / claude 50 / openai 60 | 1–1000 | Wartedrossel (Gemini-Free ~10/min) |
-| `ai_temperature` | 0.0 | 0–2 | Determinismus (Gemini/OpenAI; Claude ignoriert Sampling-Params). siehe [planning-engine.md](planning-engine.md) |
+| `ai_temperature` | 0.0 | 0–2 | Determinismus (Gemini/OpenAI; Claude ignoriert Sampling-Params). siehe [planungs-engine.md](planungs-engine.md) |
 | `ai_seed` | 42 | frei | Determinismus |
 | `ai_repair_missing` | true | bool | Nachforder-Aufruf bei fehlenden Pflichtfeldern |
 | `planning_interval_min` | 60 | 15–60 | Gültigkeitsdauer eines Plans (`valid_until = now + Wert`). **Kein** Planungstakt — es gibt keinen Scheduler |
@@ -65,7 +65,7 @@ je Ausrichtung ein Eintrag; EP summiert Werte über alle Ausrichtungen. `pv_fore
 (false)/`enable_1h`/`enable_1day` (beide true) — **jedes aktive Modell wird abgerufen
 UND fließt in den KI-Kontext**, beliebige Kombination möglich (kein Einzel-Select
 mehr, seit D-054-ähnlicher Änderung — `translations/de.yaml` hat dazu noch einen
-veralteten Eintrag, siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#veraltete-übersetzung)).
+veralteten Eintrag, siehe [bekannte-luecken.md](bekannte-luecken.md#veraltete-übersetzung)).
 `refresh_15min/1h/1day` (15/60/180 min), `pages_15min/1h/1day` (1–5, mehr Horizont
 = mehr bezahlte Calls). `daily_call_budget` (Default 1000 = OWM-Freikontingent) —
 harte Tagesobergrenze **aller** bezahlten One-Call-Aufrufe, UTC-Tag, überlebt

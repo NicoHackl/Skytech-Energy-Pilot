@@ -66,7 +66,7 @@ def load_ziele(db: sqlite3.Connection | None) -> list[Ziel]:
         rows = db.execute(
             "SELECT id, name, beschreibung, devices_json FROM ziele ORDER BY sort_order, id"
         ).fetchall()
-    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (Iron Rule 8)
+    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (eiserne Regel 13)
         return []
     return [_row_to_ziel(row) for row in rows]
 

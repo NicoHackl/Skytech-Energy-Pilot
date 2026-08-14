@@ -3,8 +3,8 @@
 Verdichtete Fassung des alten `plan/entscheidungen.md` (gelöscht 2026-07-10, voller
 Text weiterhin abrufbar via `git show ad48b23^:plan/entscheidungen.md`). Jede Zeile:
 Entscheidung + Kernaussage. Für Details/Begründung den Volltext in der Git-Historie
-nachschlagen oder die themenspezifischen Dateien in diesem Ordner ([entity-naming.md](entity-naming.md),
-[devices.md](devices.md), [control-modes.md](control-modes.md), [planning-engine.md](planning-engine.md) …).
+nachschlagen oder die themenspezifischen Dateien in diesem Ordner ([namensschema.md](namensschema.md),
+[geraete.md](geraete.md), [steuermodi.md](steuermodi.md), [planungs-engine.md](planungs-engine.md) …).
 
 Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 
@@ -34,10 +34,10 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 | D-022 | Branch-Regel (Arbeits-Branch, seit D-053 `claude/stage`) gilt auch im SkytechHEMS-Repo |
 | D-023 | Externer Zugriff startet über HA Long-Lived Token, eigener EP-Endpunkt evtl. später |
 | D-024 | CI-Coverage-Gate startet bei 60 %, CI läuft auf `claude/stage` + den drei Release-Channel-Branches (seit D-053) |
-| D-025 | Default-Modell korrigiert auf `gemini-2.5-flash` — `gemini-3.5-flash` hing in der Praxis (siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#gemini-35-flash-hang)) |
+| D-025 | Default-Modell korrigiert auf `gemini-2.5-flash` — `gemini-3.5-flash` hing in der Praxis (siehe [bekannte-luecken.md](bekannte-luecken.md#gemini-35-flash-hang)) |
 | D-026 | PV-Prognosewerte im Sensor-**State**, nicht als Attribut |
 | D-027 | Sensor-Mapping in Addon-Config (`entity_<rolle>`), UI zeigt nur read-only an |
-| D-028 | Docker-Build direkt auf `python:3.11-slim`, kein HA-Base-Image/s6 (siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#s6-overlay-token-bug)) |
+| D-028 | Docker-Build direkt auf `python:3.11-slim`, kein HA-Base-Image/s6 (siehe [bekannte-luecken.md](bekannte-luecken.md#s6-overlay-token-bug)) |
 | D-029 | **Zentral:** Namens-Domäne nach Datenrichtung — `ems_*` = HEMS-Domäne (EP liest), `ep_*` = EP-Domäne (EP schreibt) |
 | D-030 | EP-Schreibvertrag Phase 1: `prio_vorschlag`, `geschutzte_mindestleistung_w/a_vorschlag`, `freigabe_vorschlag` |
 | D-031 | Jeder binäre Verbraucher hat `ems_<name>_leistung_w` als Ist-Leistung |
@@ -59,7 +59,7 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 | D-047 | Konfigurierbare Zusatz-Entitäten je Gerät (löst Heizstab-Hardcode D-035 ab) |
 | D-048 | Zusatz-Entitäten unterstützen alle HA-Domänen, Typ folgt Domäne, `min`/`max` als KI-Grenzen + Klemmung |
 | D-049 | Zusatz-Entitäten unterstützen `input_select`/`select`, KI muss exakt eine Option wählen |
-| D-050 | Stabile/vollständige KI-Vorschlagsfelder: 4-schichtige Determinismus-/Vollständigkeits-Absicherung (siehe [planning-engine.md](planning-engine.md)) |
+| D-050 | Stabile/vollständige KI-Vorschlagsfelder: 4-schichtige Determinismus-/Vollständigkeits-Absicherung (siehe [planungs-engine.md](planungs-engine.md)) |
 | D-051 | Geräte-Tab als Einzelgerät-Dropdown + Pro-Gerät-KI-Beschreibungsfeld (`funktion`) |
 | D-052 | Zusatz-Entitäten: optionales "In Original schreiben" über HA-Service-Calls, nur für echte Helfer-Domänen |
 | D-053 | Arbeits-Branch `claude/main` → `claude/stage` umbenannt; 3 Release-Channel-Branches `stage/dev`/`stage/beta`/`stage/stable` (je eigenes `config.yaml`, in HA per Branch-URL als 3 separate Addons einbindbar), Promotion nur manuell auf Zuruf, CI auf allen 4 Branches. **Nachtrag:** angelegt wurden die Kanäle als `stage-dev`/`stage-beta`/`stage-stable` (Bindestrich); verbindlich sind diese real existierenden Namen, CI und Doku sind darauf gezogen |
@@ -74,6 +74,6 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
   kein eigener D-Eintrag.
 - Hybrid-Modus: welche Felder pro Gerät fixierbar sind — ungeklärt, relevant erst ab M3.
 - Gemeinsames Plan-JSON-Schema mit dem HEMS-Repo für den Ebene-2-Schreibweg — noch
-  klärungsbedürftig bei der Suffix-Zuordnung (siehe [entity-naming.md](entity-naming.md)).
+  klärungsbedürftig bei der Suffix-Zuordnung (siehe [namensschema.md](namensschema.md)).
 - OWM aktuelles Wetter (nicht Prognose), Mehrfach-Timeline-an-KI gleichzeitig,
   historische Wetterdaten — bewusst zurückgestellt.

@@ -602,7 +602,7 @@ class _BoomPlanner:
 
 
 async def test_plan_run_returns_readable_json_on_unexpected_error(aiohttp_client, app):
-    """Iron Rule 8: ein unerwarteter Fehler im Lauf kommt als lesbares JSON, nie als HTTP-500.
+    """eiserne Regel 13: ein unerwarteter Fehler im Lauf kommt als lesbares JSON, nie als HTTP-500.
 
     Regression: Vorher entwich der Fehler ungefangen aus `plan_run` → aiohttp lieferte eine
     HTML-500-Seite → im Frontend brach `response.json()` mit „SyntaxError: The string did not
@@ -622,7 +622,7 @@ async def test_plan_run_returns_readable_json_on_unexpected_error(aiohttp_client
 
 
 async def test_plan_get_returns_null_plan_on_read_error(aiohttp_client, app):
-    """Iron Rule 8: ein Lesefehler beim Öffnen des Plan-Tabs bricht nicht als HTTP-500."""
+    """eiserne Regel 13: ein Lesefehler beim Öffnen des Plan-Tabs bricht nicht als HTTP-500."""
     app["planner"] = _BoomPlanner()
     client = await aiohttp_client(app)
 

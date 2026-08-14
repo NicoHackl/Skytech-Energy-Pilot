@@ -26,13 +26,13 @@ austauschbar; getrennte Repos/Logs/Versionierung.
 - HA-Zugriff über den Supervisor-Core-API-Proxy (`http://supervisor/core/api`),
   Token via `SUPERVISOR_TOKEN`/`HASSIO_TOKEN`/`HA_TOKEN` (erster Treffer gewinnt).
 - Docker-Basis-Image bewusst `python:3.11-slim` **statt** offizielles
-  HA-Base-Image — siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#s6-overlay-token-bug).
+  HA-Base-Image — siehe [bekannte-luecken.md](bekannte-luecken.md#s6-overlay-token-bug).
 
 ## Boot-Sequenz (`app/main.py: build()`)
 
 1. `AddonConfig.load()` — `/data/options.json` über `DEFAULTS` gelegt.
 2. `setup_logging()` — strukturiertes JSON-Logging, Secrets werden redaktiert.
-3. `init_db()` — SQLite-Migrationen anwenden (siehe [data-model.md](data-model.md)).
+3. `init_db()` — SQLite-Migrationen anwenden (siehe [datenmodell.md](datenmodell.md)).
 4. `EntityAllowlist` aufbauen.
 5. `HAClient` — nur falls `supervisor_token` vorhanden, sonst HA-Zugriff deaktiviert (Warnung).
 6. `StateCollector` + Rollen-Mapping (`sensoren`-Config).
@@ -47,7 +47,7 @@ austauschbar; getrennte Repos/Logs/Versionierung.
 13. `create_app(...)` — aiohttp-App inkl. aller `on_startup`/`on_cleanup`-Hooks.
 
 `on_startup` löst zusätzlich aus: HA-Selbsttest, initiale Geräte-Discovery (mit
-begrenztem Auto-Retry, siehe [devices.md](devices.md)), Start des Poller-Loops.
+begrenztem Auto-Retry, siehe [geraete.md](geraete.md)), Start des Poller-Loops.
 
 ## Datenfluss (End-to-End)
 
@@ -62,7 +62,7 @@ PV-/Wetter-Sensoren ─┴─► Collector-Loop (alle collect_interval_s) ──
                                                                           ▼
                                                     KI-Provider (Gemini, strukturierte Ein-/Ausgabe)
                                                                           ▼
-                                              Validator (Schema → Grenzen → Zeitlogik, siehe validation-safety.md)
+                                              Validator (Schema → Grenzen → Zeitlogik, siehe sicherheit-datenschutz.md)
                                                                           ▼
                                         gültiger/geklemmter Plan → SQLite + Audit-Log
                                                                           ▼
@@ -77,7 +77,20 @@ PV-/Wetter-Sensoren ─┴─► Collector-Loop (alle collect_interval_s) ──
 entsteht nur durch manuellen Aufruf von `POST /api/plan/run` (Button im Plan-Tab).
 `planning_interval_min` wird zwar gelesen, aber **nicht** als Takt: es bestimmt allein die
 Plan-Gültigkeitsdauer (`valid_until = now + planning_interval_min`, `planner.py`).
-`plan_update_interval_min` nutzt kein Code-Pfad. Details: [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#kein-automatischer-scheduler).
+`plan_update_interval_min` nutzt kein Code-Pfad. Details: [bekannte-luecken.md](bekannte-luecken.md#kein-automatischer-scheduler).
+
+## Externer Zugriff im Hinterkopf behalten (D-013/D-023)
+
+Der User will aus dem internen Netz über ein **iOS-Backend (Java auf einem Linux-Server)**
+bestimmte Werte **lesen und setzen** — konkretes Beispiel: die Abfahrtszeit des E-Autos für eine
+Mindestladung. Das ist noch nicht gebaut, wirkt aber auf jede Architekturentscheidung: der Weg nach
+außen muss sauber möglich bleiben.
+
+Vorgesehener Einstieg ist ein **HA Long-Lived Token**, mit dem das fremde Backend direkt
+HA-Helfer schreibt (D-023) — EP liest sie ohnehin. Ein eigener EP-Endpunkt kommt erst, wenn das
+nicht mehr reicht. Wer eine neue Datenquelle einführt, prüft deshalb: liegt der Wert in einer
+HA-Entität, ist er von außen erreichbar; liegt er nur in der SQLite-Datei oder im Prozessspeicher,
+ist er es nicht.
 
 ## Modulübersicht (`app/energy_pilot/*.py`)
 
@@ -119,5 +132,5 @@ Plan-Gültigkeitsdauer (`valid_until = now + planning_interval_min`, `planner.py
 | `hems_status_collector.py` | Pollt HEMS-Status unabhängig vom Haupt-Poll-Takt |
 | `http_errors.py` | Gemeinsame HTTP-Fehlerbehandlung (Secrets nie in URLs/Logs) |
 | `conversion.py` | `safe_float()` — robuste HA-State-Konvertierung |
-| `web/server.py` | aiohttp-App-Factory, alle HTTP-Endpunkte (siehe [api-reference.md](api-reference.md)) |
+| `web/server.py` | aiohttp-App-Factory, alle HTTP-Endpunkte (siehe [api-referenz.md](api-referenz.md)) |
 | `web/static/app.js` | Frontend-SPA (9 Tabs) |

@@ -1,0 +1,9 @@
+---
+description: Verbindliche Projektregeln — Quelle ist AGENTS.md
+alwaysApply: true
+---
+
+<!-- Pointer-Datei. Nicht bearbeiten — alle Regeln stehen in AGENTS.md. -->
+
+Die verbindlichen Projektregeln stehen in [AGENTS.md](../../AGENTS.md) im Repo-Root.
+Diese Datei vor jeder Änderung vollständig lesen; ausführliche Referenz in `docs/`.

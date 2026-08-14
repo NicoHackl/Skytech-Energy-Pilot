@@ -6,7 +6,7 @@ eigener **bezahlter** API-Call (Abo „One Call by Call"). Es wird je Abruf bewu
 Seite** geholt (kein `next`-Folgen) – Kosten-/Budget-Schutz (D-044).
 
 Der API-Schlüssel steht ausschließlich in der Addon-Config, geht als Query-Parameter `appid`
-(OWM kennt keine Header-Auth) und wird **nie geloggt** (Iron Rule 6): die `appid` wird über
+(OWM kennt keine Header-Auth) und wird **nie geloggt** (eiserne Regel 7): die `appid` wird über
 `params=` übergeben und taucht in keinem von uns protokollierten String auf.
 """
 
@@ -107,7 +107,7 @@ def parse_alert(payload: dict) -> OneCallAlert:
 
     Der Alert-Detail-Endpunkt der One Call API 4.0 liefert ein **einzelnes** Objekt
     (`id`, `sender_name`, `event`, `start`, `end`, `description`; `tags` optional). Tolerant
-    gegenüber fehlenden Feldern (Iron Rule 8).
+    gegenüber fehlenden Feldern (eiserne Regel 13).
     """
     tags = payload.get("tags")
     return OneCallAlert(

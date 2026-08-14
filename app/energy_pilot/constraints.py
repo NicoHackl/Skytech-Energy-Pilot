@@ -1,7 +1,7 @@
 """Device-Constraint-Model: leitet die **harten Grenzen** je Gerät ab (D-011).
 
 Harte Grenzen sind die technischen Limits/Freigaben, die die KI **nie** verändern
-oder verletzen darf (siehe doc/validation-safety.md, doc/devices.md). Sie werden aus
+oder verletzen darf (siehe docs/sicherheit-datenschutz.md, docs/geraete.md). Sie werden aus
 den in M1 bereits gelesenen `ems_*`-Werten (siehe device_collector.py) abgeleitet.
 Sonderfälle:
 

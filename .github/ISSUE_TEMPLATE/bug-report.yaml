@@ -1,0 +1,44 @@
+name: Fehlermeldung
+description: Ein Fehler im Verhalten von Skytech Energy Pilot
+labels: ["bug"]
+body:
+  - type: textarea
+    id: beschreibung
+    attributes:
+      label: Was passiert
+      description: Beobachtetes Verhalten in ein bis zwei Sätzen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: erwartet
+    attributes:
+      label: Was erwartet wurde
+    validations:
+      required: true
+
+  - type: textarea
+    id: schritte
+    attributes:
+      label: Schritte zum Nachstellen
+      placeholder: |
+        1. …
+        2. …
+        3. Fehler tritt auf
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Versionsnummer oder Commit-Hash
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logausgabe
+      description: Relevanter Ausschnitt. Zugangsdaten und personenbezogene Daten vorher entfernen.
+      render: text

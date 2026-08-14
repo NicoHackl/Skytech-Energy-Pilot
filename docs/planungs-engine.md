@@ -3,10 +3,10 @@
 ## Ablauf eines Planungslaufs (`planner.py: Planner.run()`)
 
 Ausgelöst **nur manuell** über `POST /api/plan/run` (siehe
-[known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#kein-automatischer-scheduler)):
+[bekannte-luecken.md](bekannte-luecken.md#kein-automatischer-scheduler)):
 
 1. Snapshot aller Collector (Mess-Rollen, Geräte, Prognose, Wetter).
-2. `build_constraints()` — harte Grenzen je Gerät ([devices.md](devices.md)).
+2. `build_constraints()` — harte Grenzen je Gerät ([geraete.md](geraete.md)).
 3. **Klassifizierungs-Aufruf (D-055):** `load_ziele()` — user-definierte Ziele
    (Tab "Grenzen und Ziele", ohne Gewicht). Gibt es welche, baut
    `build_classification_context()` dieselbe Datenbasis wie der Plan-Aufruf (nur `objectives`
@@ -23,7 +23,7 @@ Ausgelöst **nur manuell** über `POST /api/plan/run` (siehe
 7. `provider.generate()` — KI-Aufruf, ratenlimitiert.
 8. `CandidatePlan` zusammenbauen — **EP selbst** setzt `plan_id` (`uuid4().hex[:12]`), `valid_from`, `valid_until` (= `now + planning_interval_min`); das Modell liefert nur Geräte-Vorschläge, `confidence`, `reasoning`, `warnings`.
 9. **Reparatur-Pass:** fehlen Pflichtfelder (`missing_suggestion_fields()`) und `ai_repair_missing` ist aktiv → ein gezielter Nachforder-Aufruf mit `build_repair_prompt()`; der reparierte Plan wird nur übernommen, wenn er die Lückenzahl **strikt** verringert.
-10. `validate()` — siehe [validation-safety.md](validation-safety.md).
+10. `validate()` — siehe [sicherheit-datenschutz.md](sicherheit-datenschutz.md).
 11. Speichern in Tabelle `plans` + Audit-Log (`plan_created`/`plan_rejected`).
 12. Bei gültigem Plan **und** `publish_suggestions: true` → `suggestion_publisher.publish_suggestions()`.
 
@@ -78,7 +78,7 @@ genau den Anbieter, der in `provider` gewählt ist — und nur, wenn dessen `api
   `str(TimeoutError())` ist leer. Deshalb ein eigener `except TimeoutError`-Zweig mit
   synthetisierter Fehlermeldung (`gemini_provider.py:103-109`). Derselbe Trick taucht
   in `onecall_client.py`/`weather_client.py` auf — bei neuen HTTP-Clients dran denken.
-- Default-Modell: `gemini-2.5-flash` — siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#gemini-35-flash-hang)
+- Default-Modell: `gemini-2.5-flash` — siehe [bekannte-luecken.md](bekannte-luecken.md#gemini-35-flash-hang)
   für die Begründung, `gemini-3.5-flash` **nicht** als Default zu verwenden.
 
 ## Determinismus-Absicherung (D-050)

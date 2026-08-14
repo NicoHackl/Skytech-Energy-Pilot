@@ -1,9 +1,9 @@
-"""OpenWeatherMap-Client für die „5 day / 3 hour forecast"-API (D-042, doc/configuration.md).
+"""OpenWeatherMap-Client für die „5 day / 3 hour forecast"-API (D-042, docs/konfiguration.md).
 
 Direkter REST-Aufruf via aiohttp (Muster wie `gemini_provider.py`/`hems_client.py`) –
 bewusst ohne SDK. Der API-Schlüssel steht ausschließlich in der Addon-Config und wird
 als Query-Parameter `appid` übergeben (OWM unterstützt keine Header-Auth). Er wird
-**nie geloggt** und taucht in keiner Fehlermeldung auf (Iron Rule 6): wir bauen die URL
+**nie geloggt** und taucht in keiner Fehlermeldung auf (eiserne Regel 7): wir bauen die URL
 über `params=` und protokollieren ausschließlich Koordinaten/Einheiten, niemals die
 vollständige Request-URL.
 """
@@ -24,7 +24,7 @@ async def _error_message(resp: aiohttp.ClientResponse) -> str:
 
     OWM antwortet bei Fehlern mit `{"cod":<n>,"message":"…"}`; `read_error_body` reicht genau
     diese `message` durch, damit der echte Grund sichtbar wird (z.B. „Invalid API key…").
-    Der Body enthält **nie** den Schlüssel → Iron Rule 6 bleibt gewahrt.
+    Der Body enthält **nie** den Schlüssel → eiserne Regel 7 bleibt gewahrt.
     """
     return await read_error_body(resp)
 
@@ -37,7 +37,7 @@ async def raise_for_owm_status(resp: aiohttp.ClientResponse) -> None:
     """Wirft bei OWM-Fehlerstatus einen `WeatherClientError` mit klarer, schlüsselfreier Meldung.
 
     Gemeinsam genutzt von `OpenWeatherClient` und `OneCallClient` — der OWM-Originalgrund
-    wird durchgereicht (z.B. „Invalid API key…"), der Schlüssel taucht nie auf (Iron Rule 6).
+    wird durchgereicht (z.B. „Invalid API key…"), der Schlüssel taucht nie auf (eiserne Regel 7).
     """
     if resp.status == 401:
         msg = await _error_message(resp)

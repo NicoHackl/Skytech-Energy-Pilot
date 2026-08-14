@@ -225,7 +225,7 @@ async def test_run_repairs_missing_fields(tmp_path):
 
 async def test_run_repair_failure_falls_back_to_deterministic_fill(tmp_path):
     # Scheitert die Nachforderung, bleibt der erste Plan gültig und der Validator füllt die
-    # Lücken deterministisch aus dem Ist-Zustand (Iron Rule 8 – EP blockiert nie).
+    # Lücken deterministisch aus dem Ist-Zustand (eiserne Regel 13 – EP blockiert nie).
     provider = _SequenceProvider([_INCOMPLETE_DATA], exc_on=1)
     planner, _ = _planner(tmp_path, provider)
 

@@ -156,7 +156,7 @@ async def test_fetch_timeline_paginates_following_next_up_to_max_calls():
     assert calls == 3
     assert len(tl.slots) == 6  # 2 Slots je Seite × 3 Seiten
     assert len(session.calls) == 3
-    for c in session.calls:  # Schlüssel nie in der URL, immer als appid-Param (Iron Rule 6)
+    for c in session.calls:  # Schlüssel nie in der URL, immer als appid-Param (eiserne Regel 7)
         assert "secret-key" not in c["url"]
         assert c["params"]["appid"] == "secret-key"
 
@@ -188,7 +188,7 @@ async def test_fetch_timeline_invalid_key_surfaces_owm_message():
     msg = str(exc.value)
     assert "401" in msg
     assert "Invalid API key" in msg
-    assert "bad-key" not in msg  # Schlüssel nie in der Meldung (Iron Rule 6)
+    assert "bad-key" not in msg  # Schlüssel nie in der Meldung (eiserne Regel 7)
 
 
 async def test_fetch_timeline_rate_limit_raises():

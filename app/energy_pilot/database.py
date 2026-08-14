@@ -1,6 +1,6 @@
 """SQLite-Initialisierung mit einfachem, versioniertem Migrations-Mechanismus.
 
-Vollständiges Schema siehe doc/data-model.md. M0 legt nur die Kerntabellen plus die
+Vollständiges Schema siehe docs/datenmodell.md. M0 legt nur die Kerntabellen plus die
 Migrationsverwaltung an; weitere Tabellen folgen versioniert.
 """
 

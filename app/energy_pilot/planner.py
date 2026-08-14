@@ -1,4 +1,4 @@
-"""Planning-Engine: erzeugt einen Kandidatenplan (doc/planning-engine.md, D-041).
+"""Planning-Engine: erzeugt einen Kandidatenplan (docs/planungs-engine.md, D-041).
 
 Ablauf: Snapshots holen → harte Grenzen + Ziele ableiten → verdichteten Kontext +
 Prompt + Antwort-Schema bauen → KI-Aufruf (Single-Shot) → Plan **montieren** (EP
@@ -7,7 +7,7 @@ setzt die Metadaten plan_id/Zeiten selbst, nie das Modell) → lokal **validiere
 
 V1 (D-008): Ergebnis sind reine Vorschlagswerte – kein Schreiben nach HA, keine
 Übernahme durch HEMS. Provider-Fehler werden kontrolliert abgefangen; die App
-blockiert nie (Iron Rule 8).
+blockiert nie (eiserne Regel 13).
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ def _describe_exc(exc: BaseException) -> str:
     """Liefert nie einen leeren Fehlertext – fällt sonst auf den Klassennamen zurück.
 
     Hintergrund: `str(TimeoutError())` ist leer. Ohne diesen Fallback landete ein
-    leerer String in Log, UI und `ai_calls` (Iron Rule 8: kontrollierte, lesbare Fehler).
+    leerer String in Log, UI und `ai_calls` (eiserne Regel 13: kontrollierte, lesbare Fehler).
     """
     return str(exc).strip() or exc.__class__.__name__
 
@@ -245,7 +245,7 @@ class Planner:
         schema = build_response_schema(constraints)
         try:
             response = await self.provider.generate(prompt, schema)
-        except Exception as exc:  # kontrolliert: nie Crash (Iron Rule 8)
+        except Exception as exc:  # kontrolliert: nie Crash (eiserne Regel 13)
             detail = _describe_exc(exc)
             self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=detail)
             self._log(
@@ -284,7 +284,7 @@ class Planner:
         # Vollständigkeits-Nachforderung (D-050): fehlen dem Modell-Plan Pflicht-Vorschlagsfelder,
         # genau diese einmalig gezielt nachfordern. Der Validator würde sie sonst deterministisch
         # füllen; ein echter KI-Wert ist aber besser (v.a. für die Prio). Scheitert der Aufruf,
-        # bleibt der erste Plan und die Validator-Füllung greift (Iron Rule 8).
+        # bleibt der erste Plan und die Validator-Füllung greift (eiserne Regel 13).
         missing = missing_suggestion_fields(plan_dict, constraints)
         if missing and bool(self.config.values.get("ai_repair_missing", True)):
             try:
@@ -309,7 +309,7 @@ class Planner:
                     context={"missing": missing}, run_id=run_id,
                     provider=self.provider.name, model=self.model_name,
                 )
-            except Exception as exc:  # optional: Fehler blockiert nie (Iron Rule 8)
+            except Exception as exc:  # optional: Fehler blockiert nie (eiserne Regel 13)
                 self._log(
                     "warning", "KI-Nachforderung fehlgeschlagen (Fallback-Füllung greift)",
                     context={"error": _describe_exc(exc)}, run_id=run_id,
@@ -369,7 +369,7 @@ class Planner:
     ) -> _ClassificationOutcome:
         """Führt den Klassifizierungs-Aufruf aus (D-055); gemeinsamer Kern von `run()` und
         `run_classification()`. Baut Kontext/Prompt/Schema, ruft den Provider, protokolliert den
-        Aufruf (`ai_calls`) und fängt Provider-Exceptions kontrolliert ab (Iron Rule 8)."""
+        Aufruf (`ai_calls`) und fängt Provider-Exceptions kontrolliert ab (eiserne Regel 13)."""
         classification_context = build_classification_context(
             state, forecast, constraints, ziele,
             valid_from=valid_from, valid_until=valid_until,
@@ -385,7 +385,7 @@ class Planner:
         classification_schema = build_classification_response_schema(ziele)
         try:
             response = await self.provider.generate(classification_prompt, classification_schema)
-        except Exception as exc:  # kontrolliert: nie Crash (Iron Rule 8)
+        except Exception as exc:  # kontrolliert: nie Crash (eiserne Regel 13)
             detail = _describe_exc(exc)
             self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=detail)
             self._log(
@@ -495,7 +495,7 @@ class Planner:
         """Schreibt den zuletzt **gültigen** Plan erneut als HA-Sensoren (manueller Button).
 
         Liefert das Schreibergebnis (`ok`/`written`/`failed`/`reason`); ohne gültigen Plan
-        bzw. ohne HA-Client kommt eine klare Begründung statt eines Fehlers (Iron Rule 8).
+        bzw. ohne HA-Client kommt eine klare Begründung statt eines Fehlers (eiserne Regel 13).
         """
         latest = self.latest_plan()
         if latest is None or not latest.get("ok"):

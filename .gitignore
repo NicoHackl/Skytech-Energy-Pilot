@@ -11,6 +11,11 @@ venv/
 .coverage
 htmlcov/
 
+# Frontend: Abhängigkeiten ja, Bündel nein — `frontend/dist/` wird bewusst mitcommittet,
+# weil der HA-Supervisor das Addon-Image ohne Node baut (siehe docs/frontend.md).
+node_modules/
+frontend/.vite/
+
 # macOS
 .DS_Store
 

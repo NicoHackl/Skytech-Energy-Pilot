@@ -1,8 +1,8 @@
 """Strukturiertes JSON-Logging mit Ringpuffer (UI) und maschinenlesbarem Export.
 
-Erfüllt die CLAUDE.md-Querschnittsvorgabe: umfangreiches, UI-einsehbares Logging plus
+Erfüllt die AGENTS.md-Querschnittsvorgabe: umfangreiches, UI-einsehbares Logging plus
 maschinenlesbarer Export für die KI-gestützte Fehleranalyse. Secrets werden
-grundsätzlich maskiert (siehe doc/validation-safety.md).
+grundsätzlich maskiert (siehe docs/sicherheit-datenschutz.md).
 """
 
 from __future__ import annotations

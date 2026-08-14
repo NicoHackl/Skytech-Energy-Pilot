@@ -6,7 +6,8 @@ KI-Provider aber erst im **Body** (`{"message": …}` bzw. `{"error": {"message"
 Helfer lesen den Body aus und heben die echte Meldung in die Fehlermeldung – damit landet der
 konkrete Grund in Log/UI statt eines nichtssagenden „HTTP 400".
 
-Iron Rule 6 bleibt gewahrt: es wird nur der **Pfad** (ohne Query) mitgeführt, nie die volle URL –
+eiserne Regel 7 bleibt gewahrt: mitgeführt wird nur der **Pfad** (ohne Query), nie die
+volle URL –
 so kann kein als Query-Parameter übergebener Schlüssel (z.B. OWM `appid`) in ein Log geraten.
 """
 

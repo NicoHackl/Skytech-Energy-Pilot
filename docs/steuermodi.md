@@ -90,7 +90,7 @@ per HA-Automation auswerten müsste (D-032/D-033). Es existiert:
 
 Das ist laut [roadmap.md](roadmap.md) Teil von Meilenstein **M3** und größtenteils
 offen. Vor jeder Implementierung hier: prüfen, ob die alten Entscheidungen D-009/D-020
-(siehe [decisions-log.md](decisions-log.md)) noch die gewünschte Mechanik beschreiben,
+(siehe [design-entscheidungen.md](design-entscheidungen.md)) noch die gewünschte Mechanik beschreiben,
 und `user-beispiele/` auf aktuellere Vorgaben prüfen (hat immer Vorrang). Insbesondere offen:
 wie sich das dreiwertige EP-Vokabular (Manuell/Hybrid/Automatisch) zum dreiwertigen
 HEMS-Vokabular (`auto`/`manuell`/`aus`) verhalten soll — beide dritten Werte decken sich nicht.

@@ -1,9 +1,10 @@
 """Abstrakte KI-Provider-Schnittstelle + Hilfen (Rate-Limit, Fehlerklassen).
 
-Die KI ist **Orchestrator**, nicht Regler (siehe doc/validation-safety.md). Provider sind über diese
-abstrakte Basis austauschbar (D-007/D-041): Eingabe = Prompt + Antwort-Schema,
-Ausgabe = **strukturiertes JSON**. Freitext wird nie als Steuerbefehl verwendet
-(Iron Rule 5). Der konkrete Gemini-Provider liegt in `gemini_provider.py`.
+Die KI ist **Orchestrator**, nicht Regler (siehe docs/sicherheit-datenschutz.md).
+Provider sind über diese abstrakte Basis austauschbar (D-007/D-041/D-056): Eingabe =
+Prompt + Antwort-Schema, Ausgabe = **strukturiertes JSON**. Freitext wird nie als
+Steuerbefehl verwendet (eiserne Regel 10). Die konkreten Provider liegen in
+`gemini_provider.py`, `claude_provider.py` und `openai_provider.py`.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from dataclasses import dataclass, field
 
 
 class ProviderError(RuntimeError):
-    """Kontrollierter Fehler eines KI-Providers (führt nie zum Absturz, Iron Rule 8)."""
+    """Kontrollierter Fehler eines KI-Providers (führt nie zum Absturz, eiserne Regel 13)."""
 
 
 class RateLimitError(ProviderError):
@@ -37,7 +38,7 @@ class AsyncRateLimiter:
     """Drossel: max. `max_per_min` Aufrufe je rollierendem 60-s-Fenster.
 
     Bei Erreichen des Limits **wartet** der Aufruf, statt einen Fehler zu werfen
-    (doc/planning-engine.md: „Wartedrossel statt Fehlerflut"). `acquire()` liefert die gewartete
+    (docs/planungs-engine.md: „Wartedrossel statt Fehlerflut"). `acquire()` liefert die gewartete
     Zeit in Sekunden zurück (0.0, wenn kein Warten nötig war).
     """
 

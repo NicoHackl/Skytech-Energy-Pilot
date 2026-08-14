@@ -4,7 +4,7 @@ Das HEMS stellt die technischen Gerätewerte (`ems_*`) bereit und erzeugt die
 Entity-IDs dynamisch pro Gerät aus `entity_prefix`/`class`/`output_unit`
 (Decision D-036). EP fragt darum `GET /api/device_controls_schema` ab, statt die
 Namen zu raten. Ist das HEMS nicht erreichbar, kennt EP keine Geräte – es gibt
-keinen Addon-Config-Fallback mehr (siehe devices.discover, doc/devices.md).
+keinen Addon-Config-Fallback mehr (siehe devices.discover, docs/geraete.md).
 """
 
 from __future__ import annotations

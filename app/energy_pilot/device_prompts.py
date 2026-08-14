@@ -23,7 +23,7 @@ def load_device_prompts(db: sqlite3.Connection | None) -> dict[str, str]:
         rows = db.execute(
             "SELECT device_name, prompt FROM device_prompts"
         ).fetchall()
-    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (Iron Rule 8)
+    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (eiserne Regel 13)
         return {}
     result: dict[str, str] = {}
     for row in rows:
@@ -41,7 +41,7 @@ def get_device_prompt(db: sqlite3.Connection | None, device_name: str) -> str:
         row = db.execute(
             "SELECT prompt FROM device_prompts WHERE device_name = ?", (device_name,)
         ).fetchone()
-    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (Iron Rule 8)
+    except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (eiserne Regel 13)
         return ""
     return (row["prompt"] or "").strip() if row else ""
 

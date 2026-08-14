@@ -36,7 +36,7 @@ Liste (`database.py: MIGRATIONS`), Tracking über Tabelle `schema_migrations`,
 - **`device_prompts`** — Pro-Gerät-KI-Beschreibung (D-051), `device_name` als PK.
 - **`ziele`** — user-definierte Ziele (D-055): `name`, `beschreibung`, `devices_json`
   (JSON-Array der Gerätenamen), `sort_order`. **Ohne** Gewicht — das leitet der
-  Klassifizierungs-Aufruf je Planungslauf ab ([configuration.md](configuration.md#ziele-d-055-kein-addon-config-abschnitt-mehr)).
+  Klassifizierungs-Aufruf je Planungslauf ab ([konfiguration.md](konfiguration.md#ziele-d-055-kein-addon-config-abschnitt-mehr)).
 
 Bei neuen persistenten Feldern: **neue Migration anhängen**, nie eine bestehende
 nachträglich ändern (SQLite-Migrationsketten sind additiv, existierende Installationen

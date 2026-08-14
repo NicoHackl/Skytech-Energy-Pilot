@@ -10,7 +10,7 @@ auslösen).
 
 Der Tag wird in **UTC** gerechnet (deckt sich mit OWMs Quota-Reset um Mitternacht UTC); beim
 Datumswechsel beginnt der Zähler automatisch wieder bei 0. Ohne DB (`db=None`) degradiert das
-Modul still: `calls_today` = 0, `consume` ist ein No-op (Iron Rule 8 – blockiert nie).
+Modul still: `calls_today` = 0, `consume` ist ein No-op (eiserne Regel 13 – blockiert nie).
 """
 
 from __future__ import annotations
