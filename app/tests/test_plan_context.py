@@ -508,7 +508,10 @@ def test_default_prompt_mentions_previous_plan():
 
 def _ziele():
     return [
-        Ziel(id=1, name="Warmwasserkomfort", beschreibung="Genug warmes Wasser", devices=("heizstab",)),
+        Ziel(
+            id=1, name="Warmwasserkomfort", beschreibung="Genug warmes Wasser",
+            devices=("heizstab",),
+        ),
         Ziel(id=2, name="Netzbezug minimieren", beschreibung="", devices=()),
     ]
 
@@ -523,7 +526,8 @@ def test_build_classification_context_replaces_objectives_with_ziele():
          "geraete": ["heizstab"]},
         {"id": 2, "name": "Netzbezug minimieren", "beschreibung": "", "geraete": []},
     ]
-    # Gleiche Datenbasis wie build_context (Datenminimum, Iron Rule 7): state/forecast/weather/devices bleiben.
+    # Gleiche Datenbasis wie build_context (Datenminimum, Iron Rule 7):
+    # state/forecast/weather/devices bleiben.
     assert "state" in ctx and "forecast" in ctx and "weather" in ctx and "devices" in ctx
 
 

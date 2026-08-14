@@ -1,12 +1,14 @@
 name: CI
 
 # Automatische Tests laufen für den Arbeits-Branch claude/stage sowie die drei
-# Release-Channel-Branches (Decision D-024/D-053)
+# Release-Channel-Branches (Decision D-024/D-053). Die Kanäle heißen real mit Bindestrich
+# (stage-dev/-beta/-stable) — mit den Slash-Namen aus dem D-053-Text lief die CI auf keinem
+# der drei Kanäle.
 on:
   push:
-    branches: [claude/stage, stage/dev, stage/beta, stage/stable]
+    branches: [claude/stage, stage-dev, stage-beta, stage-stable]
   pull_request:
-    branches: [claude/stage, stage/dev, stage/beta, stage/stable]
+    branches: [claude/stage, stage-dev, stage-beta, stage-stable]
 
 jobs:
   test:

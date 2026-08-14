@@ -16,6 +16,8 @@ Liste (`database.py: MIGRATIONS`), Tracking über Tabelle `schema_migrations`,
 | v6 | `device_extras` |
 | v7 | `device_prompts` |
 | v8 | `device_extras.write_original`-Spalte (ALTER TABLE) |
+| ~~v9~~ | ~~`device_plan_state`~~ — mit Commit `e4d0706` zurückgebaut, Nummer bleibt **unbesetzt** |
+| v10 | `ziele` (user-definierte Ziele, D-055) |
 
 ## Zentrale Tabellen (Zweck)
 
@@ -32,7 +34,12 @@ Liste (`database.py: MIGRATIONS`), Tracking über Tabelle `schema_migrations`,
 - **`device_extras`** — user-konfigurierte Zusatz-Entitäten je Gerät (D-047),
   inkl. `write_original`-Flag (D-052).
 - **`device_prompts`** — Pro-Gerät-KI-Beschreibung (D-051), `device_name` als PK.
+- **`ziele`** — user-definierte Ziele (D-055): `name`, `beschreibung`, `devices_json`
+  (JSON-Array der Gerätenamen), `sort_order`. **Ohne** Gewicht — das leitet der
+  Klassifizierungs-Aufruf je Planungslauf ab ([configuration.md](configuration.md#ziele-d-055-kein-addon-config-abschnitt-mehr)).
 
 Bei neuen persistenten Feldern: **neue Migration anhängen**, nie eine bestehende
 nachträglich ändern (SQLite-Migrationsketten sind additiv, existierende Installationen
-haben bereits ältere Versionen angewendet).
+haben bereits ältere Versionen angewendet). Aus demselben Grund wird die Lücke bei v9
+**nicht** neu vergeben: Anlagen, die v9 damals angewendet haben, stehen bereits auf einer
+höheren Version und würden eine neue v9 stillschweigend überspringen.

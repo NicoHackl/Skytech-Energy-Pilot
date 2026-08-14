@@ -785,12 +785,15 @@ async def ziele_post(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
 
     raw_id = body.get("id")
-    ziel_id = int(raw_id) if isinstance(raw_id, (int, float)) and not isinstance(raw_id, bool) else None
+    has_id = isinstance(raw_id, int | float) and not isinstance(raw_id, bool)
+    ziel_id = int(raw_id) if has_id else None
     name = str(body.get("name") or "").strip()
     beschreibung = str(body.get("beschreibung") or "").strip()
     devices_in = body.get("devices") or []
     if not isinstance(devices_in, list):
-        return web.json_response({"ok": False, "reason": "devices muss eine Liste sein"}, status=400)
+        return web.json_response(
+            {"ok": False, "reason": "devices muss eine Liste sein"}, status=400
+        )
     devices = [str(d).strip() for d in devices_in if str(d).strip()]
 
     if not name:
@@ -817,7 +820,7 @@ async def ziele_delete(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
     raw_id = body.get("id")
-    if not isinstance(raw_id, (int, float)) or isinstance(raw_id, bool):
+    if not isinstance(raw_id, int | float) or isinstance(raw_id, bool):
         return web.json_response({"ok": False, "reason": "id erforderlich"}, status=400)
     ziel_id = int(raw_id)
     delete_ziel(db, ziel_id)

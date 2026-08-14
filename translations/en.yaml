@@ -183,9 +183,6 @@ configuration:
           refresh_alerts:
             name: Refresh alerts (minutes)
             description: Interval of the alert fetches.
-          llm_timeline:
-            name: AI timeline
-            description: Which timeline (15min, 1h or 1day) feeds into the AI context.
   sensoren:
     name: Sensor mapping
     description: Mapping of the measured quantities to Home Assistant entities.

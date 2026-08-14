@@ -49,6 +49,20 @@ blockiert die Anlage nie (Eiserne Regel 8).
   ("Wartedrossel statt Fehlerflut") — kein Request wird verworfen, nur verzögert.
 - `ProviderError`/`RateLimitError`-Exception-Hierarchie.
 
+Seit D-056 gibt es **drei** austauschbare Anbieter, alle als schlanke aiohttp-REST-Clients
+(kein SDK) hinter derselben Abstraktion. `main.py` baut per `resolve_active_provider()`
+genau den Anbieter, der in `provider` gewählt ist — und nur, wenn dessen `api_key` gesetzt ist:
+
+| Modul | Anbieter | Besonderheit |
+|---|---|---|
+| `gemini_provider.py` | Google Gemini | `responseSchema` + `generationConfig` (siehe unten) |
+| `claude_provider.py` | Anthropic Claude | Messages-API, `output_config.format`; **keine** Sampling-Parameter (`temperature`/`seed` werden nicht gesendet) |
+| `openai_provider.py` | OpenAI GPT | Chat-Completions, `response_format` (Strict-JSON-Schema); Retry ohne `temperature`/`seed` für Reasoning-Modelle wie `gpt-5` |
+
+`schema_convert.to_json_schema()` übersetzt das code-seitig gebaute **Gemini**-Antwortschema
+(`build_response_schema()`) in Standard-JSON-Schema für Claude/OpenAI — es gibt bewusst nur
+**eine** Schema-Quelle, die anderen beiden Formate sind davon abgeleitet.
+
 ## Gemini-Provider (`gemini_provider.py`)
 
 - Direkter REST-Client (kein SDK) gegen
@@ -66,9 +80,6 @@ blockiert die Anlage nie (Eiserne Regel 8).
   in `onecall_client.py`/`weather_client.py` auf — bei neuen HTTP-Clients dran denken.
 - Default-Modell: `gemini-2.5-flash` — siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#gemini-35-flash-hang)
   für die Begründung, `gemini-3.5-flash` **nicht** als Default zu verwenden.
-- `provider`-Config erlaubt Schema-seitig `gemini|openai`, aber es existiert **kein**
-  `openai_provider.py` — `main.py` baut bei `provider: openai` schlicht keinen
-  Provider (fällt auf die "KI-Provider nicht konfiguriert"-Warnung zurück).
 
 ## Determinismus-Absicherung (D-050)
 

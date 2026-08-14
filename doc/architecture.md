@@ -39,7 +39,9 @@ austauschbar; getrennte Repos/Logs/Versionierung.
 7. `HEMSClient` — nur falls `hems_base_url` gesetzt.
 8. `DeviceCollector`, `ForecastCollector` (PV).
 9. Wetter-Collector — `OneCallCollector` oder `WeatherCollector`, je nach `weather.source`.
-10. `GeminiProvider` — nur falls `api_key` gesetzt **und** `provider == "gemini"`.
+10. KI-Provider — `resolve_active_provider()` löst `provider` + das Untermenü
+    `providers.<name>` auf und baut genau einen von drei Clients (`GeminiProvider`/
+    `ClaudeProvider`/`OpenAIProvider`, D-056); ohne `api_key` bleibt die Planung deaktiviert.
 11. `Planner` — wird **immer** gebaut, auch ohne Provider (damit `/api/plan` Historie zeigen kann).
 12. `HEMSStatusCollector` — nur falls HEMS konfiguriert.
 13. `create_app(...)` — aiohttp-App inkl. aller `on_startup`/`on_cleanup`-Hooks.
@@ -73,8 +75,9 @@ PV-/Wetter-Sensoren ─┴─► Collector-Loop (alle collect_interval_s) ──
 
 **Wichtig:** Es gibt aktuell **keinen automatischen Planungs-Scheduler**. Ein Plan
 entsteht nur durch manuellen Aufruf von `POST /api/plan/run` (Button im Plan-Tab).
-`planning_interval_min`/`plan_update_interval_min` existieren in der Config, werden
-aber von keinem Code-Pfad genutzt. Details: [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#kein-automatischer-scheduler).
+`planning_interval_min` wird zwar gelesen, aber **nicht** als Takt: es bestimmt allein die
+Plan-Gültigkeitsdauer (`valid_until = now + planning_interval_min`, `planner.py`).
+`plan_update_interval_min` nutzt kein Code-Pfad. Details: [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#kein-automatischer-scheduler).
 
 ## Modulübersicht (`app/energy_pilot/*.py`)
 
@@ -97,6 +100,7 @@ aber von keinem Code-Pfad genutzt. Details: [known-gaps-and-pitfalls.md](known-g
 | `device_extras.py` | Persistenz + Anwendung konfigurierbarer Zusatz-Entitäten |
 | `device_prompts.py` | Persistenz der Pro-Gerät-KI-Beschreibung (`funktion`) |
 | `constraints.py` | Leitet harte Gerätegrenzen aus `ems_*`-Werten ab |
+| `control_mode.py` | HEMS-Modus-Achse: löst je Gerät die Steuerquelle `aus`/`user`/`ep` auf, Gate für den Original-Schreibweg (D-057) |
 | `objectives.py` | User-definierte Ziele (`ziele`-Tabelle, D-055) + Gewichtung aus der Klassifizierungs-Antwort |
 | `forecast.py` / `forecast_collector.py` | PV-Prognose-Modell + Sammlung/Summierung je Ausrichtung |
 | `weather.py` / `weather_client.py` / `weather_collector.py` / `onecall_client.py` / `onecall_budget.py` | OpenWeatherMap-Anbindung (zwei Quellen: `forecast3h`/`onecall`) |

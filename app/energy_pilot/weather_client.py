@@ -1,4 +1,4 @@
-"""OpenWeatherMap-Client für die „5 day / 3 hour forecast"-API (Doc 06, User-Vorgabe).
+"""OpenWeatherMap-Client für die „5 day / 3 hour forecast"-API (D-042, doc/configuration.md).
 
 Direkter REST-Aufruf via aiohttp (Muster wie `gemini_provider.py`/`hems_client.py`) –
 bewusst ohne SDK. Der API-Schlüssel steht ausschließlich in der Addon-Config und wird

@@ -17,20 +17,22 @@ Diese Datei ist die praktische Checkliste. Die verbindliche Quelle der Regeln is
 - Committen/pushen **nur** in Branch `claude/stage` — auch im separaten
   SkytechHEMS-Repo (D-022, umbenannt von `claude/main`, D-053). Nach **jeder**
   relevanten Änderung committen/pushen.
-- Release-Channels (D-053): `stage/dev`/`stage/beta`/`stage/stable`, je eigenes
+- Release-Channels (D-053): `stage-dev`/`stage-beta`/`stage-stable`, je eigenes
   `config.yaml` (Slug/Name-Suffix), in HA per Branch-URL einzeln einbindbar.
-  Promotion `claude/stage` → `stage/dev` → `stage/beta` → `stage/stable` nur
-  **manuell auf Zuruf**, kein Automatismus.
-- CI (`.github/workflows/ci.yaml`) läuft auf `claude/stage`, `stage/dev`,
-  `stage/beta`, `stage/stable`: Ruff-Lint + `pytest --cov --cov-fail-under=60`.
+  Promotion `claude/stage` → `stage-dev` → `stage-beta` → `stage-stable` nur
+  **manuell auf Zuruf**, kein Automatismus. (Der D-053-Text nennt die Kanäle mit
+  Schrägstrich; angelegt wurden sie mit Bindestrich — verbindlich sind die real
+  existierenden Branchnamen, denn auf sie zeigen die in HA eingetragenen Repo-URLs.)
+- CI (`.github/workflows/ci.yaml`) läuft auf `claude/stage`, `stage-dev`,
+  `stage-beta`, `stage-stable`: Ruff-Lint + `pytest --cov --cov-fail-under=60`.
 
 ## Versionierung (`config.yaml`)
 
 Bei **jeder** Änderung mit Auswirkung auf Darstellung, Information oder Funktion in
 Home Assistant: Patch-Nummer in `config.yaml` um eins erhöhen (`1.2.2` → `1.2.3`).
-**Achtung:** `app/energy_pilot/__init__.py: __version__` läuft aktuell aus dem Takt
-mit `config.yaml` — siehe [known-gaps-and-pitfalls.md](known-gaps-and-pitfalls.md#versions-drift-__init__py-vs-configyaml).
-Beide im Blick behalten.
+**Immer gemeinsam mit** `app/energy_pilot/__init__.py: __version__` — beide Werte müssen
+identisch bleiben (`GET /api/health` zeigt den `__init__.py`-Wert, der HA-Supervisor den aus
+`config.yaml`; eine Drift zwischen beiden erschwert jede Fehlersuche).
 
 ## Changelog
 

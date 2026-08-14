@@ -33,7 +33,7 @@ Update nicht verloren; nach dem Update sollte er ins Gemini-Untermenü eingetrag
 | `ai_temperature` | 0.0 | 0–2 | Determinismus (Gemini/OpenAI; Claude ignoriert Sampling-Params). siehe [planning-engine.md](planning-engine.md) |
 | `ai_seed` | 42 | frei | Determinismus |
 | `ai_repair_missing` | true | bool | Nachforder-Aufruf bei fehlenden Pflichtfeldern |
-| `planning_interval_min` | 60 | 15–60 | **Config existiert, wird nicht ausgewertet** (kein Scheduler) |
+| `planning_interval_min` | 60 | 15–60 | Gültigkeitsdauer eines Plans (`valid_until = now + Wert`). **Kein** Planungstakt — es gibt keinen Scheduler |
 | `plan_update_interval_min` | 15 | 5–60 | **Config existiert, wird nicht ausgewertet** |
 | `forecast_horizon_h` | 24 | 12–48 | Planungshorizont |
 | `min_confidence_percent` | 70 | 0–100 | **Config existiert, Validator-Stufe 6 nicht implementiert** |
@@ -105,4 +105,6 @@ Laufzeit über die UI geändert werden und Neustarts/Addon-Updates überleben m�
 ohne Git-Push:
 
 - **Planungs-Prompt** (`PLANNING_PROMPT_KEY`) — editierbar im Plan-Tab.
+- **Klassifizierungs-Prompt** (`CLASSIFICATION_PROMPT_KEY`, D-055) — ebenfalls im Plan-Tab
+  editierbar, steuert den vorgelagerten Ziel-Gewichtungs-Aufruf.
 - **OneCall-Tagesbudget-Zähler** (`onecall_budget.py`).

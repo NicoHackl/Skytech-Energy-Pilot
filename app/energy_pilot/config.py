@@ -51,7 +51,8 @@ DEFAULTS: dict[str, object] = {
     # False => reiner Beobachten-Modus: Plan bleibt in UI/DB, EP schreibt nichts nach HA.
     "publish_suggestions": True,
     # Basis-URL des HEMS-Addons für die Geräte-Discovery (D-036) UND die Status-Rückkopplung
-    # (M3). Leer => keine HEMS-Anbindung (nur Config-Fallback bei der Discovery).
+    # (M3). Leer => keine HEMS-Anbindung, damit auch keine Geräte: der frühere Geräte-Fallback
+    # aus der Addon-Config wurde ersatzlos entfernt ("EP ohne HEMS ist sinnlos", D-046).
     "hems_base_url": "",
     # HEMS-Status-Rückkopplung (M3): Intervall (s), in dem EP /api/status pollt, die
     # beobachtete Plan-Übereinstimmung ableitet und nach HA spiegelt (entkoppelt vom
@@ -81,6 +82,9 @@ DEFAULTS: dict[str, object] = {
         # One Call API 4.0: je Vorhersagemodell (15min/1h/1day) per Schalter aktivierbar mit
         # eigenem Refresh-Intervall. Jedes aktivierte Modell ist ein eigener bezahlter Call UND
         # fließt in den KI-Kontext (D-054) — beliebige Kombination wählbar, kein Einzel-Select.
+        # pages_*: paginierte Seiten je Modell und Abruf (mehr Horizont, je Seite ein eigener
+        # bezahlter Call). daily_call_budget: harte Tagesobergrenze ALLER bezahlten One-Call-
+        # Anfragen (UTC-Tag, D-045). enable_alerts/refresh_alerts: Unwetterwarnungen (nur Anzeige).
         "onecall": {
             "enable_15min": False,
             "enable_1h": True,
@@ -88,7 +92,25 @@ DEFAULTS: dict[str, object] = {
             "refresh_15min": 15,
             "refresh_1h": 60,
             "refresh_1day": 180,
+            "pages_15min": 1,
+            "pages_1h": 1,
+            "pages_1day": 1,
+            "daily_call_budget": 1000,
+            "enable_alerts": True,
+            "refresh_alerts": 30,
         },
+    },
+    # Zuordnung der 7 festen Mess-Rollen (roles.py) auf reale HA-Entity-IDs (D-027). Leer =>
+    # Rolle ohne Wert; Änderungen greifen erst nach einem Addon-Neustart (Mapping wird beim
+    # Boot geladen).
+    "sensoren": {
+        "entity_pv_power": "",
+        "entity_house_load": "",
+        "entity_grid_power": "",
+        "entity_grid_import": "",
+        "entity_grid_export": "",
+        "entity_battery_power": "",
+        "entity_battery_soc": "",
     },
 }
 

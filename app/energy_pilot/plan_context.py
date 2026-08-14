@@ -1,4 +1,4 @@
-"""Kontext-, Prompt- und Antwort-Schema-Aufbau für die KI-Planung (Doc 04/07).
+"""Kontext-, Prompt- und Antwort-Schema-Aufbau für die KI-Planung (doc/planning-engine.md).
 
 Hier wird der **Datenminimum**-Kontext für die KI zusammengestellt (Iron Rule 7):
 nur verdichtete, freigegebene Werte (Zustand, PV-Prognose, harte Grenzen, Ziele) –
@@ -82,7 +82,7 @@ def _offset_seconds(value: object) -> int:
     """OWM-`timezone_offset` (Sekunden ggü. UTC) defensiv als int; fehlend/ungültig → 0 (=UTC)."""
     if isinstance(value, bool):
         return 0
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return int(value)
     return 0
 
@@ -95,7 +95,7 @@ def _local_dt(dt_unix: int, offset_s: int) -> datetime:
 def _slot_dt(slot: dict) -> int | None:
     """Liest den Unix-UTC-Zeitstempel (`dt`) eines Slots defensiv; ungültig → None."""
     dt = slot.get("dt")
-    if isinstance(dt, bool) or not isinstance(dt, (int, float)):
+    if isinstance(dt, bool) or not isinstance(dt, int | float):
         return None
     return int(dt)
 

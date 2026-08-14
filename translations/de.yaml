@@ -183,9 +183,6 @@ configuration:
           refresh_alerts:
             name: Abrufintervall Warnungen (Minuten)
             description: Abstand der Warnungs-Abrufe.
-          llm_timeline:
-            name: KI-Timeline
-            description: Welche Timeline (15min, 1h oder 1day) in den KI-Kontext fließt.
   sensoren:
     name: Sensor-Zuordnung
     description: Zuordnung der Messgrößen zu Home-Assistant-Entitäten.

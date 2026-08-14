@@ -48,8 +48,8 @@ class HEMSClient:
         """Liefert das HEMS-Kontrollschema (Gruppen mit `ems_*`-Entitäten je Gerät).
 
         Format: `[{"label": ..., "items": [{"entity": ..., "label": ...}, ...]}, ...]`.
-        Wirft bei Nichterreichbarkeit/Fehlerstatus – der Aufrufer entscheidet über
-        den Config-Fallback.
+        Wirft bei Nichterreichbarkeit/Fehlerstatus – der Aufrufer behandelt das als
+        „keine Geräte" und startet den Discovery-Retry (D-046, kein Config-Fallback).
         """
         return await self._get_json("/api/device_controls_schema")
 

@@ -11,6 +11,9 @@ venv/
 .coverage
 htmlcov/
 
+# macOS
+.DS_Store
+
 # Lokale Daten
 *.db
 *.db-wal

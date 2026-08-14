@@ -44,7 +44,7 @@ Alle State liegt auf `app[...]`-Keys (Config/DB/Ring-Puffer/Clients/Collector/Pl
 **Wichtiges Muster:** `/api/plan/run`, `/api/plan/publish`, `/api/plan` fangen
 **alles** ab und geben **immer HTTP 200** mit `ok:false` bei Fehlern zurück — nie
 HTTP 500. Grund: eine HTML-Fehlerseite würde `response.json()` im Frontend brechen
-(ausführlich dokumentiert in `web/server.py`, Zeilen um 838–846). Beim Hinzufügen
+(ausführlich dokumentiert im Handler `plan_run` in `web/server.py`). Beim Hinzufügen
 neuer Endpunkte, die vom Frontend per `fetch` + `.json()` konsumiert werden, dieses
 Muster übernehmen.
 

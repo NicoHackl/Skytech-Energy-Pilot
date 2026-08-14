@@ -19,11 +19,11 @@ from energy_pilot.forecast import orientations_from_config
 from energy_pilot.forecast_collector import ForecastCollector
 from energy_pilot.gemini_provider import GeminiProvider
 from energy_pilot.ha_client import HAClient
-from energy_pilot.openai_provider import OpenAIProvider
 from energy_pilot.hems_client import HEMSClient
 from energy_pilot.hems_status_collector import HEMSStatusCollector
 from energy_pilot.logging_setup import log, setup_logging
 from energy_pilot.onecall_client import OneCallClient
+from energy_pilot.openai_provider import OpenAIProvider
 from energy_pilot.planner import Planner
 from energy_pilot.roles import MEASUREMENT_ROLES
 from energy_pilot.weather import SOURCE_ONECALL, weather_config_from_options
@@ -66,7 +66,8 @@ def build() -> web.Application:
     allowlist.register_all(collect_entity_ids(mapping=mapping))
     log(logger, "info", "Entitätszuordnung geladen", context={"rollen": sorted(mapping)})
 
-    # HEMS-Client für die Geräte-Discovery (D-036); leer => nur Config-Fallback.
+    # HEMS-Client für die Geräte-Discovery (D-036); ohne Basis-URL kennt EP keine Geräte —
+    # einen Config-Fallback gibt es bewusst nicht (D-046).
     hems_base_url = str(config.hems_base_url or "").strip()
     hems_client = HEMSClient(hems_base_url) if hems_base_url else None
     # Gerätewerte werden über denselben HA-Client gelesen (es sind HA-Helfer).
@@ -125,7 +126,8 @@ def build() -> web.Application:
 
     # KI-Provider (D-007/D-041/D-056): aktiver Anbieter + Verbindungs-Config aus den Optionen
     # auflösen (Radio-Selektor `provider` + Untermenü `providers.<name>`). Nur bei vorhandenem
-    # Schlüssel aktiv; ohne Schlüssel bleibt die Planung deaktiviert (EP blockiert nie, Iron Rule 8).
+    # Schlüssel aktiv; ohne Schlüssel bleibt die Planung deaktiviert (EP blockiert nie,
+    # Iron Rule 8).
     active = resolve_active_provider(config.values)
     provider = None
     if active.api_key:

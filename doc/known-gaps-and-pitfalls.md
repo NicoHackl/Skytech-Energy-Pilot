@@ -8,9 +8,10 @@ vertraut — Spec und Code laufen an mehreren Stellen auseinander. Bei jeder gr�
 
 ### Kein automatischer Scheduler
 
-`planning_interval_min`/`plan_update_interval_min` existieren in `config.yaml` und
-den Übersetzungen, aber **kein** Code-Pfad (`main.py`, `web/server.py`, `planner.py`)
-ruft `Planner.run()` je auf einem Timer auf. Ein Plan entsteht ausschließlich über
+**Kein** Code-Pfad (`main.py`, `web/server.py`, `planner.py`) ruft `Planner.run()` je auf
+einem Timer auf. `planning_interval_min` wird zwar gelesen, aber **nur** als
+Plan-Gültigkeitsdauer (`valid_until = now + planning_interval_min`, `planner.py`) — nicht als
+Takt; `plan_update_interval_min` wird nirgends gelesen. Ein Plan entsteht ausschließlich über
 den manuellen Button/Endpunkt `POST /api/plan/run`. Das widerspricht der in
 `CLAUDE.md` beschriebenen "EP plant alle 15–60 min" — wer einen Scheduler baut, muss
 zusätzlich das Event-basierte Nachplanungs-Konzept (E-Auto Stecker, Abfahrtszeit-
@@ -32,23 +33,19 @@ Daten-Frische, Delta-Limit zum Vorplan, Mindestkonfidenz-Gate — alle drei im
 Siehe [control-modes.md](control-modes.md) — beide Achsen existieren nur als Spec,
 kein Code wertet sie aus.
 
-### Versions-Drift `__init__.py` vs. `config.yaml`
+### Kein Auto-Export des Log-Bundles bei ERROR/CRITICAL
 
-`app/energy_pilot/__init__.py: __version__` und `config.yaml: version` sind
-**nicht synchron** — im Health-Endpoint (`GET /api/health`) zeigt sich der
-`__init__.py`-Wert, im HA-Supervisor der `config.yaml`-Wert. Vor dem nächsten
-Versions-Bump (Projektregel 2) beide Werte prüfen und ggf. in einem eigenen Schritt
-angleichen.
+D-014 fordert den automatischen Export eines KI-lesbaren Log-Bundles, sobald ein
+ERROR/CRITICAL auftritt. Implementiert ist nur der **manuelle** Weg: `GET /api/logs/export`
+(JSONL) bzw. der Button im Logs-Tab. `logging_setup.py` kennt keinen Trigger auf Log-Level.
 
-### Veraltete Übersetzung
+### Keine HEMS↔EP-Contract-Tests
 
-`translations/de.yaml` (und vermutlich `en.yaml`) dokumentiert noch ein Feld
-`weather.onecall.llm_timeline` ("Welche Timeline… in den KI-Kontext fließt"), das im
-aktuellen `config.yaml`-Schema **nicht mehr existiert** — seit die Logik auf "jedes
-aktivierte Modell fließt in den Kontext" umgestellt wurde (siehe
-[configuration.md](configuration.md#wetter-weather-gruppe)). Rein toter Text, keine
-funktionale Auswirkung (HA ignoriert unbekannte Übersetzungs-Keys), aber verwirrend
-für jeden, der die Übersetzungsdatei als Spec liest.
+D-015 verlangt, dass die CI mindestens das HEMS↔EP-Zusammenspiel testet. Vorhanden sind
+Unit-Tests gegen einen gemockten HTTP-Client (`test_hems_client.py`, `test_web_hems.py`),
+aber **keine** dedizierte Contract-Suite gegen ein Mock-HEMS, die das Antwortformat von
+`/api/device_controls_schema` und `/api/status` als Vertrag festschreibt. Wer die Discovery
+oder das Status-Parsing anfasst, hat also kein Netz gegen HEMS-seitige Formatänderungen.
 
 ## Historische Stolpersteine (aus dem alten Decision-Log)
 

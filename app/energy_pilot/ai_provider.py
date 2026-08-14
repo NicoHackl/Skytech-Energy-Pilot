@@ -37,7 +37,7 @@ class AsyncRateLimiter:
     """Drossel: max. `max_per_min` Aufrufe je rollierendem 60-s-Fenster.
 
     Bei Erreichen des Limits **wartet** der Aufruf, statt einen Fehler zu werfen
-    (Doc 04: „Wartedrossel statt Fehlerflut"). `acquire()` liefert die gewartete
+    (doc/planning-engine.md: „Wartedrossel statt Fehlerflut"). `acquire()` liefert die gewartete
     Zeit in Sekunden zurück (0.0, wenn kein Warten nötig war).
     """
 

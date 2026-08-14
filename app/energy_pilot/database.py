@@ -134,6 +134,10 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE device_extras ADD COLUMN write_original INTEGER NOT NULL DEFAULT 0;
         """,
     ),
+    # Lücke: Version 9 (`device_plan_state`, Anti-Flatter-Zustand aus dem Stabilitäts-Kern)
+    # wurde mit Commit e4d0706 zurückgebaut. Die Nummer bleibt bewusst unbesetzt — die Kette ist
+    # additiv, und Anlagen, die 9 bereits angewendet haben, stehen schon auf einer höheren
+    # Version. Eine Neuvergabe würde bei genau diesen Anlagen still übersprungen.
     (
         10,
         # User-definierte Ziele (D-055): ersetzen die statischen `objective_weights` aus der

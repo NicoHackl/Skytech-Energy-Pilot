@@ -9,6 +9,28 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 ## [Unreleased]
 
 ### Geändert
+- **Projekt gegen die eigenen Vorgaben abgeglichen (Konsistenzlauf, 0.0.58 → 0.0.59).**
+  Prüfung des gesamten Codes gegen `CLAUDE.md`, `doc/*` und das Decision-Log; alle gefundenen
+  Abweichungen bereinigt, **ohne** eine Funktion zu ändern oder zu entfernen. Der fachliche
+  Kern (Namensschema, Schreibvertrag, Discovery, Modus-Gate D-057, Validator-Stufen 1–3,
+  Multi-Provider D-056, Ziele/Klassifizierung D-055, API, UI-Tabs) stimmte bereits.
+  - **Versionsnummern angeglichen:** `app/energy_pilot/__init__.py` stand auf `0.0.33`,
+    `config.yaml` auf `0.0.58`. `GET /api/health` meldete dadurch eine andere Version als der
+    HA-Supervisor anzeigte. Beide stehen jetzt auf `0.0.59` und werden künftig gemeinsam erhöht.
+  - **Addon-Config vollständig in `config.py: DEFAULTS`:** die Gruppe `sensoren` sowie
+    `weather.onecall.pages_*`/`daily_call_budget`/`enable_alerts`/`refresh_alerts` fehlten dort
+    (in HA unkritisch, da der Supervisor die Optionen vollständig schreibt — beim Start ohne
+    `/data/options.json` aber nicht). `DEFAULTS` und `config.yaml` sind wieder 1:1 identisch.
+  - **Doku auf den echten Code-Stand:** `doc/planning-engine.md` behauptete, es gebe keinen
+    OpenAI-Provider (existiert seit D-056), `doc/architecture.md` kannte nur den Gemini-Boot-Pfad
+    und nicht `control_mode.py`, `doc/data-model.md` endete bei Migration v8 (real: v10 `ziele`,
+    v9 zurückgebaut). Ebenso korrigiert: `planning_interval_min` gilt als „ungenutzt", steuert
+    real aber die Plan-Gültigkeitsdauer — ungenutzt sind nur `plan_update_interval_min` und
+    `min_confidence_percent`.
+  - **Veraltete Verweise im Code** auf die 2026-07-10 gelöschte Doku (`08-…md`, „Doc 04/06/07")
+    durch die passenden `doc/`-Dateien ersetzt; Kommentare, die den mit D-046 entfernten
+    Geräte-Config-Fallback noch als existent beschrieben, richtiggestellt.
+
 - **Modus-Gate für „In Original schreiben" (D-057).** Ein KI-Vorschlag wird nur noch dann in
   die Original-Entität zurückgeschrieben, wenn die Modus-Achse für das Gerät die Steuerquelle
   `ep` ergibt. **Steht ein Gerät auf `manuell`, bleibt der vom User gepflegte Wert stehen** —
@@ -35,6 +57,17 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
     „Erneut schreiben"-Pfad (`POST /api/plan/publish`), nicht nur im automatischen Planlauf.
 
 ### Behoben
+- **CI lief auf keinem der drei Release-Kanäle.** `.github/workflows/ci.yaml` triggerte auf
+  `stage/dev`, `stage/beta`, `stage/stable` (Schreibweise aus dem D-053-Text), die Branches
+  heißen real aber `stage-dev`, `stage-beta`, `stage-stable`. Lint und Tests liefen dadurch
+  ausschließlich auf `claude/stage`. Workflow und Doku auf die realen Namen gezogen.
+- **Lint war rot.** `ruff check app` meldete 10 Verstöße (unsortierter Importblock in
+  `main.py`, vier veraltete `isinstance(x, (A, B))`-Schreibweisen, fünf zu lange Zeilen) — der
+  CI-Lint-Schritt wäre fehlgeschlagen. Alle behoben, Verhalten unverändert; 484 Tests grün.
+- **Toter Übersetzungsschlüssel entfernt.** `weather.onecall.llm_timeline` stand noch in
+  `translations/de.yaml` und `en.yaml`, obwohl das Feld im Config-Schema nicht mehr existiert
+  (seit „jedes aktivierte Modell fließt in den KI-Kontext"). `config.yaml`, `config.py` und
+  beide Übersetzungsdateien sind jetzt vollständig deckungsgleich.
 - **HEMS-Regelmodus `manuell` wurde in der EP-UI als roher Wert angezeigt.** Im HEMS-Tab stand
   `manuell` statt „Manuell", weil die Label-Tabelle die im HEMS ergänzte Option nie
   nachgezogen hatte.

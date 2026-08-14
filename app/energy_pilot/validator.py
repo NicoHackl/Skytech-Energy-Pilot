@@ -1,4 +1,4 @@
-"""Lokaler Plan-Validator: Sicherheits-Gate vor jeder Übergabe (08-validierung-sicherheit.md).
+"""Lokaler Plan-Validator: Sicherheits-Gate vor jeder Übergabe (doc/validation-safety.md).
 
 Sicherheit hat Vorrang vor Optimierung. Der Validator klemmt oder verwirft einen
 Kandidatenplan **lokal** gegen Schema + harte Grenzen — bevor irgendeine KI

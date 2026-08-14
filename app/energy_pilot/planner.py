@@ -1,4 +1,4 @@
-"""Planning-Engine: orchestriert die Erzeugung eines Kandidatenplans (Doc 07, D-041).
+"""Planning-Engine: erzeugt einen Kandidatenplan (doc/planning-engine.md, D-041).
 
 Ablauf: Snapshots holen → harte Grenzen + Ziele ableiten → verdichteten Kontext +
 Prompt + Antwort-Schema bauen → KI-Aufruf (Single-Shot) → Plan **montieren** (EP
