@@ -41,6 +41,7 @@ class GeminiProvider(AIProvider):
         temperature: float | None = 0.0,
         seed: int | None = None,
         thinking_budget: int | None = None,
+        thinking_level: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
@@ -51,8 +52,14 @@ class GeminiProvider(AIProvider):
         # weglassen (Provider-Default). Reines Sampling-Verhalten, keine harte Grenze.
         self.temperature = temperature
         self.seed = seed
-        # Denkbudget (D-063): 0 = Thinking aus, >0 = begrenzt, None = Anbieter-Default.
+        # Denkaufwand (D-063). Zwei Generationen, zwei Felder — beide gehören in
+        # `generationConfig.thinkingConfig`:
+        # - `thinkingBudget` (Zahl): Gemini-2.5-Reihe, 0 = Thinking aus.
+        # - `thinkingLevel` (`minimal`/`low`/`medium`/`high`): Gemini-3.x-Reihe.
+        # `thinking_level` hat Vorrang, weil ein 3.x-Modell ein Budget nicht auswertet. None bei
+        # beidem lässt den Anbieter-Default unangetastet.
         self.thinking_budget = thinking_budget
+        self.thinking_level = (thinking_level or "").strip() or None
         self.base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout_s)
         self._limiter = AsyncRateLimiter(rate_limit_per_min)
@@ -86,9 +93,10 @@ class GeminiProvider(AIProvider):
         if self.seed is not None:
             generation_config["seed"] = self.seed
         # Denkaufwand (D-063): bei Flash-Modellen ist Thinking standardmäßig aktiv und eine
-        # eigene Varianzquelle. `thinking_budget=0` schaltet es ab, ein positiver Wert begrenzt
-        # es; None lässt den Anbieter-Default unangetastet.
-        if self.thinking_budget is not None:
+        # eigene Varianzquelle. 3.x erwartet `thinkingLevel`, die 2.5-Reihe `thinkingBudget`.
+        if self.thinking_level is not None:
+            generation_config["thinkingConfig"] = {"thinkingLevel": self.thinking_level}
+        elif self.thinking_budget is not None:
             generation_config["thinkingConfig"] = {"thinkingBudget": self.thinking_budget}
         body: dict[str, object] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],

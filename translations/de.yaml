@@ -67,10 +67,18 @@ configuration:
     name: KI-Seed
     description: Fester Zufalls-Seed für den KI-Aufruf – verstärkt reproduzierbare, stabile Ausgaben über mehrere Läufe.
   ai_thinking_budget:
-    name: Denkbudget
+    name: Denkbudget (Gemini 2.5)
     description: >-
-      Nur Gemini. Bei Flash-Modellen ist internes "Denken" standardmäßig aktiv und eine eigene
-      Ursache schwankender Ergebnisse. 0 = aus (reproduzierbar), höhere Werte begrenzen es.
+      Nur die Gemini-2.5-Reihe. Bei Flash-Modellen ist internes "Denken" standardmäßig aktiv und
+      eine eigene Ursache schwankender Ergebnisse. 0 = aus (reproduzierbar), höhere Werte
+      begrenzen es. Für Gemini 3.x stattdessen die Denkstufe unten setzen.
+  ai_thinking_level:
+    name: Denkstufe (Gemini 3.x)
+    description: >-
+      Nur die Gemini-3.x-Reihe: minimal, low, medium oder high. Niedrigere Stufen liefern
+      reproduzierbarere Ergebnisse, höhere eine bessere Abwägung. Welche Stufen ein Modell
+      annimmt, ist modellabhängig. Leer lassen = Anbieter-Default. Hat Vorrang vor dem
+      Denkbudget.
   ai_repair_missing:
     name: Fehlende Felder nachfordern
     description: Lässt das Modell Pflicht-Vorschlagsfelder aus, werden genau diese einmalig nachgefordert, bevor der Validator sie deterministisch aus dem Ist-Zustand auffüllt.

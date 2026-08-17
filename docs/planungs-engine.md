@@ -86,9 +86,11 @@ genau den Anbieter, der in `provider` gewählt ist — und nur, wenn dessen `api
 - API-Key im **Header** `x-goog-api-key` (nie in der URL — landet dadurch nie in
   Proxy-/Zugriffs-Logs).
 - `generationConfig`: `responseMimeType: application/json`, `responseSchema`,
-  optional `temperature`/`seed` und `thinkingConfig.thinkingBudget` (`ai_thinking_budget`,
-  Default 0 = Thinking aus — bei Flash-Modellen ist es sonst aktiv und eine eigene
-  Varianzquelle, D-063).
+  optional `temperature`/`seed` und `thinkingConfig` (D-063). Zwei Generationen, zwei Felder:
+  die 2.5-Reihe erwartet `thinkingBudget` (Zahl, `ai_thinking_budget`, 0 = aus), die 3.x-Reihe
+  `thinkingLevel` (`ai_thinking_level`: `minimal`/`low`/`medium`/`high`). Ein Level hat Vorrang,
+  weil ein 3.x-Modell das Budget nicht auswertet. Bei Flash-Modellen ist Thinking sonst aktiv
+  und eine eigene Varianzquelle.
 - Instruktion als `systemInstruction` (D-062), Daten als `contents[role=user]`.
 - HTTP 429 → `RateLimitError`; andere ≥400 → `ProviderError` mit server-extrahierter
   Nachricht (`http_errors.read_error_body`).
@@ -143,7 +145,7 @@ Mindesthaltezeit, Delta-Limit) ist bewusst verworfen, siehe D-060.
 | Fehlender Sensor sah aus wie ein echter Wert | `veraltet: true` je Wert + `datenlage.frische_prozent`; der Prompt verlangt bei Unbekanntem die vorsichtige Variante |
 | Grenzen nur als Prosa | `minimum`/`maximum` im Antwortschema (Prio 10–100, Schutzleistung im technischen Band, Zusatzwert-Grenzen) |
 | Anweisung und Daten in einem Textkörper | System-Kanal je Anbieter (D-062) |
-| Interne Denk-Phase der Flash-Modelle | `ai_thinking_budget` (Default 0) |
+| Interne Denk-Phase der Flash-Modelle | `ai_thinking_budget` (2.5-Reihe) bzw. `ai_thinking_level` (3.x-Reihe) |
 | Lauf nicht reproduzierbar, zwei Läufe nicht vergleichbar | `plans.prompt`/`context_json`/`response_json`/`context_hash` |
 | Trend einer Temperatur unsichtbar | Warmwasser und Außentemperatur als **gemittelte** Mess-Rollen (D-061): steigende Speichertemperatur ohne Heizstableistung heißt „die Solarthermie lädt“ |
 

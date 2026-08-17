@@ -17,6 +17,9 @@ DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-5",
 }
 DEFAULT_TIMEOUT_S = 30
+# Denkstufen der Gemini-3.x-Reihe (`generationConfig.thinkingConfig.thinkingLevel`). Welche
+# Stufen ein Modell annimmt, ist modellabhängig — `gemini-3.7-flash` kennt z.B. kein `minimal`.
+THINKING_LEVELS = ("minimal", "low", "medium", "high")
 # Rate-Limit-Default je Anbieter (Gemini-Free ~10/min; Claude/OpenAI höher).
 DEFAULT_RATE_LIMITS: dict[str, int] = {"gemini": 10, "claude": 50, "openai": 60}
 
@@ -39,10 +42,13 @@ DEFAULTS: dict[str, object] = {
     # Geteilt über alle Anbieter (Gemini/OpenAI nutzen sie; Claude ignoriert Sampling-Params).
     "ai_temperature": 0.0,
     "ai_seed": 42,
-    # Denkbudget des Modells (D-063, derzeit nur Gemini): bei Flash-Modellen ist „Thinking"
-    # standardmäßig aktiv und eine eigene Varianzquelle. 0 = aus (reproduzierbar), >0 = begrenzt,
-    # leer/nicht gesetzt = Anbieter-Default unangetastet.
+    # Denkaufwand des Modells (D-063, derzeit nur Gemini): bei Flash-Modellen ist „Thinking"
+    # standardmäßig aktiv und eine eigene Varianzquelle. Zwei Generationen, zwei Felder:
+    # `ai_thinking_budget` (Zahl) gilt für die Gemini-2.5-Reihe (0 = aus), `ai_thinking_level`
+    # für die 3.x-Reihe (`minimal`/`low`/`medium`/`high`). Level hat Vorrang; beides leer lässt
+    # den Anbieter-Default unangetastet.
     "ai_thinking_budget": 0,
+    "ai_thinking_level": "",
     # Fehlende Pflicht-Vorschlagsfelder per gezieltem Nachforder-Aufruf ergänzen (ein Versuch),
     # bevor der Validator sie deterministisch auffüllt (D-050).
     "ai_repair_missing": True,
@@ -184,6 +190,7 @@ class ActiveProvider:
     temperature: float | None
     seed: int | None
     thinking_budget: int | None
+    thinking_level: str | None
 
 
 def _coerce_int(value: object, default: int) -> int:
@@ -247,6 +254,8 @@ def resolve_active_provider(values: dict) -> ActiveProvider:
     seed = _coerce_int(seed_raw, 0) if seed_raw is not None else None
     budget_raw = values.get("ai_thinking_budget")
     thinking_budget = max(0, _coerce_int(budget_raw, 0)) if budget_raw is not None else None
+    level_raw = str(values.get("ai_thinking_level") or "").strip().lower()
+    thinking_level = level_raw if level_raw in THINKING_LEVELS else None
 
     return ActiveProvider(
         name=name,
@@ -257,4 +266,5 @@ def resolve_active_provider(values: dict) -> ActiveProvider:
         temperature=temperature,
         seed=seed,
         thinking_budget=thinking_budget,
+        thinking_level=thinking_level,
     )

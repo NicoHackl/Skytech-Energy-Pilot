@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot (Dev)
-version: "0.0.61"
+version: "0.0.62"
 slug: skytech_energy_pilot_dev
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -45,6 +45,7 @@ options:
   ai_temperature: 0.0
   ai_seed: 42
   ai_thinking_budget: 0
+  ai_thinking_level: ""
   # Fehlende Pflicht-Vorschlagsfelder per gezieltem Nachforder-Aufruf ergänzen (ein Versuch),
   # bevor der Validator sie deterministisch aus dem Ist-Zustand auffüllt.
   ai_repair_missing: true
@@ -147,6 +148,7 @@ schema:
   ai_temperature: float(0,2)?
   ai_seed: int?
   ai_thinking_budget: int(0,32768)?
+  ai_thinking_level: list(|minimal|low|medium|high)?
   ai_repair_missing: bool?
   planning_interval_min: int(15,60)
   plan_update_interval_min: int(5,60)

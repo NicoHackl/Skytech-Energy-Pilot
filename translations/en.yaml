@@ -67,10 +67,17 @@ configuration:
     name: AI seed
     description: Fixed random seed for the AI call - reinforces reproducible, stable output across runs.
   ai_thinking_budget:
-    name: Thinking budget
+    name: Thinking budget (Gemini 2.5)
     description: >-
-      Gemini only. Flash models think internally by default, which is its own source of varying
-      results. 0 = off (reproducible), higher values cap it.
+      Gemini 2.5 series only. Flash models think internally by default, which is its own source
+      of varying results. 0 = off (reproducible), higher values cap it. For Gemini 3.x use the
+      thinking level below instead.
+  ai_thinking_level:
+    name: Thinking level (Gemini 3.x)
+    description: >-
+      Gemini 3.x series only: minimal, low, medium or high. Lower levels give more reproducible
+      results, higher ones better trade-offs. Which levels a model accepts is model-specific.
+      Leave empty for the provider default. Takes precedence over the thinking budget.
   ai_repair_missing:
     name: Re-request missing fields
     description: If the model omits required suggestion fields, request exactly those once more before the validator fills them deterministically from the current state.

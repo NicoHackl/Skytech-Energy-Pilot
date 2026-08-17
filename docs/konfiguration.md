@@ -32,7 +32,8 @@ Update nicht verloren; nach dem Update sollte er ins Gemini-Untermenü eingetrag
 | `providers.<name>.rate_limit_per_min` | gemini 10 / claude 50 / openai 60 | 1–1000 | Wartedrossel (Gemini-Free ~10/min) |
 | `ai_temperature` | 0.0 | 0–2 | Determinismus (Gemini/OpenAI; Claude ignoriert Sampling-Params). siehe [planungs-engine.md](planungs-engine.md) |
 | `ai_seed` | 42 | frei | Determinismus. Wirkt nur zusammen mit der Kontext-Quantisierung (D-063) — bei jedem Lauf anderer Prompt ⇒ Seed ohne Wirkung |
-| `ai_thinking_budget` | 0 | 0–32768 | **Nur Gemini** (D-063): `thinkingConfig.thinkingBudget`. 0 = Thinking aus (reproduzierbar), >0 begrenzt es, Wert entfernt ⇒ Anbieter-Default |
+| `ai_thinking_budget` | 0 | 0–32768 | **Nur Gemini-2.5-Reihe** (D-063): `thinkingConfig.thinkingBudget`. 0 = Thinking aus (reproduzierbar), >0 begrenzt es, Wert entfernt ⇒ Anbieter-Default |
+| `ai_thinking_level` | "" | `minimal`/`low`/`medium`/`high` | **Nur Gemini-3.x-Reihe** (D-063): `thinkingConfig.thinkingLevel`. Hat Vorrang vor dem Budget, weil 3.x das Budget nicht auswertet. Welche Stufen ein Modell annimmt, ist modellabhängig — leer lassen ⇒ Anbieter-Default |
 | `ai_repair_missing` | true | bool | Nachforder-Aufruf bei fehlenden Pflichtfeldern |
 | `planning_interval_min` | 60 | 15–60 | Gültigkeitsdauer eines Plans (`valid_until = now + Wert`). **Kein** Planungstakt — es gibt keinen Scheduler |
 | `plan_update_interval_min` | 15 | 5–60 | **Config existiert, wird nicht ausgewertet** |

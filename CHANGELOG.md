@@ -57,6 +57,12 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
   Variante zu wählen.
 
 ### Behoben
+- **Denkaufwand ließ sich bei Gemini 3.x nicht steuern (0.0.61 → 0.0.62).** `ai_thinking_budget`
+  sendet `thinkingConfig.thinkingBudget` — das ist das Feld der Gemini-2.5-Reihe. Die 3.x-Reihe
+  erwartet stattdessen `thinkingLevel` (`minimal`/`low`/`medium`/`high`), die Einstellung wäre
+  dort also wirkungslos geblieben. Neue Option **`ai_thinking_level`**; sie hat Vorrang vor dem
+  Budget. Relevant, weil auch die vollen Flash-Modelle im Gemini-Free-Tier liegen und damit als
+  Planungsmodell in Frage kommen, nicht nur die Lite-Varianten.
 - **Verworfene Determinismus-Parameter waren unsichtbar.** Reasoning-Modelle wie `gpt-5`
   lehnen feste `temperature`/`seed` ab; EP wiederholte den Aufruf still ohne sie. Wer
   Temperatur 0 einstellte, bekam den Anbieter-Default. Der Fall wird jetzt als Warnung

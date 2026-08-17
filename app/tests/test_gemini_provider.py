@@ -183,3 +183,27 @@ async def test_generate_omits_thinking_budget_when_unset():
     await provider.generate("hi", {"type": "OBJECT"})
 
     assert "thinkingConfig" not in session.calls[0]["json"]["generationConfig"]
+
+
+async def test_thinking_level_wins_over_budget_for_3x_models():
+    """D-063: die 3.x-Reihe steuert das Denken über `thinkingLevel`, nicht über ein Budget.
+
+    Beides gesetzt ⇒ Level gewinnt, denn ein 3.x-Modell wertet das Budget nicht aus.
+    """
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = GeminiProvider("k", thinking_budget=0, thinking_level="minimal", session=session)
+
+    await provider.generate("hi", {"type": "OBJECT"})
+
+    assert session.calls[0]["json"]["generationConfig"]["thinkingConfig"] == {
+        "thinkingLevel": "minimal"
+    }
+
+
+async def test_blank_thinking_level_falls_back_to_budget():
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = GeminiProvider("k", thinking_budget=0, thinking_level="  ", session=session)
+
+    await provider.generate("hi", {"type": "OBJECT"})
+
+    assert session.calls[0]["json"]["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}

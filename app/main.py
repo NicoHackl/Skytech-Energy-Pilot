@@ -158,6 +158,7 @@ def build() -> web.Application:
                 temperature=active.temperature,
                 seed=active.seed,
                 thinking_budget=active.thinking_budget,
+                thinking_level=active.thinking_level,
             )
         log(logger, "info", "KI-Provider aktiv", provider=active.name, model=active.model)
     else:

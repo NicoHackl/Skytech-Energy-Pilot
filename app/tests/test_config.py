@@ -85,3 +85,15 @@ def test_unknown_attribute_raises():
         pass
     else:  # pragma: no cover
         raise AssertionError("AttributeError erwartet")
+
+
+def test_thinking_level_is_normalized_and_validated(tmp_path):
+    """Nur die dokumentierten Denkstufen werden übernommen; alles andere fällt auf None."""
+    from energy_pilot.config import resolve_active_provider
+
+    base = {"provider": "gemini", "providers": {"gemini": {"api_key": "k"}}}
+    assert resolve_active_provider({**base, "ai_thinking_level": " MINIMAL "}).thinking_level == (
+        "minimal"
+    )
+    assert resolve_active_provider({**base, "ai_thinking_level": "quatsch"}).thinking_level is None
+    assert resolve_active_provider({**base, "ai_thinking_level": ""}).thinking_level is None
