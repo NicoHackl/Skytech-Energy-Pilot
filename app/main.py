@@ -157,6 +157,7 @@ def build() -> web.Application:
                 rate_limit_per_min=active.rate_limit_per_min,
                 temperature=active.temperature,
                 seed=active.seed,
+                thinking_budget=active.thinking_budget,
             )
         log(logger, "info", "KI-Provider aktiv", provider=active.name, model=active.model)
     else:

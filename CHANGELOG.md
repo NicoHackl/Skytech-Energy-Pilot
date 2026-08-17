@@ -8,6 +8,63 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Hinzugefügt
+- **Stabilere KI-Ergebnisse: Regeln, bessere Daten, echter Determinismus (D-060 – D-064, 0.0.60 → 0.0.61).**
+  Anlass waren widersprüchliche Vorschläge bei gleicher Sachlage — der Heizstab wurde bei
+  80 °C Warmwasser mal freigegeben, mal gesperrt; Heizlüfter mal mit „Heizunterstützung"
+  eingeschaltet, obwohl es über 25 °C warm wurde. Ursache war nicht Fantasie des Modells,
+  sondern lückenhafte Eingangsdaten und eine Absicht, die ihm nie präzise gesagt wurde.
+  - **Regeln je Gerät und hausweit** (Geräte-Tab bzw. „Grenzen & Ziele"): Freitext, in dem
+    du in eigenen Worten festlegst, wann ein Gerät laufen darf und wann nicht. Die Regeln
+    gehen als eigener Block in die Planung, und die KI **muss** ihre Entscheidung je Gerät
+    dagegen begründen — Begründung und angewandte Regeln stehen danach im Plan-Tab.
+  - **Warmwasser- und Außentemperatur als eigene Messgrößen** in der Addon-Konfiguration
+    (`sensoren.entity_hot_water_temp`, `sensoren.entity_outdoor_temp`). EP führt darauf die
+    1-/15-/60-Minuten-Mittel: steigt die Speichertemperatur, ohne dass der Heizstab Leistung
+    zieht, erkennt die KI daran, dass die Solarthermie gerade lädt — bisher konnte sie das
+    nicht wissen.
+  - **Rolle je Zusatzwert** (`Messwert` / `Grenze` / `Sollwert`). Am Heizstab stand als
+    Zusatzwert die Obergrenze 85 °C; ohne diese Kennzeichnung liest ein Modell sie als
+    aktuelle Temperatur — genau der Grund für den 80-°C-Vorschlag bei real 76,1 °C.
+  - **Wetter-Kennzahlen** (`temp_max_heute`, `temp_max_24h`, `temp_max_48h`, `pop_max_24h` …).
+    Die Slot-Reihen enden um 21 Uhr Ortszeit und überspringen den heutigen Tag; abends hatte
+    die KI damit keine Temperaturangabe für heute. Die Kennzahlen deckt jetzt beides ab.
+  - **Konfidenz mit Bedeutung:** vier definierte Teilnoten (Datenlage, Prognosesicherheit,
+    Regelklarheit, Zielkonflikt) statt einer erfundenen Gesamtzahl. EP rechnet daraus das
+    Minimum und deckelt die Datenlage-Note gegen die tatsächlich gemessene Datenlage. Erst
+    darauf greift `min_confidence_percent` (bisher unbenutzt): ein zu unsicherer Plan wird
+    gespeichert und angezeigt, aber **nicht** nach HA geschrieben.
+  - **Plan-Wiederverwendung:** ist die Sachlage identisch zum letzten Lauf, wird die KI nicht
+    erneut gefragt und der geltende Plan bleibt stehen. Mehrmals „Planen" drücken liefert
+    damit nicht mehr mehrmals etwas anderes.
+  - **Nachvollziehbarkeit:** Prompt, Kontext, Roh-Antwort und ein Fingerabdruck der Sachlage
+    werden je Lauf gespeichert. Vorher war ein Lauf nachträglich nicht reproduzierbar und
+    zwei Läufe nicht vergleichbar.
+  - **Neue Addon-Option `ai_thinking_budget`** (nur Gemini, Default 0 = aus): das interne
+    „Denken" der Flash-Modelle ist eine eigene Ursache schwankender Ergebnisse.
+
+### Geändert
+- **Instruktion und Daten in getrennten Kanälen** (D-062): Rolle, Regeln und Antwortvertrag
+  gehen in den System-Kanal des Anbieters, die Daten als eigene Nachricht. Vorher lag beides
+  in einem Textkörper. Die harten Grenzen reisen zusätzlich als `minimum`/`maximum` im
+  Antwortschema mit, statt nur als Prosa im Prompt zu stehen.
+- **Zeitfenster und Zahlen im Kontext werden gerundet** (D-063, 15-Minuten-Raster; Leistung
+  10 W, Prozent 1, Temperatur 0,5 °C). Ohne das war der Prompt bei jedem Lauf ein anderer
+  String — ein fester `seed` konnte also nie etwas reproduzieren.
+- **Veraltete Werte sind als solche erkennbar:** ein nicht gelesener Sensor erscheint im
+  Kontext mit `veraltet` statt stumm als `null`, und `datenlage.frische_prozent` nennt den
+  belegten Anteil. Der Prompt weist die KI an, bei unbekannten Werten die vorsichtige
+  Variante zu wählen.
+
+### Behoben
+- **Verworfene Determinismus-Parameter waren unsichtbar.** Reasoning-Modelle wie `gpt-5`
+  lehnen feste `temperature`/`seed` ab; EP wiederholte den Aufruf still ohne sie. Wer
+  Temperatur 0 einstellte, bekam den Anbieter-Default. Der Fall wird jetzt als Warnung
+  geloggt, in `ai_calls` vermerkt und im Plan-Tab angezeigt.
+- **Der Erkennungstext dieses Fallbacks war zu weit gefasst:** ein bloßes „unsupported" im
+  Fehlertext löste einen sinnlosen Wiederholungsversuch aus und verschleierte den echten
+  Grund. Jetzt muss der Parameter namentlich genannt sein.
+
 ### Geändert
 - **Oberfläche komplett neu gebaut: React 18 + TypeScript + Vite (D-059, 0.0.59 → 0.0.60).**
   Die bisherige Preact-/htm-SPA ist abgelöst. **Alle neun Bereiche und ihr voller

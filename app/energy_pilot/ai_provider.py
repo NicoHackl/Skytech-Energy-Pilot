@@ -26,12 +26,18 @@ class RateLimitError(ProviderError):
 
 @dataclass
 class ProviderResponse:
-    """Ergebnis eines KI-Aufrufs: geparstes JSON + Token-/Rohdaten."""
+    """Ergebnis eines KI-Aufrufs: geparstes JSON + Token-/Rohdaten.
+
+    `sampling_dropped` meldet, dass der Anbieter `temperature`/`seed` **nicht** angenommen hat
+    und der Aufruf ohne sie wiederholt wurde (D-063). Vorher verschwand dieser Fall stumm: der
+    User stellte Temperatur 0 ein und bekam den Anbieter-Default.
+    """
 
     data: dict
     tokens_in: int | None = None
     tokens_out: int | None = None
     raw: dict = field(default_factory=dict)
+    sampling_dropped: bool = False
 
 
 class AsyncRateLimiter:
@@ -75,8 +81,15 @@ class AIProvider(ABC):
     model: str = ""
 
     @abstractmethod
-    async def generate(self, prompt: str, response_schema: dict) -> ProviderResponse:
-        """Fordert strukturiertes JSON (gemäß `response_schema`) zum Prompt an."""
+    async def generate(
+        self, prompt: str, response_schema: dict, *, system: str | None = None
+    ) -> ProviderResponse:
+        """Fordert strukturiertes JSON (gemäß `response_schema`) zum Prompt an.
+
+        `system` ist die Instruktion (Rolle, Regeln, Antwortvertrag) und geht in den
+        anbietereigenen System-Kanal, `prompt` sind die Daten (D-062). Ohne `system` verhält
+        sich der Aufruf wie zuvor: alles in einer User-Nachricht.
+        """
 
     async def close(self) -> None:
         """Schließt offene Ressourcen (Default: nichts zu tun)."""

@@ -5,7 +5,7 @@ import pytest
 from energy_pilot.aggregation import RollingAggregator
 from energy_pilot.collector import StateCollector
 from energy_pilot.entity_map import EntityMapping
-from energy_pilot.roles import MEASUREMENT_ROLES, Role
+from energy_pilot.roles import MEASUREMENT_ROLES, ROLES_BY_KEY, Role
 
 PV = Role("pv_power", "PV-Leistung", averaged=True, unit="W")
 SOC = Role("battery_soc", "Batterie-SOC", averaged=False, unit="%")
@@ -82,3 +82,32 @@ def test_snapshot_covers_all_roles_without_data():
     collector = _collector(None, MEASUREMENT_ROLES)
     snap = collector.snapshot(now=1.0)
     assert set(snap) == {role.key for role in MEASUREMENT_ROLES}
+
+
+@pytest.mark.asyncio
+async def test_temperature_roles_are_averaged_so_the_trend_is_visible():
+    """D-061: Warmwasser- und Außentemperatur laufen als gemittelte Rollen.
+
+    Nicht der Absolutwert trägt die Information, sondern der Verlauf: eine steigende
+    Speichertemperatur ohne Heizstableistung heißt „eine andere Wärmequelle lädt".
+    """
+    ww = ROLES_BY_KEY["hot_water_temp"]
+    assert ww.averaged is True and ww.unit == "°C"
+    assert ROLES_BY_KEY["outdoor_temp"].averaged is True
+
+    ha = _FakeHAClient({"sensor.ww": "70.0"})
+    collector = _collector(ha, (ww,))
+    collector.set_mapping({"hot_water_temp": EntityMapping("hot_water_temp", "sensor.ww")})
+    await collector.collect_once(now=0.0)
+    ha._states["sensor.ww"] = "76.0"
+    await collector.collect_once(now=1800.0)
+
+    snap = collector.snapshot(now=1800.0)["hot_water_temp"]
+    assert snap["latest"] == 76.0
+    # Der 60-min-Mittelwert liegt unter dem Letztwert => der Speicher wird gerade wärmer.
+    assert snap["mean_60m"] < snap["latest"]
+
+
+def test_measurement_roles_include_both_temperatures():
+    keys = {role.key for role in MEASUREMENT_ROLES}
+    assert {"hot_water_temp", "outdoor_temp"} <= keys

@@ -9,6 +9,7 @@ zwingt strukturiertes JSON. Die fachliche Grenzprüfung macht danach `validator.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from datetime import UTC, datetime, timedelta, timezone
@@ -16,8 +17,16 @@ from datetime import UTC, datetime, timedelta, timezone
 from energy_pilot.constraints import DeviceConstraint
 from energy_pilot.devices import BINARY
 from energy_pilot.objectives import Objective, Ziel
-from energy_pilot.plan_schema import suggestion_keys
+from energy_pilot.plan_schema import (
+    CONFIDENCE_PARTS,
+    EXPLANATION_FIELDS,
+    suggestion_keys,
+)
 from energy_pilot.weather import ONECALL_TIMELINES
+
+# Grenzen der Prio-Rangfolge im Antwort-Schema (der Validator normalisiert unabhängig davon).
+_PRIO_MIN = 10
+_PRIO_MAX = 100
 
 # Zusatz-Entität-Typ (D-048) -> Gemini-Antwort-Schema-Typ (OpenAPI-Subset, Großschreibung).
 _KIND_TO_GEMINI: dict[str, str] = {
@@ -27,35 +36,132 @@ _KIND_TO_GEMINI: dict[str, str] = {
     "text": "STRING",
 }
 
+# --- Quantisierung (D-063) -------------------------------------------------------------------
+# Rohe Messwerte zappeln in jedem Poll-Zyklus in der letzten Stelle. Damit ist der Prompt bei
+# gleicher Sachlage nie derselbe String, und ein fixer `seed` kann per Definition nichts
+# reproduzieren. Deshalb wird jeder Zahlenwert im Kontext auf eine fachlich sinnvolle Stufe
+# gerundet — Eingangshygiene, keine inhaltliche Änderung: 5 W Unterschied verändert keinen Plan.
+_STEP_BY_UNIT: dict[str, float] = {
+    "W": 10.0,
+    "kWh": 0.1,
+    "%": 1.0,
+    "°C": 0.5,
+    "A": 0.5,
+}
+# Stufen der Wetterfelder (Einheit steckt nicht im Slot, daher je Feldname).
+_STEP_WEATHER: dict[str, float] = {
+    "temp": 0.5,
+    "temp_min": 0.5,
+    "temp_max": 0.5,
+    "clouds": 5.0,
+    "pop": 0.05,
+    "feels_like": 0.5,
+    "wind_speed": 0.5,
+    "humidity": 5.0,
+    "rain_3h": 0.1,
+    "snow_3h": 0.1,
+}
+# Fallback-Stufe für Zahlen ohne bekannte Einheit (eine Dezimalstelle).
+_STEP_DEFAULT = 0.1
+
+
+def quantize(value: object, step: float) -> object:
+    """Rundet eine Zahl auf ein Vielfaches von `step`; alles andere bleibt unberührt.
+
+    Bools sind in Python Zahlen und dürfen hier **nicht** zu 0.0/1.0 werden.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return value
+    if step <= 0:
+        return value
+    stepped = round(float(value) / step) * step
+    # Auf die Stellenzahl der Stufe runden, sonst entstehen 74.30000000000001-Artefakte.
+    digits = max(0, -math.floor(math.log10(step))) if step < 1 else 0
+    return round(stepped, digits)
+
+
+def _q_unit(value: object, unit: object) -> object:
+    """Quantisiert anhand der Einheit einer Mess-Rolle bzw. eines Zusatzwerts."""
+    return quantize(value, _STEP_BY_UNIT.get(str(unit or "").strip(), _STEP_DEFAULT))
+
+
+def _q_weather(field: str, value: object) -> object:
+    """Quantisiert ein Wetter-Slot-Feld anhand seines Namens."""
+    return quantize(value, _STEP_WEATHER.get(field, _STEP_DEFAULT))
+
 
 def _condense_state(state: dict) -> list[dict]:
-    """Verdichtet den State-Snapshot je Rolle auf das Nötigste (Werte + Mittel)."""
+    """Verdichtet den State-Snapshot je Rolle (Werte + Mittel, quantisiert, mit Frische).
+
+    Neu gegenüber D-001: jede Rolle trägt `veraltet` (D-064). Der Collector kennt je Rolle die
+    Quelle (`live` = gültig gelesen, `none` = fehlend/unlesbar); dieses Signal wurde früher
+    verworfen, sodass ein ausgefallener Sensor im Kontext von einem echten Wert nicht zu
+    unterscheiden war. Zahlen sind quantisiert (D-063).
+    """
     out: list[dict] = []
     for role, info in state.items():
+        unit = info.get("unit")
         entry: dict[str, object] = {
             "role": role,
             "label": info.get("label"),
-            "unit": info.get("unit"),
+            "unit": unit,
         }
-        if "value" in info:  # Zustandsgrößen: nur Letztwert (SOC, Temperatur …)
-            entry["value"] = info.get("value")
+        if "value" in info:  # Zustandsgrößen: nur Letztwert (SOC …)
+            entry["value"] = _q_unit(info.get("value"), unit)
+            has_value = info.get("value") is not None
         else:  # Messgrößen: Letztwert + 1/15/60-min-Mittel (nur vorhandene)
-            entry["latest"] = info.get("latest")
+            entry["latest"] = _q_unit(info.get("latest"), unit)
             for key in ("mean_1m", "mean_15m", "mean_60m"):
                 if info.get(key) is not None:
-                    entry[key] = info[key]
+                    entry[key] = _q_unit(info[key], unit)
+            has_value = info.get("latest") is not None
+        if info.get("source", "live") != "live" or not has_value:
+            entry["veraltet"] = True
         out.append(entry)
     return out
+
+
+def _data_quality(state_entries: list[dict], devices: list[dict]) -> dict:
+    """Zählt, wie viel des Kontexts tatsächlich mit frischen Werten belegt ist (D-064).
+
+    Grundlage der EP-eigenen `datenlage`-Note: Anteil der erwarteten Werte, die frisch und nicht
+    `null` sind. Bewertet werden die Mess-Rollen und die Zusatzwerte je Gerät — genau die Größen,
+    auf die sich die Regeln des Users stützen. Die Zahl steht auch im Kontext, damit die KI ihre
+    eigene Note nicht besser einschätzt als die Datenlage sie zulässt.
+    """
+    total = 0
+    fresh = 0
+    missing: list[str] = []
+    for entry in state_entries:
+        total += 1
+        if entry.get("veraltet"):
+            missing.append(str(entry.get("role")))
+        else:
+            fresh += 1
+    for device in devices:
+        for extra in device.get("zusatzwerte") or []:
+            total += 1
+            if extra.get("wert") is None:
+                missing.append(f"{device.get('name')}.{extra.get('entity')}")
+            else:
+                fresh += 1
+    prozent = 100 if total == 0 else round(fresh * 100 / total)
+    return {"frische_prozent": prozent, "fehlende_werte": missing}
 
 
 def _condense_forecast(forecast: dict) -> dict:
     """Reduziert die PV-Prognose auf die summierten Werte (keine Einzel-Ausrichtungen)."""
     if not forecast:
         return {}
+    unit = forecast.get("unit")
     return {
-        "unit": forecast.get("unit"),
+        "unit": unit,
         "values": [
-            {"key": v.get("key"), "label": v.get("label"), "total": v.get("total")}
+            {
+                "key": v.get("key"),
+                "label": v.get("label"),
+                "total": _q_unit(v.get("total"), unit),
+            }
             for v in forecast.get("values", [])
         ],
     }
@@ -123,9 +229,9 @@ def _hourly_window_slots(slots: list, *, offset_s: int, now: datetime) -> list[d
         if window_start <= local <= window_end:
             out.append({
                 "time": local.strftime("%Y-%m-%d %H:%M"),
-                "temp": s.get("temp"),
-                "clouds": s.get("clouds"),
-                "pop": s.get("pop"),
+                "temp": _q_weather("temp", s.get("temp")),
+                "clouds": _q_weather("clouds", s.get("clouds")),
+                "pop": _q_weather("pop", s.get("pop")),
             })
     return out
 
@@ -148,14 +254,176 @@ def _daily_next_days_slots(slots: list, *, offset_s: int, now: datetime) -> list
             continue
         out.append({
             "time": local.strftime("%Y-%m-%d"),
-            "temp": s.get("temp"),
-            "temp_min": s.get("temp_min"),
-            "temp_max": s.get("temp_max"),
-            "clouds": s.get("clouds"),
-            "pop": s.get("pop"),
+            "temp": _q_weather("temp", s.get("temp")),
+            "temp_min": _q_weather("temp_min", s.get("temp_min")),
+            "temp_max": _q_weather("temp_max", s.get("temp_max")),
+            "clouds": _q_weather("clouds", s.get("clouds")),
+            "pop": _q_weather("pop", s.get("pop")),
         })
         if len(out) >= DAILY_FORECAST_DAYS:
             break
+    return out
+
+
+def _timeline_offset(weather: dict) -> int:
+    """Zeitzonen-Offset der Wetter-Zone aus der ersten Timeline, die einen mitbringt."""
+    timelines = weather.get("timelines") or {}
+    for res in ONECALL_TIMELINES:
+        tl = timelines.get(res) or {}
+        if tl.get("slots"):
+            return _offset_seconds(tl.get("timezone_offset_s"))
+    return 0
+
+
+def _intraday_slots(weather: dict, offset_s: int) -> list[tuple[datetime, dict]]:
+    """Alle feinauflösenden Slots (15min bevorzugt, sonst 1h) als (Ortszeit, Slot)."""
+    timelines = weather.get("timelines") or {}
+    for res in _INTRADAY_TIMELINES:  # fein -> grob
+        tl = timelines.get(res) or {}
+        raw = tl.get("slots") or []
+        if not raw:
+            continue
+        out: list[tuple[datetime, dict]] = []
+        for s in raw:
+            dt = _slot_dt(s)
+            if dt is not None:
+                out.append((_local_dt(dt, offset_s), s))
+        if out:
+            return out
+    return []
+
+
+def _daily_slots(weather: dict, offset_s: int) -> list[tuple[datetime, dict]]:
+    """Alle Tages-Slots als (Ortszeit, Slot) — **einschließlich heute** (anders als der Auszug)."""
+    tl = (weather.get("timelines") or {}).get("1day") or {}
+    out: list[tuple[datetime, dict]] = []
+    for s in tl.get("slots") or []:
+        dt = _slot_dt(s)
+        if dt is not None:
+            out.append((_local_dt(dt, offset_s), s))
+    return out
+
+
+def _num(value: object) -> float | None:
+    """Nimmt nur echte Zahlen (kein Bool) als float; alles andere -> None."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+def _max_over(
+    intraday: list[tuple[datetime, dict]],
+    daily: list[tuple[datetime, dict]],
+    *,
+    start: datetime,
+    end: datetime,
+    intraday_field: str,
+    daily_field: str,
+) -> float | None:
+    """Maximum eines Felds über ein Zeitfenster, aus Intraday- **und** Tagesreihe.
+
+    Beide Quellen zusammen, weil keine allein das Fenster deckt: die Intraday-Reihe endet nach
+    rund 24–48 h und beginnt erst zur laufenden Stunde, die Tagesreihe hat keine Auflösung
+    innerhalb des Tages. Fehlt eine Quelle, trägt die andere.
+    """
+    values: list[float] = []
+    for local, slot in intraday:
+        if start <= local <= end:
+            v = _num(slot.get(intraday_field))
+            if v is not None:
+                values.append(v)
+    for local, slot in daily:
+        # Ein Tages-Slot zählt, wenn sein Kalendertag das Fenster überhaupt berührt.
+        day_start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        if day_end > start and day_start <= end:
+            v = _num(slot.get(daily_field))
+            if v is not None:
+                values.append(v)
+    return max(values) if values else None
+
+
+def weather_metrics(weather: dict, *, now: datetime | None = None) -> dict:
+    """Verdichtete Wetter-Kennzahlen für die KI (D-062) — immer vorhanden, auch abends.
+
+    Der Slot-Auszug für die KI ist bewusst schmal: die Intraday-Reihe endet um 21 Uhr Ortszeit
+    (danach ist sie leer) und die Tagesreihe überspringt heute. Damit fehlte der KI abends jede
+    Temperaturangabe für heute — und ein Tagesmaximum musste sie sich ohnehin selbst aus Rohslots
+    ableiten. Diese Kennzahlen liefern die Größen, in denen der User denkt („die nächsten Tage
+    wird es heiß"), deterministisch aus denselben Rohdaten. Leer, wenn keine Prognose vorliegt.
+    """
+    if not weather or weather.get("source") != "onecall":
+        return {}
+    if now is None:
+        now = datetime.now(UTC)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+
+    offset_s = _timeline_offset(weather)
+    tz = timezone(timedelta(seconds=offset_s))
+    now_local = now.astimezone(tz)
+    intraday = _intraday_slots(weather, offset_s)
+    daily = _daily_slots(weather, offset_s)
+    if not intraday and not daily:
+        return {}
+
+    today = now_local.date()
+    day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1) - timedelta(seconds=1)
+    today_daily = [(local, s) for local, s in daily if local.date() == today]
+    today_intraday = [(local, s) for local, s in intraday if local.date() == today]
+
+    out: dict[str, object] = {}
+
+    # Temperatur „jetzt": der zeitlich nächste Intraday-Slot (die *gemessene* Außentemperatur
+    # kommt separat als Mess-Rolle, D-061 — hier steht der Prognosewert).
+    if intraday:
+        nearest = min(intraday, key=lambda item: abs((item[0] - now_local).total_seconds()))
+        out["temp_jetzt"] = _q_weather("temp", nearest[1].get("temp"))
+
+    # Heutiges Min/Max: bevorzugt aus dem Tages-Slot von heute (deckt den ganzen Tag ab),
+    # sonst aus den verbleibenden Intraday-Slots des Tages.
+    if today_daily:
+        slot = today_daily[0][1]
+        out["temp_max_heute"] = _q_weather("temp_max", slot.get("temp_max"))
+        out["temp_min_heute"] = _q_weather("temp_min", slot.get("temp_min"))
+    elif today_intraday:
+        temps = [t for t in (_num(s.get("temp")) for _, s in today_intraday) if t is not None]
+        if temps:
+            out["temp_max_heute"] = _q_weather("temp_max", max(temps))
+            out["temp_min_heute"] = _q_weather("temp_min", min(temps))
+
+    for hours, key in ((24, "temp_max_24h"), (48, "temp_max_48h")):
+        value = _max_over(
+            intraday, daily,
+            start=now_local, end=now_local + timedelta(hours=hours),
+            intraday_field="temp", daily_field="temp_max",
+        )
+        if value is not None:
+            out[key] = _q_weather("temp_max", value)
+
+    pop = _max_over(
+        intraday, daily,
+        start=now_local, end=now_local + timedelta(hours=24),
+        intraday_field="pop", daily_field="pop",
+    )
+    if pop is not None:
+        out["pop_max_24h"] = _q_weather("pop", pop)
+
+    clouds = [
+        c for c in (_num(s.get("clouds")) for _, s in today_intraday or today_daily)
+        if c is not None
+    ]
+    if clouds:
+        out["wolken_mittel_heute"] = _q_weather("clouds", sum(clouds) / len(clouds))
+
+    if out:
+        out["hinweis"] = (
+            "Verdichtete Kennzahlen aus derselben Prognose wie `models`, aber über den ganzen "
+            "Tag und unabhängig vom Slot-Fenster. Für Aussagen über Tageshöchst- oder "
+            "Tagestiefstwerte sind diese Werte maßgeblich, nicht die Slot-Reihen."
+        )
+        out["fenster_heute"] = f"{day_start:%d.%m.%Y %H:%M} bis {day_end:%d.%m.%Y %H:%M}"
     return out
 
 
@@ -188,9 +456,17 @@ def _condense_onecall(weather: dict, *, now: datetime) -> dict:
             "zeitraum": zeitraum,
             "slots": slots,
         }
-    if not models:
+    # Kennzahlen (D-062) stehen unabhängig von den Slot-Auszügen zur Verfügung — genau deshalb
+    # existieren sie: abends ist die Stundenreihe leer, die Kennzahlen sind es nicht.
+    kennzahlen = weather_metrics(weather, now=now)
+    if not models and not kennzahlen:
         return {}
-    return {"source": "onecall", "units": weather.get("units"), "models": models}
+    out: dict[str, object] = {"source": "onecall", "units": weather.get("units")}
+    if models:
+        out["models"] = models
+    if kennzahlen:
+        out["kennzahlen"] = kennzahlen
+    return out
 
 
 def _condense_weather(
@@ -218,18 +494,14 @@ def _condense_weather(
         return {}
     slots = forecast.get("slots") or []
 
+    _fields_full = (
+        "temp", "feels_like", "clouds", "pop", "wind_speed", "humidity", "rain_3h", "snow_3h",
+    )
     if detail == "full":
         out_slots = [
             {
                 "time": s.get("time"),
-                "temp": s.get("temp"),
-                "feels_like": s.get("feels_like"),
-                "clouds": s.get("clouds"),
-                "pop": s.get("pop"),
-                "wind_speed": s.get("wind_speed"),
-                "humidity": s.get("humidity"),
-                "rain_3h": s.get("rain_3h"),
-                "snow_3h": s.get("snow_3h"),
+                **{f: _q_weather(f, s.get(f)) for f in _fields_full},
                 "condition": s.get("condition"),
             }
             for s in slots
@@ -239,9 +511,9 @@ def _condense_weather(
         out_slots = [
             {
                 "time": s.get("time"),
-                "temp": s.get("temp"),
-                "clouds": s.get("clouds"),
-                "pop": s.get("pop"),
+                "temp": _q_weather("temp", s.get("temp")),
+                "clouds": _q_weather("clouds", s.get("clouds")),
+                "pop": _q_weather("pop", s.get("pop")),
             }
             for s in slots[:max_steps]
         ]
@@ -272,12 +544,18 @@ def _condense_extra(ce) -> dict:
         "entity": ex.read_entity_id,
         "label": ex.display_label,
         "typ": ce.kind,
-        "wert": ce.value,
+        # D-061: `rolle` sagt, WAS der Wert ist. Ohne sie liest ein Modell einen Sollwert wie
+        # „Max. Wassertemperatur 85 °C" als Ist-Temperatur und plant daran vorbei.
+        "rolle": ex.rolle,
+        "rolle_bedeutung": ex.rolle_text,
+        "wert": _q_unit(ce.value, ex.unit) if ce.kind == "number" else ce.value,
         "einheit": ex.unit or None,
         "hinweis": ex.ai_hint or None,
         "suggest": ex.ai_suggestion,
         "vorschlagsfeld": ex.plan_field if ex.ai_suggestion else None,
     }
+    if ce.value is None:
+        item["veraltet"] = True  # D-064: nicht gelesen -> für Entscheidungen unbrauchbar
     # input_number: min/max als Ober-/Untergrenze für die KI (D-048).
     if ce.kind == "number" and (ce.min is not None or ce.max is not None):
         item["untergrenze"] = ce.min
@@ -306,6 +584,11 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
     # (eiserne Regel 12).
     if constraint.ai_prompt:
         entry["funktion"] = constraint.ai_prompt
+    # User-gepflegte Betriebsregeln (D-060): die Vorgabe, gegen die die KI ihre Entscheidung für
+    # dieses Gerät begründen muss (`angewandte_regeln`). Getrennt von `funktion`, weil das eine
+    # Hintergrundwissen ist und das andere der Wille des Users.
+    if constraint.ai_regeln:
+        entry["regeln"] = constraint.ai_regeln
     if constraint.is_battery:
         entry["max_ladeleistung_w"] = constraint.max_power
         entry["hinweis"] = "immer Prio 1, immer freigegeben (D-016)"
@@ -364,31 +647,75 @@ def build_context(
     weather_detail: str = "compact",
     now: datetime | None = None,
     previous_plan: dict | None = None,
+    global_regeln: str = "",
 ) -> dict:
     """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, eiserne Regel 12).
 
-    `now` (UTC) steuert das stündliche Wetter-Tagesfenster der One-Call-Quelle; ohne Angabe
-    gilt die aktuelle Zeit. `previous_plan` (Ausgabe von `Planner.latest_plan()`) wird als
-    verdichteter Anker `previous_plan` eingehängt (A1 – Stabilität über Aufrufe); fehlt er,
-    entfällt der Schlüssel.
+    `now` (UTC) steuert das stündliche Wetter-Tagesfenster der One-Call-Quelle **und** steht der
+    KI als eigenes Feld zur Verfügung (vorher kannte sie die Uhrzeit nur indirekt über
+    `valid_from`). `previous_plan` (Ausgabe von `Planner.latest_plan()`) wird als verdichteter
+    Anker eingehängt (A1 – Stabilität über Aufrufe); fehlt er, entfällt der Schlüssel.
+    `global_regeln` sind die hausweiten Freitext-Regeln (D-060).
+
+    Alle Zahlen sind quantisiert (D-063) und jeder Wert trägt bei fehlender Frische `veraltet`
+    (D-064); `datenlage` fasst zusammen, wie viel des Kontexts überhaupt belegt ist.
     """
+    state_entries = _condense_state(state)
+    device_entries = [_condense_constraint(c) for c in constraints]
     context: dict[str, object] = {
+        "now": (now or datetime.now(UTC)).isoformat(),
         "valid_from": valid_from,
         "valid_until": valid_until,
-        "state": _condense_state(state),
+        "state": state_entries,
         "forecast": _condense_forecast(forecast),
         "weather": _condense_weather(
             weather or {}, horizon_h=horizon_h, detail=weather_detail, now=now
         ),
-        "devices": [_condense_constraint(c) for c in constraints],
+        "devices": device_entries,
         "objectives": [
             {"key": o.key, "label": o.label, "weight": o.weight} for o in objectives
         ],
+        "datenlage": _data_quality(state_entries, device_entries),
     }
+    if global_regeln.strip():
+        context["globale_regeln"] = global_regeln.strip()
     prev = _condense_previous_plan(previous_plan)
     if prev:
         context["previous_plan"] = prev
     return context
+
+
+# Kontext-Schlüssel, die NICHT in den Hash eingehen (D-063). Alle drei haben denselben Grund:
+# sie sind keine Information über die **Anlage**, sondern Nebenprodukt des Laufs — bliebe eines
+# drin, wäre der Hash bei unveränderter Sachlage trotzdem jedes Mal ein anderer und die
+# Wiederverwendung könnte nie greifen.
+# - `now`: ändert sich zwangsläufig. `valid_from`/`valid_until` sind dagegen auf das
+#   Planungsraster gerundet und damit vergleichbar (siehe `planner._floor_to_grid`).
+# - `previous_plan`: EPs eigene vorige Ausgabe.
+# - `objectives`: die Zielgewichte stammen aus dem Klassifizierungs-Aufruf, sind also selbst
+#   Modellausgabe. Streut das Modell dort, würde genau diese Streuung den Mechanismus
+#   aushebeln, der Streuung unterdrücken soll. Hat sich die Sachlage wirklich geändert, ändert
+#   sie den Hash bereits über `state`/`forecast`/`weather`/`devices`.
+_HASH_EXCLUDED_KEYS = frozenset({"now", "previous_plan", "objectives"})
+
+
+def context_hash(context: dict, *, prompt: str = "", model: str = "") -> str:
+    """Fingerabdruck der **Sachlage** inkl. Instruktion und Modell (D-063).
+
+    Grundlage jeder Aussage über Stabilität: nur wenn dieser Hash zwischen zwei Läufen gleich
+    ist, war die Sachlage tatsächlich identisch — weicht der Plan dann trotzdem ab, ist es
+    Modellstreuung und nicht neue Information. Was bewusst draußen bleibt und warum, steht in
+    `_HASH_EXCLUDED_KEYS`.
+    """
+    payload = {k: v for k, v in context.items() if k not in _HASH_EXCLUDED_KEYS}
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    digest = hashlib.sha256()
+    digest.update(raw.encode("utf-8"))
+    digest.update(b"\x00")
+    digest.update(prompt.encode("utf-8"))
+    digest.update(b"\x00")
+    digest.update(model.encode("utf-8"))
+    return digest.hexdigest()
 
 
 def build_classification_context(
@@ -404,6 +731,7 @@ def build_classification_context(
     weather_detail: str = "compact",
     now: datetime | None = None,
     previous_plan: dict | None = None,
+    global_regeln: str = "",
 ) -> dict:
     """Kontext für den vorgelagerten Klassifizierungs-Aufruf (D-055).
 
@@ -417,7 +745,7 @@ def build_classification_context(
         state, forecast, constraints, [],
         valid_from=valid_from, valid_until=valid_until,
         weather=weather, horizon_h=horizon_h, weather_detail=weather_detail,
-        now=now, previous_plan=previous_plan,
+        now=now, previous_plan=previous_plan, global_regeln=global_regeln,
     )
     del context["objectives"]
     context["ziele"] = [
@@ -463,22 +791,69 @@ DEFAULT_PLANNING_PROMPT = (
     "vorigen Vorschlagswerte). Bleibe ohne materiellen Grund nah daran: ändere Priorität oder "
     "Freigabe nur, wenn die aktuellen Daten es klar erfordern – nicht wegen kleiner "
     "Schwankungen. Das hält den Plan über die Läufe hinweg stabil.\n\n"
-    "Gib zusätzlich `confidence` (0–100), eine kurze deutsche `reasoning`-Begründung "
-    "und optionale `warnings` aus. Antworte ausschließlich als JSON gemäß dem "
-    "vorgegebenen Schema."
+    "Regeln des Users (wichtigster Block):\n"
+    "- `regeln` je Gerät und `globale_regeln` sind die vom User in eigenen Worten formulierten "
+    "Betriebsvorgaben. Sie sind **verbindlich** und stehen über jeder Optimierung: greift eine "
+    "Regel auf die aktuelle Lage zu, richte deinen Vorschlag danach – auch wenn ein Ziel etwas "
+    "anderes nahelegt.\n"
+    "- Nenne je Gerät in `angewandte_regeln`, auf welche dieser Regeln du dich stützt, und "
+    "begründe deinen Vorschlag in `begruendung` mit der maßgeblichen Messgröße samt Wert. "
+    "Greift keine Regel, gib eine leere Liste zurück und sage das in der Begründung.\n"
+    "- Unterscheide `funktion` (was das Gerät ist) von `regeln` (was der User will).\n\n"
+    "Werte richtig lesen:\n"
+    "- `now` ist der aktuelle Zeitpunkt. Datumsangaben in deinen Texten als TT.MM.JJJJ, "
+    "Uhrzeiten als hh:mm in Berliner Zeit, ohne Zeitzonen-Kürzel.\n"
+    "- Jeder `zusatzwerte`-Eintrag hat eine `rolle`: `ist` = gemessener Wert, `grenze` = vom User "
+    "gesetzte Ober-/Untergrenze, `sollwert` = Vorgabe. **Verwechsle eine `grenze` oder einen "
+    "`sollwert` nie mit einem Messwert.** Die gemessenen Größen des Hauses stehen in `state`.\n"
+    "- `state` führt je Mess-Rolle den Letztwert (`latest`) und die Mittel über 1/15/60 Minuten. "
+    "Der Vergleich der Mittel zeigt den Verlauf: steigt z.B. die Warmwassertemperatur, ohne dass "
+    "der Heizstab Leistung zieht, erwärmt eine andere Quelle den Speicher – dann braucht es "
+    "keinen elektrischen Nachschub.\n"
+    "- `weather.kennzahlen` ist für Tagesaussagen maßgeblich (`temp_max_heute`, `temp_max_24h`, "
+    "`temp_max_48h`): die Slot-Reihen in `weather.models` sind abends leer bzw. überspringen "
+    "heute. Leite Tageshöchstwerte NICHT aus den Slots ab, wenn Kennzahlen vorliegen.\n"
+    "- Werte mit `veraltet: true` oder `wert: null` sind **unbekannt**, nicht null und nicht in "
+    "Ordnung. Ein unbekannter Wert ist kein Freibrief: wähle dann die vorsichtige Variante "
+    "(Last nicht freigeben, Grenze nicht anheben) und vermerke es in `unsicherheiten`.\n"
+    "- `datenlage.frische_prozent` sagt dir, wie viel des Kontexts überhaupt belegt ist.\n\n"
+    "Konfidenz:\n"
+    "- Gib `konfidenz` als vier Teilnoten (0–100) gemäß der Beschreibung im Schema aus. Bewerte "
+    "sie ehrlich und unabhängig voneinander – EP rechnet daraus die Gesamtkonfidenz und "
+    "vergleicht deine `datenlage`-Note mit der real gemessenen Datenlage.\n"
+    "- Liste in `unsicherheiten` konkret, was dir gefehlt hat.\n\n"
+    "Gib zusätzlich eine kurze deutsche `reasoning`-Begründung und optionale `warnings` aus. "
+    "Antworte ausschließlich als JSON gemäß dem vorgegebenen Schema."
 )
 
 
-def build_prompt(context: dict, template: str | None = None) -> str:
-    """Baut den Planungs-Prompt: (editierbare) Instruktion + angehängter Datenblock.
+def planning_instruction(template: str | None = None) -> str:
+    """Die Instruktion allein: user-gepflegtes Template oder `DEFAULT_PLANNING_PROMPT`.
 
-    `template` ist die optional vom User in der EP-Oberfläche gepflegte Instruktion;
-    fehlt sie, gilt `DEFAULT_PLANNING_PROMPT`. Der `Daten:`-Block wird unabhängig vom
-    Template immer angehängt, damit der Kontext nie versehentlich fehlt.
+    Geht als **System-Anweisung** an den Provider (D-062). Anweisung und Daten in getrennten
+    Kanälen zu halten verbessert die Regeltreue merklich — vorher lagen Rollentext, harte Regeln
+    und ein mehrere Kilobyte großer JSON-Block in derselben User-Nachricht.
     """
-    instruction = (template or "").strip() or DEFAULT_PLANNING_PROMPT
-    data = json.dumps(context, ensure_ascii=False, indent=2)
-    return f"{instruction}\n\nDaten:\n{data}\n"
+    return (template or "").strip() or DEFAULT_PLANNING_PROMPT
+
+
+def build_data_block(context: dict) -> str:
+    """Der Datenblock allein (User-Nachricht): der verdichtete Kontext als JSON."""
+    return f"Daten:\n{json.dumps(context, ensure_ascii=False, indent=2)}\n"
+
+
+def build_prompt(context: dict, template: str | None = None) -> str:
+    """Baut den vollständigen Planungs-Prompt: Instruktion + angehängter Datenblock.
+
+    `template` ist die optional vom User in der EP-Oberfläche gepflegte Instruktion; fehlt sie,
+    gilt `DEFAULT_PLANNING_PROMPT`. Der `Daten:`-Block wird unabhängig vom Template immer
+    angehängt, damit der Kontext nie versehentlich fehlt.
+
+    Diese zusammengesetzte Form ist die **dokumentierte** Sicht: sie geht in die UI, in den
+    Plan-Datensatz (D-063) und in den Kontext-Hash. Beim Aufruf werden Instruktion und Daten
+    getrennt übergeben (`planning_instruction` / `build_data_block`, D-062).
+    """
+    return f"{planning_instruction(template)}\n\n{build_data_block(context)}"
 
 
 # Standard-Instruktion für die Klassifizierung (D-055). Läuft VOR dem Planungs-Aufruf, bekommt
@@ -498,22 +873,29 @@ DEFAULT_CLASSIFICATION_PROMPT = (
     "harten Grenzen/Zusatzwerten der zugeordneten `geraete` und `previous_plan` (falls "
     "vorhanden, für Stabilität über Läufe hinweg).\n"
     "- Höheres Gewicht = wichtiger/dringender im aktuellen Kontext, NICHT eine feste Rangfolge.\n"
+    "- Beachte `regeln` je Gerät und `globale_regeln`: sperrt eine Regel eine Last für die "
+    "aktuelle Lage, ist ein Ziel, das genau diese Last fordert, jetzt nicht dringend.\n"
+    "- `weather.kennzahlen` (`temp_max_heute`, `temp_max_24h`, `temp_max_48h`) ist für "
+    "Tagesaussagen maßgeblich; Werte mit `veraltet: true` oder `null` sind unbekannt.\n"
     "- Antworte für JEDE Ziel-`id` aus `ziele` mit exakt einem Gewicht; erfinde keine Ziele.\n"
     "- Gib zusätzlich eine kurze deutsche `reasoning`-Begründung aus. Antworte ausschließlich "
     "als JSON gemäß dem vorgegebenen Schema."
 )
 
 
+def classification_instruction(template: str | None = None) -> str:
+    """Die Klassifizierungs-Instruktion allein (System-Kanal, D-062)."""
+    return (template or "").strip() or DEFAULT_CLASSIFICATION_PROMPT
+
+
 def build_classification_prompt(context: dict, template: str | None = None) -> str:
-    """Baut den Klassifizierungs-Prompt: (editierbare) Instruktion + angehängter Datenblock.
+    """Baut den vollständigen Klassifizierungs-Prompt: Instruktion + angehängter Datenblock.
 
     Identischer Aufbau wie `build_prompt` (D-055): `template` ist die optional vom User
     gepflegte Instruktion; fehlt sie, gilt `DEFAULT_CLASSIFICATION_PROMPT`. Der `Daten:`-Block
     wird unabhängig vom Template immer angehängt.
     """
-    instruction = (template or "").strip() or DEFAULT_CLASSIFICATION_PROMPT
-    data = json.dumps(context, ensure_ascii=False, indent=2)
-    return f"{instruction}\n\nDaten:\n{data}\n"
+    return f"{classification_instruction(template)}\n\n{build_data_block(context)}"
 
 
 def _extra_field_schema(ce) -> dict:
@@ -526,6 +908,12 @@ def _extra_field_schema(ce) -> dict:
         lo = "-unendlich" if ce.min is None else ce.min
         hi = "unendlich" if ce.max is None else ce.max
         desc.append(f"Wertebereich {lo} bis {hi}.")
+        # Grenzen zusätzlich als Schema-Keyword (D-062): sie wirken damit im Decoder und nicht
+        # nur als Prosa, die ein kleines Modell überlesen kann.
+        if ce.min is not None:
+            prop["minimum"] = ce.min
+        if ce.max is not None:
+            prop["maximum"] = ce.max
     elif ce.kind == "datetime":
         desc.append(f"Format {_datetime_format(ce.has_date, ce.has_time)}.")
     elif ce.kind == "select" and ce.options:
@@ -537,16 +925,33 @@ def _extra_field_schema(ce) -> dict:
     return prop
 
 
-def _fixed_field_schema(key: str) -> dict:
-    """Antwort-Schema-Property eines festen Vorschlagsfelds (Prio/Freigabe/Mindestleistung)."""
+def _fixed_field_schema(key: str, constraint: DeviceConstraint) -> dict:
+    """Antwort-Schema-Property eines festen Vorschlagsfelds (Prio/Freigabe/Mindestleistung).
+
+    Die harten Grenzen des Geräts gehen als `minimum`/`maximum` mit ins Schema (D-062): sie
+    wirken damit schon im Decoder statt nur als Prosa im Prompt. Der Validator klemmt weiterhin
+    unabhängig davon — das Schema ist eine Hilfe für das Modell, keine Sicherheitsgarantie.
+    """
     if key == "prio_vorschlag":
         return {
             "type": "INTEGER",
+            "minimum": _PRIO_MIN,
+            "maximum": _PRIO_MAX,
             "description": "10er-Rangfolge ab 10 (höchste Prio); nicht für die Batterie.",
         }
     if key == "freigabe_vorschlag":
         return {"type": "BOOLEAN"}
-    return {"type": "NUMBER"}  # geschutzte_mindestleistung_{w,a}_vorschlag
+    # geschutzte_mindestleistung_{w,a}_vorschlag
+    prop: dict[str, object] = {"type": "NUMBER"}
+    lo = constraint.min_power if constraint.min_power is not None else 0.0
+    prop["minimum"] = max(0.0, float(lo))
+    if constraint.max_power is not None:
+        prop["maximum"] = float(constraint.max_power)
+    einheit = "A" if key.endswith("_a_vorschlag") else "W"
+    prop["description"] = (
+        f"Geschützte Mindestleistung in {einheit}, innerhalb der technischen Grenzen des Geräts."
+    )
+    return prop
 
 
 def _device_response_schema(constraint: DeviceConstraint) -> dict:
@@ -566,13 +971,33 @@ def _device_response_schema(constraint: DeviceConstraint) -> dict:
         properties[key] = (
             _extra_field_schema(extra_by_field[key])
             if key in extra_by_field
-            else _fixed_field_schema(key)
+            else _fixed_field_schema(key, constraint)
         )
+    # Erzwungene Selbsterklärung (D-060): das Modell muss seine Entscheidung für DIESES Gerät
+    # gegen die Freitext-Regeln des Users begründen. Kein Vorschlagswert, keine Korrektur —
+    # aber eine falsche Entscheidung ist damit im Plan-Tab lesbar statt rätselhaft.
+    properties["begruendung"] = {
+        "type": "STRING",
+        "description": (
+            "Ein deutscher Satz: warum diese Werte für dieses Gerät. Nenne die maßgebliche "
+            "Messgröße mit Wert."
+        ),
+    }
+    properties["angewandte_regeln"] = {
+        "type": "ARRAY",
+        "items": {"type": "STRING"},
+        "description": (
+            "Die User-Regeln aus `regeln`/`globale_regeln`, auf die sich diese Entscheidung "
+            "stützt — jeweils sinngemäß in einem Halbsatz. Greift keine Regel, gib eine leere "
+            "Liste zurück und sage das in der Begründung."
+        ),
+    }
+    order = ["name", *keys, *EXPLANATION_FIELDS]
     return {
         "type": "OBJECT",
         "properties": properties,
-        "required": ["name", *keys],
-        "propertyOrdering": ["name", *keys],
+        "required": order,
+        "propertyOrdering": order,
     }
 
 
@@ -599,12 +1024,38 @@ def build_response_schema(constraints: list[DeviceConstraint]) -> dict:
                 "required": device_order,
                 "propertyOrdering": device_order,
             },
-            "confidence": {"type": "INTEGER"},
+            # Konfidenz als definierte Teilnoten (D-064): eine einzelne Gesamtnote wäre frei
+            # erfunden und als Grundlage eines Veröffentlichungs-Gates wertlos. EP aggregiert
+            # die Teilnoten in Code als schwächstes Glied.
+            "konfidenz": {
+                "type": "OBJECT",
+                "properties": {
+                    part: {
+                        "type": "INTEGER",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": rubrik,
+                    }
+                    for part, rubrik in CONFIDENCE_PARTS.items()
+                },
+                "required": list(CONFIDENCE_PARTS),
+                "propertyOrdering": list(CONFIDENCE_PARTS),
+            },
+            "unsicherheiten": {
+                "type": "ARRAY",
+                "items": {"type": "STRING"},
+                "description": (
+                    "Was du für diese Entscheidung nicht wusstest — fehlende Messwerte, "
+                    "unklare Regeln, unsichere Prognose. Leere Liste, wenn nichts fehlte."
+                ),
+            },
             "reasoning": {"type": "STRING"},
             "warnings": {"type": "ARRAY", "items": {"type": "STRING"}},
         },
-        "required": ["devices", "confidence", "reasoning"],
-        "propertyOrdering": ["devices", "confidence", "reasoning", "warnings"],
+        "required": ["devices", "konfidenz", "reasoning"],
+        "propertyOrdering": [
+            "devices", "konfidenz", "unsicherheiten", "reasoning", "warnings",
+        ],
     }
 
 

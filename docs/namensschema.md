@@ -64,6 +64,12 @@ Zusatz-Entität existiert — `device_extras.py: seed_defaults()`):
    `sensor.ep_<object_id>_vorschlag` (`<object_id>` = Objekt-ID der Quelle ohne
    führendes `ep_`, z. B. `input_number.min_soc_auto` → `sensor.ep_min_soc_auto_vorschlag`).
 3. Freitextfeld — erklärt der KI Bedeutung/Verwendung der Entität.
+4. **Rolle** (D-061): `ist` (gemessener Wert), `grenze` (vom User gesetzte Ober-/Untergrenze)
+   oder `sollwert` (Vorgabe). Geht als `rolle` samt Klartext in den Kontext. Ohne diese Angabe
+   liest ein Modell einen Sollwert als Messwert — der belegte Auslöser eines Fehlvorschlags
+   (Obergrenze 85 °C als Ist-Temperatur gelesen). **Gemessene** anlagenweite Größen gehören
+   nicht hierher, sondern als Mess-Rolle in die Addon-Config
+   ([konfiguration.md](konfiguration.md#sensor-zuordnung-sensoren)).
 
 Typ folgt der Domäne (D-048): `input_number`/`number` → Zahl (mit `min`/`max` als
 KI-Grenzen **und** Klemmung), `input_boolean`/`switch`/`binary_sensor` → Bool,

@@ -30,7 +30,13 @@ from energy_pilot.device_extras import (
     upsert_extra,
 )
 from energy_pilot.device_prompts import load_device_prompts, set_device_prompt
-from energy_pilot.devices import DeviceExtra
+from energy_pilot.device_regeln import (
+    get_global_regeln,
+    load_device_regeln,
+    set_device_regeln,
+    set_global_regeln,
+)
+from energy_pilot.devices import EXTRA_ROLES, DeviceExtra, normalize_extra_role
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import RingBufferHandler, log
 from energy_pilot.objectives import delete_ziel, load_ziele, upsert_ziel
@@ -122,6 +128,9 @@ def create_app(
             web.post("/api/devices/extras", device_extra_post),
             web.delete("/api/devices/extras", device_extra_delete),
             web.post("/api/devices/prompt", device_prompt_post),
+            web.post("/api/devices/regeln", device_regeln_post),
+            web.get("/api/regeln", regeln_get),
+            web.post("/api/regeln", regeln_post),
             web.get("/api/forecast", forecast_get),
             web.get("/api/weather", weather_get),
             web.get("/api/weather/test", weather_test),
@@ -181,7 +190,9 @@ async def rediscover_devices(app: web.Application) -> tuple[list, str]:
     # Zusatz-Entitäten (D-047) an die erkannten Geräte mergen: einmalig den Heizstab-Default
     # anlegen (ersetzt Hardcode D-035), dann die user-gepflegte Konfiguration aus der DB anhängen.
     seed_defaults(db, devices)
-    devices = apply_extras(devices, load_extras(db), load_device_prompts(db))
+    devices = apply_extras(
+        devices, load_extras(db), load_device_prompts(db), load_device_regeln(db)
+    )
     device_collector.set_devices(devices, source)
 
     allowlist = app.get("allowlist")
@@ -213,7 +224,8 @@ def reapply_device_extras(app: web.Application) -> None:
         return
     db = app.get("db")
     devices = apply_extras(
-        list(device_collector.devices), load_extras(db), load_device_prompts(db)
+        list(device_collector.devices), load_extras(db), load_device_prompts(db),
+        load_device_regeln(db),
     )
     device_collector.set_devices(devices, device_collector.discovery_source)
 
@@ -477,6 +489,9 @@ def _extras_payload(device_collector: object, device_name: str) -> list[dict]:
                 "display_label": ex.display_label,
                 "domain": ex.domain,
                 "kind": ex.kind,
+                # D-061: Semantik des Werts (ist | grenze | sollwert) samt Klartext für die KI.
+                "rolle": ex.rolle,
+                "rolle_bedeutung": ex.rolle_text,
                 "plan_field": ex.plan_field,
                 "suggestion_entity_id": ex.suggestion_entity_id if ex.ai_suggestion else None,
                 # D-052: rohes Flag + Helfer-Fähigkeit + effektiver Original-Schreibweg (fürs UI:
@@ -511,6 +526,9 @@ async def devices_get(request: web.Request) -> web.Response:
         {
             "source": getattr(device_collector, "discovery_source", "none"),
             "devices": devices,
+            # Auswahlpool für das Rollen-Feld eines Zusatzwerts (D-061) – das UI soll die
+            # gültigen Werte nicht doppelt pflegen müssen.
+            "extra_roles": list(EXTRA_ROLES),
         }
     )
 
@@ -539,6 +557,7 @@ async def device_extra_post(request: web.Request) -> web.Response:
     label = str(body.get("label") or "").strip()
     unit = str(body.get("unit") or "").strip()
     write_original = bool(body.get("write_original"))
+    rolle = normalize_extra_role(body.get("rolle"))
 
     known = {d.name for d in getattr(device_collector, "devices", [])}
     if device_name not in known:
@@ -575,17 +594,20 @@ async def device_extra_post(request: web.Request) -> web.Response:
         label=label,
         unit=unit,
         write_original=write_original,
+        rolle=rolle,
     )
     reapply_device_extras(request.app)
     _audit_extra(db, "device_extra_upserted", device_name, read_entity_id)
     extra = DeviceExtra(
-        read_entity_id=read_entity_id, ai_suggestion=ai_suggestion, write_original=write_original
+        read_entity_id=read_entity_id, ai_suggestion=ai_suggestion,
+        write_original=write_original, rolle=rolle,
     )
     return web.json_response(
         {
             "ok": True,
             "device_name": device_name,
             "read_entity_id": read_entity_id,
+            "rolle": extra.rolle,
             "suggestion_entity_id": extra.suggestion_entity_id if ai_suggestion else None,
             "should_write_original": extra.should_write_original,
         }
@@ -644,6 +666,64 @@ async def device_prompt_post(request: web.Request) -> web.Response:
         subject=device_name,
     )
     return web.json_response({"ok": True, "device_name": device_name, "is_custom": is_custom})
+
+
+async def device_regeln_post(request: web.Request) -> web.Response:
+    """Speichert die Freitext-Betriebsregeln eines Geräts (D-060). Body: `{device_name, regeln}`.
+
+    Leerer Text löscht die Regeln. Abgrenzung zur Beschreibung (D-051): dort steht, **was** das
+    Gerät ist, hier **was der User will**. Die Regeln gehen als eigener Kontext-Block in den
+    Planungs-Prompt; die KI muss ihre Entscheidung je Gerät dagegen begründen. Übernimmt die
+    Änderung sofort (kein HEMS-Reload nötig).
+    """
+    db = request.app.get("db")
+    device_collector = request.app.get("device_collector")
+    if db is None or device_collector is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank/Geräte"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+
+    device_name = str(body.get("device_name") or "").strip()
+    regeln = str(body.get("regeln") or "").strip()
+    known = {d.name for d in getattr(device_collector, "devices", [])}
+    if device_name not in known:
+        return web.json_response(
+            {"ok": False, "reason": f"unbekanntes Gerät: {device_name or '(leer)'}"}, status=400
+        )
+
+    is_custom = set_device_regeln(db, device_name, regeln)
+    reapply_device_extras(request.app)
+    _audit_prompt(
+        db, "device_regeln_updated" if is_custom else "device_regeln_reset", len(regeln),
+        subject=device_name,
+    )
+    return web.json_response({"ok": True, "device_name": device_name, "is_custom": is_custom})
+
+
+async def regeln_get(request: web.Request) -> web.Response:
+    """Liefert die hausweiten Freitext-Regeln und die Regeln je Gerät (D-060)."""
+    db = request.app.get("db")
+    return web.json_response(
+        {"global": get_global_regeln(db), "devices": load_device_regeln(db)}
+    )
+
+
+async def regeln_post(request: web.Request) -> web.Response:
+    """Speichert die hausweiten Freitext-Regeln (D-060). Body: `{regeln}`."""
+    db = request.app.get("db")
+    if db is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+    regeln = set_global_regeln(db, str(body.get("regeln") or ""))
+    _audit_prompt(
+        db, "global_regeln_updated" if regeln else "global_regeln_reset", len(regeln)
+    )
+    return web.json_response({"ok": True, "regeln": regeln, "is_custom": bool(regeln)})
 
 
 def _audit_extra(db: sqlite3.Connection, action: str, device_name: str, entity_id: str) -> None:
@@ -1008,6 +1088,9 @@ async def plan_run(request: web.Request) -> web.Response:
             "ai_call": result.ai_call,
             "context": result.context,
             "published": result.published,
+            # D-063: Kontext unverändert => kein KI-Aufruf; der Hash macht das nachprüfbar.
+            "reused": result.reused,
+            "context_hash": result.context_hash,
         }
         if result.error:
             payload["error"] = result.error

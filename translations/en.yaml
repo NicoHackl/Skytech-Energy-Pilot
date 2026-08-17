@@ -66,6 +66,11 @@ configuration:
   ai_seed:
     name: AI seed
     description: Fixed random seed for the AI call - reinforces reproducible, stable output across runs.
+  ai_thinking_budget:
+    name: Thinking budget
+    description: >-
+      Gemini only. Flash models think internally by default, which is its own source of varying
+      results. 0 = off (reproducible), higher values cap it.
   ai_repair_missing:
     name: Re-request missing fields
     description: If the model omits required suggestion fields, request exactly those once more before the validator fills them deterministically from the current state.
@@ -208,3 +213,14 @@ configuration:
       entity_battery_soc:
         name: Battery state of charge (SOC)
         description: HA entity for the battery state of charge in percent.
+      entity_hot_water_temp:
+        name: Hot water temperature
+        description: >-
+          HA entity for the measured hot water / tank temperature. EP also keeps the
+          1/15/60-minute averages: a rising temperature without heating-element power tells the
+          AI that solar thermal is currently charging the tank.
+      entity_outdoor_temp:
+        name: Outdoor temperature
+        description: >-
+          HA entity for the measured outdoor temperature. Complements the weather forecast with
+          the actual value and its trend.

@@ -40,10 +40,55 @@ SUGGESTION_FIELDS: tuple[str, ...] = (
 # Muster der dynamischen Zusatz-Vorschlagsfelder (D-047), z.B. `extra_min_soc_auto_vorschlag`.
 EXTRA_FIELD_RE = re.compile(r"^extra_[a-z0-9_]+_vorschlag$")
 
+# Begründungsfelder je Gerät (D-060): **keine** Vorschlagswerte, sondern die erzwungene
+# Selbsterklärung der KI gegen die Freitext-Regeln des Users. Sie unterliegen keinem
+# Schreibvertrag und werden nie nach HA geschrieben — sie machen eine Entscheidung nachvollziehbar.
+EXPLANATION_FIELDS: tuple[str, ...] = ("begruendung", "angewandte_regeln")
+
+# Teilnoten der Konfidenz (D-064) samt Rubrik. Eine einzelne, frei erfundene Gesamtnote taugt
+# nicht als Gate — deshalb liefert das Modell definierte Teilnoten und EP aggregiert sie in Code.
+CONFIDENCE_PARTS: dict[str, str] = {
+    "datenlage": (
+        "Vollständigkeit und Frische der Eingangsdaten. Orientiere dich an `datenlage."
+        "frische_prozent` und an jedem Wert mit `veraltet: true` oder `null`. Fehlen Werte, die "
+        "für deine Entscheidung wesentlich sind, ist diese Note niedrig."
+    ),
+    "prognosesicherheit": (
+        "Verlässlichkeit von Wetter- und PV-Prognose über den Planzeitraum. Hohe "
+        "Regenwahrscheinlichkeit (`pop`), stark schwankende Bewölkung oder ein Horizont weit "
+        "jenseits der vorliegenden Slots senken diese Note."
+    ),
+    "regelklarheit": (
+        "Eindeutigkeit der User-Regeln (`regeln` je Gerät, `globale_regeln`) für GENAU diese "
+        "Situation. Greift eine Regel klar: hoch. Greift keine Regel oder widersprechen sich "
+        "zwei: niedrig."
+    ),
+    "zielkonflikt": (
+        "Wie gut die gewichteten Ziele (`objectives`) miteinander vereinbar sind. Fordern zwei "
+        "hoch gewichtete Ziele für dasselbe Gerät Gegenteiliges, ist diese Note niedrig."
+    ),
+}
+
 
 def is_extra_field(key: str) -> bool:
     """True, wenn `key` ein dynamisches Zusatz-Vorschlagsfeld ist (D-047)."""
     return bool(EXTRA_FIELD_RE.match(key))
+
+
+def aggregate_confidence(parts: dict) -> int | None:
+    """Aggregiert die Konfidenz-Teilnoten als **schwächstes Glied** (D-064).
+
+    Minimum statt Mittelwert: ein Mittelwert würde eine schlechte Datenlage durch klare Regeln
+    wegrechnen — genau das darf die Grundlage eines Veröffentlichungs-Gates nicht. Unbekannte
+    oder nicht-numerische Teilnoten werden ignoriert; bleibt keine übrig, ist das Ergebnis None.
+    """
+    values: list[int] = []
+    for key in CONFIDENCE_PARTS:
+        raw = (parts or {}).get(key)
+        if isinstance(raw, bool) or not isinstance(raw, int | float):
+            continue
+        values.append(max(0, min(100, int(round(float(raw))))))
+    return min(values) if values else None
 
 
 @dataclass
@@ -59,6 +104,9 @@ class DeviceSuggestion:
     geschutzte_mindestleistung_w_vorschlag: float | None = None
     geschutzte_mindestleistung_a_vorschlag: float | None = None
     extras: dict[str, float] = field(default_factory=dict)
+    # Erzwungene Selbsterklärung (D-060), kein Vorschlagswert.
+    begruendung: str = ""
+    angewandte_regeln: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -71,7 +119,10 @@ class CandidatePlan:
     devices: list[DeviceSuggestion]
     provider: str = ""
     model: str = ""
+    # Aggregierte Konfidenz (schwächstes Glied der Teilnoten, D-064).
     confidence: int | None = None
+    konfidenz_teilnoten: dict[str, int] = field(default_factory=dict)
+    unsicherheiten: list[str] = field(default_factory=list)
     reasoning: str = ""
     warnings: list[str] = field(default_factory=list)
     schema_version: str = SCHEMA_VERSION
@@ -115,6 +166,11 @@ def plan_to_dict(plan: CandidatePlan) -> dict:
         for key, value in suggestion.extras.items():
             if value is not None:
                 entry[key] = value
+        # Begründung (D-060) nur, wenn geliefert — sie ist Diagnose, kein Vorschlagswert.
+        if suggestion.begruendung:
+            entry["begruendung"] = suggestion.begruendung
+        if suggestion.angewandte_regeln:
+            entry["angewandte_regeln"] = list(suggestion.angewandte_regeln)
         devices.append(entry)
     return {
         "schema_version": plan.schema_version,
@@ -124,6 +180,8 @@ def plan_to_dict(plan: CandidatePlan) -> dict:
         "provider": plan.provider,
         "model": plan.model,
         "confidence": plan.confidence,
+        "konfidenz_teilnoten": dict(plan.konfidenz_teilnoten),
+        "unsicherheiten": list(plan.unsicherheiten),
         "reasoning": plan.reasoning,
         "warnings": list(plan.warnings),
         "devices": devices,
@@ -143,7 +201,13 @@ PLAN_JSON_SCHEMA: dict = {
         "valid_until": {"type": "string", "minLength": 1},
         "provider": {"type": "string"},
         "model": {"type": "string"},
+        # Aggregiert aus den Teilnoten (D-064); das Modell liefert die Teilnoten, nicht diesen Wert.
         "confidence": {"type": ["integer", "null"], "minimum": 0, "maximum": 100},
+        "konfidenz_teilnoten": {
+            "type": "object",
+            "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 100},
+        },
+        "unsicherheiten": {"type": "array", "items": {"type": "string"}},
         "reasoning": {"type": "string"},
         "warnings": {"type": "array", "items": {"type": "string"}},
         "devices": {
@@ -168,6 +232,9 @@ PLAN_JSON_SCHEMA: dict = {
                     "freigabe_vorschlag": {"type": "boolean"},
                     "geschutzte_mindestleistung_w_vorschlag": {"type": "number", "minimum": 0},
                     "geschutzte_mindestleistung_a_vorschlag": {"type": "number", "minimum": 0},
+                    # Selbsterklärung (D-060): Diagnose, kein Vorschlagswert.
+                    "begruendung": {"type": "string"},
+                    "angewandte_regeln": {"type": "array", "items": {"type": "string"}},
                 },
             },
         },

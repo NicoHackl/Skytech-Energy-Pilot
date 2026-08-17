@@ -39,6 +39,10 @@ DEFAULTS: dict[str, object] = {
     # Geteilt über alle Anbieter (Gemini/OpenAI nutzen sie; Claude ignoriert Sampling-Params).
     "ai_temperature": 0.0,
     "ai_seed": 42,
+    # Denkbudget des Modells (D-063, derzeit nur Gemini): bei Flash-Modellen ist „Thinking"
+    # standardmäßig aktiv und eine eigene Varianzquelle. 0 = aus (reproduzierbar), >0 = begrenzt,
+    # leer/nicht gesetzt = Anbieter-Default unangetastet.
+    "ai_thinking_budget": 0,
     # Fehlende Pflicht-Vorschlagsfelder per gezieltem Nachforder-Aufruf ergänzen (ein Versuch),
     # bevor der Validator sie deterministisch auffüllt (D-050).
     "ai_repair_missing": True,
@@ -100,9 +104,10 @@ DEFAULTS: dict[str, object] = {
             "refresh_alerts": 30,
         },
     },
-    # Zuordnung der 7 festen Mess-Rollen (roles.py) auf reale HA-Entity-IDs (D-027). Leer =>
+    # Zuordnung der 9 festen Mess-Rollen (roles.py) auf reale HA-Entity-IDs (D-027). Leer =>
     # Rolle ohne Wert; Änderungen greifen erst nach einem Addon-Neustart (Mapping wird beim
-    # Boot geladen).
+    # Boot geladen). Die beiden Temperatur-Rollen (D-061) liefern der KI den Verlauf, nicht
+    # nur den Momentanwert.
     "sensoren": {
         "entity_pv_power": "",
         "entity_house_load": "",
@@ -111,6 +116,8 @@ DEFAULTS: dict[str, object] = {
         "entity_grid_export": "",
         "entity_battery_power": "",
         "entity_battery_soc": "",
+        "entity_hot_water_temp": "",
+        "entity_outdoor_temp": "",
     },
 }
 
@@ -176,6 +183,7 @@ class ActiveProvider:
     rate_limit_per_min: int
     temperature: float | None
     seed: int | None
+    thinking_budget: int | None
 
 
 def _coerce_int(value: object, default: int) -> int:
@@ -237,6 +245,8 @@ def resolve_active_provider(values: dict) -> ActiveProvider:
     temperature = _coerce_float(temperature_raw, 0.0) if temperature_raw is not None else None
     seed_raw = values.get("ai_seed")
     seed = _coerce_int(seed_raw, 0) if seed_raw is not None else None
+    budget_raw = values.get("ai_thinking_budget")
+    thinking_budget = max(0, _coerce_int(budget_raw, 0)) if budget_raw is not None else None
 
     return ActiveProvider(
         name=name,
@@ -246,4 +256,5 @@ def resolve_active_provider(values: dict) -> ActiveProvider:
         rate_limit_per_min=rate_limit,
         temperature=temperature,
         seed=seed,
+        thinking_budget=thinking_budget,
     )

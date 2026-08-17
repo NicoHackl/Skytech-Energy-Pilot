@@ -22,22 +22,27 @@ from uuid import uuid4
 from energy_pilot.ai_provider import AIProvider
 from energy_pilot.config import AddonConfig
 from energy_pilot.constraints import build_constraints
+from energy_pilot.device_regeln import get_global_regeln
 from energy_pilot.logging_setup import log
 from energy_pilot.objectives import load_ziele, objectives_from_classification
 from energy_pilot.plan_context import (
     build_classification_context,
-    build_classification_prompt,
     build_classification_response_schema,
     build_context,
+    build_data_block,
     build_prompt,
     build_repair_prompt,
     build_response_schema,
+    classification_instruction,
+    context_hash,
+    planning_instruction,
 )
 from energy_pilot.plan_schema import (
     SCHEMA_VERSION,
     SUGGESTION_FIELDS,
     CandidatePlan,
     DeviceSuggestion,
+    aggregate_confidence,
     is_extra_field,
     plan_to_dict,
 )
@@ -46,6 +51,20 @@ from energy_pilot.suggestion_publisher import publish_suggestions
 from energy_pilot.validator import missing_suggestion_fields, validate
 from energy_pilot.weather import weather_config_from_options
 
+# Zeitraster des Kontexts (D-063): `valid_from`/`valid_until` werden darauf abgerundet, damit
+# zwei Läufe innerhalb desselben Rasterfensters bei gleicher Sachlage denselben Prompt-String und
+# damit denselben Kontext-Hash ergeben. Mit rohem `datetime.now()` war das unmöglich.
+CONTEXT_TIME_GRID_MIN = 15
+
+
+def _floor_to_grid(moment: datetime, grid_min: int = CONTEXT_TIME_GRID_MIN) -> datetime:
+    """Rundet einen Zeitpunkt auf das Kontext-Zeitraster ab (Sekunden/Mikrosekunden entfallen)."""
+    step = max(1, int(grid_min))
+    minutes = (moment.hour * 60 + moment.minute) // step * step
+    return moment.replace(
+        hour=minutes // 60, minute=minutes % 60, second=0, microsecond=0
+    )
+
 
 @dataclass
 class PlanRunResult:
@@ -53,11 +72,14 @@ class PlanRunResult:
 
     ok: bool
     plan: dict | None
-    validation: dict  # {ok, errors, clamped}
-    ai_call: dict  # {provider, model, tokens_in, tokens_out, ok, error?}
+    validation: dict  # {ok, errors, clamped, publish_blocked?}
+    ai_call: dict  # {provider, model, tokens_in, tokens_out, ok, error?, sampling_dropped?}
     context: dict | None
     error: str | None = None
     published: dict | None = None  # {ok, written, failed, reason} – HA-Schreibergebnis
+    # D-063: Kontext unverändert => kein KI-Aufruf, der gespeicherte Plan gilt weiter.
+    reused: bool = False
+    context_hash: str | None = None
 
 
 @dataclass
@@ -106,6 +128,17 @@ def _sum_tokens(first: int | None, second: int | None) -> int | None:
     if first is None and second is None:
         return None
     return (first or 0) + (second or 0)
+
+
+def _parse_iso(value: object) -> datetime | None:
+    """Liest einen ISO-Zeitstempel defensiv; fehlendes Offset gilt als UTC (wie im Validator)."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
 
 def _describe_exc(exc: BaseException) -> str:
@@ -165,9 +198,12 @@ class Planner:
         readings = getattr(dc, "last_values", {}) if dc is not None else {}
         constraints = build_constraints(devices, readings)
 
-        valid_from = now.isoformat()
+        # Zeitfenster auf dem Kontext-Raster (D-063): sonst unterscheidet sich der Prompt
+        # zwangsläufig in jedem Lauf und weder Seed noch Kontext-Hash können wirken.
+        anchor = _floor_to_grid(now)
+        valid_from = anchor.isoformat()
         window_min = int(self.config.planning_interval_min)
-        valid_until = (now + timedelta(minutes=window_min)).isoformat()
+        valid_until = (anchor + timedelta(minutes=window_min)).isoformat()
 
         # Vorplan als Anker laden (A1): stabilisiert Lauf-zu-Lauf, indem die KI ihn als
         # `previous_plan` mitbekommt (verdichtet in build_context). Vor dem KI-Aufruf geladen,
@@ -175,6 +211,7 @@ class Planner:
         previous_plan = self.latest_plan()
 
         weather_detail = weather_config_from_options(self.config.values).llm_detail
+        global_regeln = get_global_regeln(self.db)
         run_id = uuid4().hex[:12]
 
         if self.provider is None:
@@ -204,6 +241,7 @@ class Planner:
                 now=now, state=state, forecast=forecast, weather=weather, constraints=constraints,
                 valid_from=valid_from, valid_until=valid_until, weather_detail=weather_detail,
                 previous_plan=previous_plan, ziele=ziele, run_id=run_id,
+                global_regeln=global_regeln,
             )
             if not outcome.ok:
                 return PlanRunResult(
@@ -237,14 +275,28 @@ class Planner:
             weather_detail=weather_detail,
             now=now,
             previous_plan=previous_plan,
+            global_regeln=global_regeln,
         )
 
-        # Editierbare Instruktion aus der EP-Oberfläche (sonst Default); Daten-Block hängt
-        # build_prompt selbst an, das Antwort-Schema bleibt code-kontrolliert.
-        prompt = build_prompt(context, get_setting(self.db, PLANNING_PROMPT_KEY))
+        # Editierbare Instruktion aus der EP-Oberfläche (sonst Default). Sie geht als
+        # System-Anweisung an den Provider (D-062), die Daten als User-Nachricht; das
+        # Antwort-Schema bleibt code-kontrolliert.
+        template = get_setting(self.db, PLANNING_PROMPT_KEY)
+        instruction = planning_instruction(template)
+        data_block = build_data_block(context)
+        # Zusammengesetzte Form für UI, Persistenz und Hash (dokumentierte Sicht, D-063).
+        prompt = build_prompt(context, template)
+        ctx_hash = context_hash(context, prompt=instruction, model=self.model_name)
+
+        # Unveränderter Kontext => kein KI-Aufruf (D-063). Das beendet „fünfmal drücken, fünf
+        # Antworten": bei identischer Sachlage gilt weiter derselbe Plan, statt neu zu würfeln.
+        reused = self._reusable_plan(previous_plan, ctx_hash, now)
+        if reused is not None:
+            return await self._reuse_result(reused, context, ctx_hash, devices, run_id)
+
         schema = build_response_schema(constraints)
         try:
-            response = await self.provider.generate(prompt, schema)
+            response = await self.provider.generate(data_block, schema, system=instruction)
         except Exception as exc:  # kontrolliert: nie Crash (eiserne Regel 13)
             detail = _describe_exc(exc)
             self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=detail)
@@ -272,8 +324,17 @@ class Planner:
             )
 
         self._record_ai_call(
-            ok=True, tokens_in=response.tokens_in, tokens_out=response.tokens_out, error=None
+            ok=True, tokens_in=response.tokens_in, tokens_out=response.tokens_out, error=None,
+            context_hash=ctx_hash, sampling_dropped=response.sampling_dropped,
         )
+        # Verworfene Sampling-Parameter sichtbar machen (D-063): vorher wurde eine eingestellte
+        # Temperatur 0 stillschweigend zum Anbieter-Default, ohne jede Spur in Log oder UI.
+        if response.sampling_dropped:
+            self._log(
+                "warning",
+                "Determinismus nicht aktiv: Modell verwirft temperature/seed",
+                run_id=run_id, provider=self.provider.name, model=self.model_name,
+            )
         tokens_in = _sum_tokens(class_tokens_in, response.tokens_in)
         tokens_out = _sum_tokens(class_tokens_out, response.tokens_out)
 
@@ -289,7 +350,7 @@ class Planner:
         if missing and bool(self.config.values.get("ai_repair_missing", True)):
             try:
                 repair = await self.provider.generate(
-                    build_repair_prompt(prompt, missing), schema
+                    build_repair_prompt(data_block, missing), schema, system=instruction
                 )
                 self._record_ai_call(
                     ok=True, tokens_in=repair.tokens_in, tokens_out=repair.tokens_out, error=None
@@ -316,40 +377,69 @@ class Planner:
                     provider=self.provider.name, model=self.model_name,
                 )
 
-        result = validate(plan_dict, constraints, now=now)
+        result = validate(
+            plan_dict, constraints, now=now,
+            context=context, min_confidence=self._min_confidence(),
+        )
         stored = result.normalized_plan or plan_dict
-        self._store_plan(stored, result)
+        self._store_plan(
+            stored, result, prompt=prompt, context=context,
+            response=response.data, context_hash=ctx_hash,
+        )
         self._audit("plan_created" if result.ok else "plan_rejected", run_id, result)
         self._log(
             "info" if result.ok else "warning",
             "Plan erzeugt" if result.ok else "Plan abgelehnt (Validierung)",
-            context={"ok": result.ok, "errors": result.errors, "clamped": result.clamped},
+            context={
+                "ok": result.ok, "errors": result.errors, "clamped": result.clamped,
+                "confidence": stored.get("confidence"),
+                "publish_blocked": result.publish_blocked,
+            },
             run_id=run_id, plan_id=run_id,
             provider=self.provider.name, model=self.model_name,
         )
 
-        # Vorschlagswerte nach HA schreiben – nur bei gültigem Plan und aktivem Schalter
-        # (geklemmte Pläne sind gültig; abgelehnte werden nie geschrieben). D-008-Schreibweg.
+        # Vorschlagswerte nach HA schreiben – nur bei gültigem Plan, aktivem Schalter und
+        # ausreichender Konfidenz (geklemmte Pläne sind gültig; abgelehnte oder zu unsichere
+        # werden nie geschrieben). D-008-Schreibweg, Konfidenz-Gate D-064.
         published = None
-        if result.ok and self._publish_enabled():
+        if result.ok and not result.publish_blocked and self._publish_enabled():
             pub = await publish_suggestions(
                 self.ha_client, stored, devices, logger=self.logger, db=self.db
             )
             published = pub.as_dict()
+        elif result.ok and result.publish_blocked:
+            # Nur für einen ansonsten gültigen Plan: ein abgelehnter Plan wird aus einem anderen
+            # Grund nicht geschrieben, und `published` bleibt dort wie bisher leer.
+            published = {
+                "ok": False, "written": [], "failed": [], "reason": result.publish_blocked,
+            }
+            self._log(
+                "warning", "Plan nicht veröffentlicht (Konfidenz-Gate)",
+                context={"reason": result.publish_blocked},
+                run_id=run_id, plan_id=run_id,
+            )
 
         return PlanRunResult(
             ok=result.ok,
             plan=stored,
-            validation={"ok": result.ok, "errors": result.errors, "clamped": result.clamped},
+            validation={
+                "ok": result.ok,
+                "errors": result.errors,
+                "clamped": result.clamped,
+                "publish_blocked": result.publish_blocked,
+            },
             ai_call={
                 "provider": self.provider.name,
                 "model": self.model_name,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "ok": True,
+                "sampling_dropped": response.sampling_dropped,
             },
             context=context,
             published=published,
+            context_hash=ctx_hash,
         )
 
     async def _run_classification_call(
@@ -366,6 +456,7 @@ class Planner:
         previous_plan: dict | None,
         ziele: list,
         run_id: str,
+        global_regeln: str = "",
     ) -> _ClassificationOutcome:
         """Führt den Klassifizierungs-Aufruf aus (D-055); gemeinsamer Kern von `run()` und
         `run_classification()`. Baut Kontext/Prompt/Schema, ruft den Provider, protokolliert den
@@ -378,13 +469,17 @@ class Planner:
             weather_detail=weather_detail,
             now=now,
             previous_plan=previous_plan,
+            global_regeln=global_regeln,
         )
-        classification_prompt = build_classification_prompt(
-            classification_context, get_setting(self.db, CLASSIFICATION_PROMPT_KEY)
-        )
+        classification_template = get_setting(self.db, CLASSIFICATION_PROMPT_KEY)
         classification_schema = build_classification_response_schema(ziele)
         try:
-            response = await self.provider.generate(classification_prompt, classification_schema)
+            # Instruktion in den System-Kanal, Daten als User-Nachricht (D-062).
+            response = await self.provider.generate(
+                build_data_block(classification_context),
+                classification_schema,
+                system=classification_instruction(classification_template),
+            )
         except Exception as exc:  # kontrolliert: nie Crash (eiserne Regel 13)
             detail = _describe_exc(exc)
             self._record_ai_call(ok=False, tokens_in=None, tokens_out=None, error=detail)
@@ -434,9 +529,10 @@ class Planner:
         readings = getattr(dc, "last_values", {}) if dc is not None else {}
         constraints = build_constraints(devices, readings)
 
-        valid_from = now.isoformat()
+        anchor = _floor_to_grid(now)
+        valid_from = anchor.isoformat()
         window_min = int(self.config.planning_interval_min)
-        valid_until = (now + timedelta(minutes=window_min)).isoformat()
+        valid_until = (anchor + timedelta(minutes=window_min)).isoformat()
         previous_plan = self.latest_plan()
         weather_detail = weather_config_from_options(self.config.values).llm_detail
         run_id = uuid4().hex[:12]
@@ -445,6 +541,7 @@ class Planner:
             now=now, state=state, forecast=forecast, weather=weather, constraints=constraints,
             valid_from=valid_from, valid_until=valid_until, weather_detail=weather_detail,
             previous_plan=previous_plan, ziele=ziele, run_id=run_id,
+            global_regeln=get_global_regeln(self.db),
         )
         if not outcome.ok:
             return ClassificationRunResult(
@@ -475,8 +572,8 @@ class Planner:
         if self.db is None:
             return None
         row = self.db.execute(
-            "SELECT ts, plan_id, ok, plan_json, errors_json, clamped_json "
-            "FROM plans ORDER BY id DESC LIMIT 1"
+            "SELECT ts, plan_id, ok, plan_json, errors_json, clamped_json, context_hash, "
+            "publish_blocked FROM plans ORDER BY id DESC LIMIT 1"
         ).fetchone()
         if row is None:
             return None
@@ -484,12 +581,90 @@ class Planner:
             "ts": row["ts"],
             "ok": bool(row["ok"]),
             "plan": json.loads(row["plan_json"]),
+            "context_hash": row["context_hash"],
             "validation": {
                 "ok": bool(row["ok"]),
                 "errors": json.loads(row["errors_json"] or "[]"),
                 "clamped": json.loads(row["clamped_json"] or "[]"),
+                "publish_blocked": row["publish_blocked"],
             },
         }
+
+    def _min_confidence(self) -> int | None:
+        """Schwelle des Konfidenz-Gates (D-064); 0 oder fehlend => kein Gate."""
+        raw = self.config.values.get("min_confidence_percent")
+        threshold = _as_int(raw) if raw is not None else None
+        return threshold if threshold and threshold > 0 else None
+
+    def _reusable_plan(
+        self, previous: dict | None, ctx_hash: str, now: datetime
+    ) -> dict | None:
+        """Liefert den Vorplan zurück, wenn er bei identischem Kontext weiter gilt (D-063).
+
+        Bedingungen, alle nötig: gleicher Kontext-Hash, der Vorplan war gültig, und er ist noch
+        nicht abgelaufen. Weil `valid_from`/`valid_until` auf dem Zeitraster liegen, hätte ein
+        erneuter KI-Aufruf hier per Konstruktion denselben Prompt — er würde nur neu würfeln.
+        """
+        if not previous or not previous.get("ok"):
+            return None
+        if not ctx_hash or previous.get("context_hash") != ctx_hash:
+            return None
+        plan = previous.get("plan") or {}
+        end = _parse_iso(plan.get("valid_until"))
+        if end is None or end <= now:
+            return None
+        return previous
+
+    async def _reuse_result(
+        self, previous: dict, context: dict, ctx_hash: str, devices: list, run_id: str
+    ) -> PlanRunResult:
+        """Baut das Ergebnis eines Laufs ohne KI-Aufruf (Kontext unverändert, D-063).
+
+        Der Plan wird **nicht** erneut gespeichert (er ist derselbe), aber auditiert — sonst
+        wäre in der Historie nicht erkennbar, dass ein Lauf stattgefunden hat. Die HA-Sensoren
+        werden erneut geschrieben, damit sie unabhängig vom Wiederverwenden aktuell bleiben.
+        """
+        plan = previous.get("plan") or {}
+        validation = dict(previous.get("validation") or {})
+        self._log(
+            "info", "Plan unverändert übernommen (Kontext identisch)",
+            context={"context_hash": ctx_hash, "plan_id": plan.get("plan_id")},
+            run_id=run_id,
+        )
+        if self.db is not None:
+            try:
+                self.db.execute(
+                    "INSERT INTO audit (actor, action, subject, detail_json) VALUES (?, ?, ?, ?)",
+                    (
+                        "planner", "plan_reused", str(plan.get("plan_id") or ""),
+                        json.dumps({"context_hash": ctx_hash}, ensure_ascii=False),
+                    ),
+                )
+                self.db.commit()
+            except sqlite3.Error:  # pragma: no cover - DB-Defensive
+                pass
+        published = None
+        if validation.get("ok") and not validation.get("publish_blocked"):
+            if self._publish_enabled():
+                pub = await publish_suggestions(
+                    self.ha_client, plan, devices, logger=self.logger, db=self.db
+                )
+                published = pub.as_dict()
+        return PlanRunResult(
+            ok=bool(validation.get("ok")),
+            plan=plan,
+            validation=validation,
+            ai_call={
+                "provider": self.provider.name if self.provider else "",
+                "model": self.model_name,
+                "ok": True,
+                "reused": True,
+            },
+            context=context,
+            published=published,
+            reused=True,
+            context_hash=ctx_hash,
+        )
 
     async def publish_latest(self) -> dict:
         """Schreibt den zuletzt **gültigen** Plan erneut als HA-Sensoren (manueller Button).
@@ -557,7 +732,19 @@ class Planner:
                 for key, value in entry.items()
                 if key != "name" and is_extra_field(key) and value is not None
             }
-            suggestions.append(DeviceSuggestion(name=name, extras=extras, **fields))
+            regeln = entry.get("angewandte_regeln")
+            suggestions.append(
+                DeviceSuggestion(
+                    name=name,
+                    extras=extras,
+                    begruendung=str(entry.get("begruendung") or ""),
+                    angewandte_regeln=[str(r) for r in regeln] if isinstance(regeln, list) else [],
+                    **fields,
+                )
+            )
+        # Konfidenz-Teilnoten (D-064) übernehmen; die Gesamtnote rechnet EP, nicht das Modell.
+        # Ältere Templates liefern nur eine flache `confidence` — die bleibt dann gültig.
+        teilnoten = self._confidence_parts(model_data.get("konfidenz"))
         plan = CandidatePlan(
             plan_id=plan_id,
             valid_from=valid_from,
@@ -565,38 +752,81 @@ class Planner:
             devices=suggestions,
             provider=self.provider.name if self.provider else "",
             model=self.model_name,
-            confidence=_as_int(model_data.get("confidence")),
+            confidence=(
+                aggregate_confidence(teilnoten)
+                if teilnoten
+                else _as_int(model_data.get("confidence"))
+            ),
+            konfidenz_teilnoten=teilnoten,
+            unsicherheiten=[str(u) for u in (model_data.get("unsicherheiten") or [])],
             reasoning=str(model_data.get("reasoning") or ""),
             warnings=[str(w) for w in (model_data.get("warnings") or [])],
             schema_version=SCHEMA_VERSION,
         )
         return plan_to_dict(plan)
 
+    @staticmethod
+    def _confidence_parts(raw: object) -> dict[str, int]:
+        """Liest die Konfidenz-Teilnoten defensiv als ganze Zahlen 0–100 (D-064)."""
+        if not isinstance(raw, dict):
+            return {}
+        parts: dict[str, int] = {}
+        for key, value in raw.items():
+            number = _as_int(value)
+            if number is None and isinstance(value, int | float) and not isinstance(value, bool):
+                number = int(round(float(value)))
+            if number is not None:
+                parts[str(key)] = max(0, min(100, number))
+        return parts
+
     def _record_ai_call(
-        self, *, ok: bool, tokens_in: int | None, tokens_out: int | None, error: str | None
+        self,
+        *,
+        ok: bool,
+        tokens_in: int | None,
+        tokens_out: int | None,
+        error: str | None,
+        context_hash: str | None = None,
+        sampling_dropped: bool = False,
     ) -> None:
         if self.db is None:
             return
         provider_name = self.provider.name if self.provider else ""
         try:
             self.db.execute(
-                "INSERT INTO ai_calls (provider, model, tokens_in, tokens_out, est_cost, ok, error)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO ai_calls (provider, model, tokens_in, tokens_out, est_cost, ok, "
+                "error, context_hash, sampling_dropped) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (provider_name, self.model_name, tokens_in, tokens_out, 0.0,
-                 1 if ok else 0, error),
+                 1 if ok else 0, error, context_hash, 1 if sampling_dropped else 0),
             )
             self.db.commit()
         except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert die Planung nie
             pass
 
-    def _store_plan(self, plan_dict: dict, result: object) -> None:
+    def _store_plan(
+        self,
+        plan_dict: dict,
+        result: object,
+        *,
+        prompt: str | None = None,
+        context: dict | None = None,
+        response: dict | None = None,
+        context_hash: str | None = None,
+    ) -> None:
+        """Speichert den Plan samt Prompt, Kontext, Roh-Antwort und Kontext-Hash (D-063).
+
+        Ohne diese vier Felder ist ein Lauf nachträglich nicht reproduzierbar und zwei Läufe sind
+        nicht vergleichbar — genau die Diagnose, die beim Nachstellen schwankender Ergebnisse
+        fehlte.
+        """
         if self.db is None:
             return
         try:
             self.db.execute(
                 "INSERT INTO plans (plan_id, valid_from, valid_until, ok, provider, model, "
-                "confidence, plan_json, errors_json, clamped_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "confidence, plan_json, errors_json, clamped_json, prompt, context_json, "
+                "response_json, context_hash, publish_blocked) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     plan_dict.get("plan_id"),
                     plan_dict.get("valid_from"),
@@ -608,6 +838,11 @@ class Planner:
                     json.dumps(plan_dict, ensure_ascii=False),
                     json.dumps(result.errors, ensure_ascii=False),
                     json.dumps(result.clamped, ensure_ascii=False),
+                    prompt,
+                    json.dumps(context, ensure_ascii=False) if context is not None else None,
+                    json.dumps(response, ensure_ascii=False) if response is not None else None,
+                    context_hash,
+                    getattr(result, "publish_blocked", None),
                 ),
             )
             self.db.commit()

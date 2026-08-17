@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Alert, Card, DataTable, Empty, Loading, anyValue, fmtUnit, usePoll } from '../components/Data'
 import { Icon } from '../components/Icon'
@@ -6,9 +6,10 @@ import { PageHeader } from '../components/Layout'
 import { useToast } from '../components/Toast'
 import type { Constraint, Ziel } from '../types'
 
-/* Zwei Dinge, die im Planungslauf zusammenkommen: die harten Grenzen (aus den
-   ems_*-Werten abgeleitet, nie durch die KI änderbar) und die weichen Ziele des Users
-   (D-055) — letztere ohne Gewicht, das leitet ein vorgelagerter Klassifizierungslauf ab. */
+/* Drei Dinge, die im Planungslauf zusammenkommen: die harten Grenzen (aus den
+   ems_*-Werten abgeleitet, nie durch die KI änderbar), die hausweiten Freitext-Regeln
+   (D-060) und die weichen Ziele des Users (D-055) — letztere ohne Gewicht, das leitet ein
+   vorgelagerter Klassifizierungslauf ab. */
 
 export function Ziele() {
   const constraints = usePoll(() => api.constraints(), true)
@@ -56,6 +57,13 @@ export function Ziele() {
           ) : (
             constraints.data.devices.map((device) => <ConstraintView key={device.name} device={device} />)
           )}
+        </Card>
+
+        <Card
+          title="Hausweite Regeln"
+          sub="Gelten für alle Geräte — gerätespezifische Regeln stehen im Geräte-Tab."
+        >
+          <GlobalRegeln />
         </Card>
 
         <Card title="Ziele">
@@ -308,6 +316,72 @@ function ZieleEditor({
             </button>
           ) : null}
         </div>
+      </div>
+    </>
+  )
+}
+
+
+/** Hausweite Freitext-Regeln (D-060): gelten zusätzlich zu den Regeln je Gerät. */
+function GlobalRegeln() {
+  const { data, error, reload } = usePoll(() => api.regeln(), false)
+  const [text, setText] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const { toast } = useToast()
+
+  // Nur beim ersten Eintreffen übernehmen, damit eine laufende Eingabe nicht überschrieben wird.
+  useEffect(() => {
+    if (data && !loaded) {
+      setText(data.global)
+      setLoaded(true)
+    }
+  }, [data, loaded])
+
+  const save = async (clear: boolean) => {
+    const value = clear ? '' : text
+    if (clear) setText('')
+    setSaving(true)
+    try {
+      const result = await api.saveGlobalRegeln(value)
+      if (result.ok) {
+        toast(result.is_custom ? 'Hausweite Regeln gespeichert.' : 'Hausweite Regeln geleert.')
+        void reload()
+      } else {
+        toast(result.reason ?? 'Speichern fehlgeschlagen.', 'err')
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (error) return <Alert>{error}</Alert>
+  if (!data) return <Loading />
+
+  return (
+    <>
+      <p className="muted">
+        Vorgaben, die für die ganze Anlage gelten, in eigenen Worten — z. B. „Von Mai bis September
+        wird nicht elektrisch geheizt.“ Die KI muss ihre Vorschläge gegen diese Regeln begründen.
+      </p>
+      <label className="field">
+        <span>Regeln</span>
+        <textarea
+          value={text}
+          rows={4}
+          placeholder="Eine Regel je Zeile, mit konkreten Schwellwerten."
+          onChange={(event) => setText(event.target.value)}
+        />
+      </label>
+      <div className="inline-actions">
+        <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save(false)}>
+          {saving ? 'Speichern…' : 'Speichern'}
+        </button>
+        <button type="button" className="btn btn-ghost" disabled={saving} onClick={() => void save(true)}>
+          Leeren
+        </button>
       </div>
     </>
   )

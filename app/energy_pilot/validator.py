@@ -10,10 +10,15 @@ angebunden wird. Implementiert sind die jetzt schon möglichen Pipeline-Stufen:
    ist nur der AKTUELLE Ist-Zustand des Geräts (kein Vorschlags-Blocker, D-054): sie
    beschreibt nicht, ob das Gerät im Gültigkeitszeitraum des Plans arbeiten darf.
 3. **Zeitlogik** – `valid_from < valid_until`, nicht abgelaufen.
+4. **Datenaktualität** (D-064) – die vom Modell gelieferte `datenlage`-Teilnote wird gegen die
+   real gemessene Datenlage des Kontexts gedeckelt. Selbsteinschätzung kann die Messung nie
+   übertreffen.
+6. **Mindestkonfidenz** (D-064) – die Teilnoten werden als schwächstes Glied aggregiert; liegt
+   das Ergebnis unter `min_confidence_percent`, wird der Plan **nicht veröffentlicht**
+   (`publish_blocked`). Er bleibt gültig, gespeichert und sichtbar.
 
-TODO(M2-Folge): Stufe 4 Datenaktualität, Stufe 5 Delta-Limit (braucht Vorplan),
-Stufe 6 Mindestkonfidenz (braucht KI-Konfidenz; `min_confidence_percent` liegt
-bereits in der Addon-Config). Bewusst noch nicht verdrahtet (Eingaben fehlen).
+TODO: Stufe 5 Delta-Limit zum Vorplan (D-021) bleibt bewusst offen — nachgelagerte Dämpfung der
+KI-Ausgabe ist als Ansatz verworfen (D-060); Stabilität entsteht im Aufruf, nicht dahinter.
 """
 
 from __future__ import annotations
@@ -23,7 +28,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from energy_pilot.constraints import DeviceConstraint
-from energy_pilot.plan_schema import schema_errors, suggestion_keys
+from energy_pilot.plan_schema import (
+    CONFIDENCE_PARTS,
+    EXPLANATION_FIELDS,
+    aggregate_confidence,
+    schema_errors,
+    suggestion_keys,
+)
 
 # Geschützte-Mindestleistung-Felder (Watt/Ampere), die gegen [min_power, max_power] geklemmt werden.
 _PROTECTED_MIN_KEYS = (
@@ -39,12 +50,18 @@ _PRIO_STEP = 10
 
 @dataclass
 class ValidationResult:
-    """Ergebnis der Validierung: ok, Fehler (Ablehnung), geklemmte Felder, Normalplan."""
+    """Ergebnis der Validierung: ok, Fehler (Ablehnung), geklemmte Felder, Normalplan.
+
+    `publish_blocked` ist die Begründung, warum ein **gültiger** Plan trotzdem nicht nach HA
+    geschrieben wird (Stufe 6, D-064). Bewusst getrennt von `ok`: der Plan ist nicht falsch, die
+    KI war nur zu unsicher — er bleibt sichtbar und gespeichert, wirkt aber nicht.
+    """
 
     ok: bool
     errors: list[str]
     clamped: list[str]
     normalized_plan: dict | None
+    publish_blocked: str | None = None
 
 
 def _parse_dt(value: object) -> datetime | None:
@@ -180,9 +197,11 @@ def _check_device(
     _fill_missing_fields(entry, constraint, clamped)
 
     # Schreibvertrag: nur erlaubte Felder je Gerät (z.B. Batterie keine Priorität, D-037;
-    # Binärlast keine geschützte Mindestleistung; korrekte Einheit w/a).
+    # Binärlast keine geschützte Mindestleistung; korrekte Einheit w/a). Die Begründungsfelder
+    # (D-060) sind keine Vorschlagswerte und werden nie nach HA geschrieben — sie unterliegen
+    # deshalb keinem Schreibvertrag.
     for key in entry:
-        if key != "name" and key not in allowed:
+        if key != "name" and key not in allowed and key not in EXPLANATION_FIELDS:
             errors.append(f"{name}: Feld '{key}' nicht im Schreibvertrag dieses Geräts")
 
     # Geschützte Mindestleistung in [min_power, max_power] klemmen (Batterie: <= max. Ladeleistung).
@@ -248,16 +267,78 @@ def _normalize_priorities(
         entry[_PRIO_KEY] = new_value  # immer den kanonischen int schreiben
 
 
+def _context_data_quality(context: dict | None) -> int | None:
+    """EP-eigene `datenlage`-Note aus dem Kontext (Stufe 4, D-064).
+
+    `plan_context._data_quality` hat den Anteil frischer, belegter Werte bereits gezählt; hier
+    wird er nur gelesen. Damit hängt die Note an der gemessenen Realität und nicht an der
+    Selbsteinschätzung des Modells.
+    """
+    if not isinstance(context, dict):
+        return None
+    datenlage = context.get("datenlage")
+    if not isinstance(datenlage, dict):
+        return None
+    raw = datenlage.get("frische_prozent")
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        return None
+    return max(0, min(100, int(round(float(raw)))))
+
+
+def _resolve_confidence(
+    normalized: dict, context: dict | None, clamped: list[str]
+) -> int | None:
+    """Stufen 4/6 (D-064): Teilnoten gegenrechnen und zur Gesamtkonfidenz aggregieren.
+
+    Drei Schritte, alle in Code und damit prüfbar:
+    1. Die vom Modell gelieferte `datenlage`-Note wird gegen die real gemessene Datenlage
+       gedeckelt (`min`). Behauptet das Modell 90 bei 40 % veralteten Werten, gewinnt EP — und
+       die Abweichung wird wie eine Klemmung protokolliert.
+    2. Aggregation als **schwächstes Glied** über alle Teilnoten (siehe `aggregate_confidence`).
+    3. Fehlen Teilnoten ganz (älterer Prompt/Template), bleibt eine vom Modell gelieferte
+       Gesamtnote unangetastet — kein stiller Wechsel des Verhaltens.
+    """
+    parts = normalized.get("konfidenz_teilnoten")
+    if not isinstance(parts, dict) or not parts:
+        return normalized.get("confidence")
+
+    ep_note = _context_data_quality(context)
+    model_note = parts.get("datenlage")
+    if (
+        ep_note is not None
+        and not isinstance(model_note, bool)
+        and isinstance(model_note, int | float)
+        and model_note > ep_note
+    ):
+        clamped.append(
+            f"konfidenz.datenlage: {int(model_note)} -> {ep_note} "
+            "(EP-Messung der Datenlage schlägt die Selbsteinschätzung)"
+        )
+        parts["datenlage"] = ep_note
+
+    # Nur die definierten Teilnoten behalten — erfundene Schlüssel gehen nicht in die Aggregation.
+    normalized["konfidenz_teilnoten"] = {
+        key: value for key, value in parts.items() if key in CONFIDENCE_PARTS
+    }
+    return aggregate_confidence(normalized["konfidenz_teilnoten"])
+
+
 def validate(
     plan_dict: dict,
     constraints: list[DeviceConstraint],
     *,
     now: datetime | None = None,
+    context: dict | None = None,
+    min_confidence: int | None = None,
 ) -> ValidationResult:
-    """Validiert einen Kandidatenplan gegen Schema + harte Grenzen (Stufen 1–3).
+    """Validiert einen Kandidatenplan gegen Schema + harte Grenzen (Stufen 1–4 und 6).
 
     Liefert bei Strukturfehlern `ok=False` ohne Normalplan; sonst einen normalisierten
     (geklemmten) Plan plus Liste der Klemmungen und etwaiger Ablehnungsgründe.
+
+    `context` ist der Kontext, aus dem der Plan entstand — daraus stammt die gemessene Datenlage
+    für die Konfidenz-Gegenrechnung (Stufe 4). `min_confidence` ist die Schwelle, unterhalb der
+    ein gültiger Plan **nicht veröffentlicht** wird (Stufe 6, `publish_blocked`).
     """
     now = now or datetime.now(UTC)
 
@@ -295,6 +376,25 @@ def validate(
     # Stufe 2b: Prioritäten geräteübergreifend auf die strikte 10er-Rangfolge bringen.
     _normalize_priorities(normalized["devices"], by_name, clamped)
 
+    # Stufe 4 + 6 (D-064): Konfidenz gegenrechnen, aggregieren und als Veröffentlichungs-Gate
+    # auswerten. Ein zu unsicherer Plan ist nicht ungültig — er wird nur nicht wirksam.
+    confidence = _resolve_confidence(normalized, context, clamped)
+    normalized["confidence"] = confidence
+    publish_blocked: str | None = None
+    if (
+        min_confidence is not None
+        and confidence is not None
+        and confidence < int(min_confidence)
+    ):
+        parts = normalized.get("konfidenz_teilnoten") or {}
+        schwaechste = min(parts, key=lambda k: parts[k]) if parts else None
+        grund = f"Konfidenz {confidence} % unter der Schwelle {int(min_confidence)} %"
+        publish_blocked = f"{grund} (schwächste Teilnote: {schwaechste})" if schwaechste else grund
+
     return ValidationResult(
-        ok=not errors, errors=errors, clamped=clamped, normalized_plan=normalized
+        ok=not errors,
+        errors=errors,
+        clamped=clamped,
+        normalized_plan=normalized,
+        publish_blocked=publish_blocked,
     )

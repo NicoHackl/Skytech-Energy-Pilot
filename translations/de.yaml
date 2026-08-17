@@ -66,6 +66,11 @@ configuration:
   ai_seed:
     name: KI-Seed
     description: Fester Zufalls-Seed für den KI-Aufruf – verstärkt reproduzierbare, stabile Ausgaben über mehrere Läufe.
+  ai_thinking_budget:
+    name: Denkbudget
+    description: >-
+      Nur Gemini. Bei Flash-Modellen ist internes "Denken" standardmäßig aktiv und eine eigene
+      Ursache schwankender Ergebnisse. 0 = aus (reproduzierbar), höhere Werte begrenzen es.
   ai_repair_missing:
     name: Fehlende Felder nachfordern
     description: Lässt das Modell Pflicht-Vorschlagsfelder aus, werden genau diese einmalig nachgefordert, bevor der Validator sie deterministisch aus dem Ist-Zustand auffüllt.
@@ -208,3 +213,15 @@ configuration:
       entity_battery_soc:
         name: Batterie-Ladestand (SOC)
         description: HA-Entität für den Batterieladestand in Prozent.
+      entity_hot_water_temp:
+        name: Warmwassertemperatur
+        description: >-
+          HA-Entität für die gemessene Warmwasser-/Speichertemperatur (z. B.
+          sensor.elwa_modbus_isttemperatur). EP führt zusätzlich die 1-/15-/60-Minuten-Mittel:
+          eine steigende Temperatur ohne Heizstableistung zeigt der KI, dass die Solarthermie
+          gerade lädt.
+      entity_outdoor_temp:
+        name: Außentemperatur
+        description: >-
+          HA-Entität für die gemessene Außentemperatur. Ergänzt die Wetterprognose um den
+          Ist-Wert samt Verlauf.

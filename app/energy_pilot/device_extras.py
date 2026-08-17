@@ -18,7 +18,12 @@ from __future__ import annotations
 import re
 import sqlite3
 
-from energy_pilot.devices import Device, DeviceExtra
+from energy_pilot.devices import (
+    EXTRA_ROLE_GRENZE,
+    Device,
+    DeviceExtra,
+    normalize_extra_role,
+)
 from energy_pilot.settings import get_setting, set_setting
 
 # Geräte-Präfix des Heizstabs für das Default-Seeding (früher constraints.HEIZSTAB_PREFIX, D-035).
@@ -37,6 +42,8 @@ _HEIZSTAB_DEFAULT = {
     ),
     "label": "Max. Wassertemperatur",
     "unit": "°C",
+    # Kein Messwert, sondern die vom User gesetzte Obergrenze (D-061).
+    "rolle": EXTRA_ROLE_GRENZE,
 }
 
 # Grobe Struktur einer HA-Entity-ID: <domain>.<object_id> (Kleinbuchstaben/Ziffern/Unterstrich).
@@ -56,6 +63,7 @@ def _row_to_extra(row: sqlite3.Row) -> DeviceExtra:
         label=row["label"] or "",
         unit=row["unit"] or "",
         write_original=bool(row["write_original"]),
+        rolle=normalize_extra_role(row["rolle"]),
     )
 
 
@@ -66,7 +74,7 @@ def load_extras(db: sqlite3.Connection | None) -> dict[str, tuple[DeviceExtra, .
     try:
         rows = db.execute(
             "SELECT device_name, read_entity_id, ai_suggestion, ai_hint, label, unit, "
-            "write_original FROM device_extras ORDER BY device_name, sort_order, id"
+            "write_original, rolle FROM device_extras ORDER BY device_name, sort_order, id"
         ).fetchall()
     except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie (eiserne Regel 13)
         return {}
@@ -80,15 +88,17 @@ def apply_extras(
     devices: list[Device],
     extras_map: dict[str, tuple[DeviceExtra, ...]],
     prompts: dict[str, str] | None = None,
+    regeln: dict[str, str] | None = None,
 ) -> list[Device]:
-    """Hängt die geladenen Zusatz-Entitäten und Geräte-Prompts an die Geräte an.
+    """Hängt Zusatz-Entitäten, Geräte-Beschreibung und Geräteregeln an die Geräte an.
 
     Die Zuordnung erfolgt über den stabilen `device.name` (D-029). Geräte ohne Konfiguration
-    behalten eine leere `extras`-Tuple bzw. einen leeren `ai_prompt`. `prompts` ist die
-    user-gepflegte KI-Beschreibung je Gerät (D-051, siehe device_prompts). Liefert neue
-    `Device`-Instanzen (frozen dataclass).
+    behalten eine leere `extras`-Tuple bzw. leere Texte. `prompts` ist die user-gepflegte
+    KI-Beschreibung je Gerät (D-051, siehe device_prompts), `regeln` die Freitext-Betriebsregeln
+    (D-060, siehe device_regeln). Liefert neue `Device`-Instanzen (frozen dataclass).
     """
     prompts = prompts or {}
+    regeln = regeln or {}
     result: list[Device] = []
     for device in devices:
         extras = extras_map.get(device.name, ())
@@ -101,6 +111,7 @@ def apply_extras(
                 output_unit=device.output_unit,
                 extras=extras,
                 ai_prompt=prompts.get(device.name, ""),
+                ai_regeln=regeln.get(device.name, ""),
             )
         )
     return result
@@ -116,23 +127,28 @@ def upsert_extra(
     label: str = "",
     unit: str = "",
     write_original: bool = False,
+    rolle: str = "",
 ) -> None:
     """Legt eine Zusatz-Entität an oder aktualisiert sie (UPSERT auf device_name+entity).
 
     `write_original` (D-052) ist nur bei `ai_suggestion=True` wirksam (siehe
     `DeviceExtra.should_write_original`) – hier trotzdem roh übernommen, damit ein späteres
     Aktivieren von `ai_suggestion` den zuvor gewählten Original-Schreibweg nicht verliert.
+
+    `rolle` (D-061) ist die Semantik für die KI (`ist`/`grenze`/`sollwert`); leer oder unbekannt
+    fällt auf `ist` zurück.
     """
     if db is None:
         return
     db.execute(
         "INSERT INTO device_extras "
         "(device_name, read_entity_id, ai_suggestion, ai_hint, label, unit, write_original, "
-        "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) "
+        "rolle, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) "
         "ON CONFLICT(device_name, read_entity_id) DO UPDATE SET "
         "ai_suggestion = excluded.ai_suggestion, ai_hint = excluded.ai_hint, "
         "label = excluded.label, unit = excluded.unit, "
-        "write_original = excluded.write_original, updated_at = datetime('now')",
+        "write_original = excluded.write_original, rolle = excluded.rolle, "
+        "updated_at = datetime('now')",
         (
             device_name,
             read_entity_id.strip(),
@@ -141,6 +157,7 @@ def upsert_extra(
             label,
             unit,
             1 if write_original else 0,
+            normalize_extra_role(rolle),
         ),
     )
     db.commit()
@@ -204,6 +221,7 @@ def seed_defaults(db: sqlite3.Connection | None, devices: list[Device]) -> bool:
         ai_hint=_HEIZSTAB_DEFAULT["ai_hint"],
         label=_HEIZSTAB_DEFAULT["label"],
         unit=_HEIZSTAB_DEFAULT["unit"],
+        rolle=_HEIZSTAB_DEFAULT["rolle"],
     )
     set_setting(db, _HEIZSTAB_SEED_MARKER, "1")
     return True

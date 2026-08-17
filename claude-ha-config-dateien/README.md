@@ -28,6 +28,29 @@ Danach **HA neu starten** bzw. die YAML-Konfiguration neu laden.
 | `input_select_ep.yaml` | input_select | Steuermodus, Betriebsmodus, Strategie (`ep_*`) |
 | `input_datetime_ep.yaml` | input_datetime | E-Auto-Abfahrtszeit (später; auch für externen iOS/Java-Zugriff, D-013) |
 
+## Altlasten aufräumen (Stand 0.0.61)
+
+Mehrere `ep_*`-Helfer aus früheren Ausbaustufen liegen in bestehenden Installationen noch in
+HA, werden von EP aber **nirgends gelesen** — und widersprechen den Addon-Optionen, die
+dieselben Größen führen. Wer sie stehen lässt, stellt Werte ein, die keine Wirkung haben:
+
+| Helfer | Wird von EP gelesen? | Stattdessen |
+|---|---|---|
+| `input_number.ep_mindestkonfidenz` | nein | Addon-Option `min_confidence_percent` (D-064) |
+| `input_number.ep_prognosehorizont` | nein | Addon-Option `forecast_horizon_h` |
+| `input_number.ep_planungsintervall` | nein | Addon-Option `planning_interval_min` |
+| `input_select.ep_steuermodus`, `ep_betriebsmodus`, `ep_strategie` | nein | Steuermodi sind nicht verdrahtet ([../docs/steuermodi.md](../docs/steuermodi.md)); wirksam ist die HEMS-Modus-Achse (D-057) |
+| `input_boolean.ep_aktiv`, `ep_automatische_planung`, `ep_automatische_ubernahme`, `ep_ereignis_neuplanung` | nein | es gibt keinen Scheduler ([../docs/bekannte-luecken.md](../docs/bekannte-luecken.md)) |
+
+Diese Helfer können aus der HA-Konfiguration **entfernt** werden. Sie stehen deshalb auch nicht
+mehr in den Paketdateien dieses Ordners. Weiterhin gebraucht wird `ep_heizstab_max_temperatur`
+(Grenzwert, EP liest, D-035/D-061) und `ep_eauto_abfahrtszeit`, sofern als Zusatzwert gepflegt.
+
+**Neu ab 0.0.61 (D-061):** Warmwasser- und Außentemperatur trägst du **nicht** als Helfer ein,
+sondern als bestehende Sensor-Entitäten in der Addon-Option `sensoren`
+(`entity_hot_water_temp`, `entity_outdoor_temp`) — EP führt darauf die Mittelwerte, damit die
+KI den Verlauf sieht.
+
 ## Wichtig
 - **Geräte-Grenzwerte/Freigaben/Ist-Leistung liefern diese Dateien NICHT** — sie sind `ems_*` (HEMS-Domäne, D-029). Hier nur als Kommentar dokumentiert, damit klar ist, was HEMS bereitstellen muss. Findet EP einen Wert nicht, greift der **Fallback in der Addon-Config**.
 - **Fremddaten** (PV-Prognose, Strompreis) sind **nicht** hier — die trägst du als bestehende Sensor-Entitätsnamen direkt in der **Addon-Config** ein (D-006).

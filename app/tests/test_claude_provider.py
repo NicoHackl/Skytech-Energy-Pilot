@@ -111,3 +111,22 @@ async def test_generate_wraps_timeout_as_provider_error():
         await provider.generate("hi", {})
     assert "Zeitüberschreitung" in str(excinfo.value)
     assert str(excinfo.value).strip()
+
+
+async def test_generate_sends_instruction_as_system_field():
+    """D-062: Instruktion im `system`-Feld der Messages-API, Daten als User-Nachricht."""
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = ClaudeProvider("k", session=session)
+
+    await provider.generate("Daten:\n{}", {"type": "OBJECT"}, system="ROLLE UND REGELN")
+
+    body = session.calls[0]["json"]
+    assert body["system"] == "ROLLE UND REGELN"
+    assert body["messages"] == [{"role": "user", "content": "Daten:\n{}"}]
+
+
+async def test_generate_omits_system_field_when_empty():
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = ClaudeProvider("k", session=session)
+    await provider.generate("nur Daten", {"type": "OBJECT"}, system="")
+    assert "system" not in session.calls[0]["json"]

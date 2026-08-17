@@ -40,6 +40,7 @@ class GeminiProvider(AIProvider):
         rate_limit_per_min: int = 10,
         temperature: float | None = 0.0,
         seed: int | None = None,
+        thinking_budget: int | None = None,
         base_url: str = DEFAULT_BASE_URL,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
@@ -50,6 +51,8 @@ class GeminiProvider(AIProvider):
         # weglassen (Provider-Default). Reines Sampling-Verhalten, keine harte Grenze.
         self.temperature = temperature
         self.seed = seed
+        # Denkbudget (D-063): 0 = Thinking aus, >0 = begrenzt, None = Anbieter-Default.
+        self.thinking_budget = thinking_budget
         self.base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout_s)
         self._limiter = AsyncRateLimiter(rate_limit_per_min)
@@ -67,7 +70,9 @@ class GeminiProvider(AIProvider):
             await self._session.close()
             self._session = None
 
-    async def generate(self, prompt: str, response_schema: dict) -> ProviderResponse:
+    async def generate(
+        self, prompt: str, response_schema: dict, *, system: str | None = None
+    ) -> ProviderResponse:
         await self._limiter.acquire()
         session = await self._ensure_session()
         url = f"{self.base_url}/models/{self.model}:generateContent"
@@ -80,10 +85,18 @@ class GeminiProvider(AIProvider):
             generation_config["temperature"] = self.temperature
         if self.seed is not None:
             generation_config["seed"] = self.seed
-        body = {
+        # Denkaufwand (D-063): bei Flash-Modellen ist Thinking standardmäßig aktiv und eine
+        # eigene Varianzquelle. `thinking_budget=0` schaltet es ab, ein positiver Wert begrenzt
+        # es; None lässt den Anbieter-Default unangetastet.
+        if self.thinking_budget is not None:
+            generation_config["thinkingConfig"] = {"thinkingBudget": self.thinking_budget}
+        body: dict[str, object] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": generation_config,
         }
+        # Instruktion in den System-Kanal (D-062), Daten bleiben User-Nachricht.
+        if system and system.strip():
+            body["systemInstruction"] = {"parts": [{"text": system.strip()}]}
         # Schlüssel als Header (nicht in der URL) → erscheint nicht in Zugriffs-/Proxy-Logs.
         headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
         try:

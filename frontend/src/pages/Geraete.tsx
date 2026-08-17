@@ -19,7 +19,8 @@ import { useToast } from '../components/Toast'
 import type { Device } from '../types'
 
 /* Geräte kommen ausschließlich vom HEMS (D-046). Je Gerät: Modus-Achse, gelesene
-   ems_*-Werte, Zusatz-Entitäten und die Freitext-Beschreibung für die KI (D-051). */
+   ems_*-Werte, Zusatz-Entitäten, die Freitext-Beschreibung für die KI (D-051) und die
+   Freitext-Betriebsregeln (D-060). */
 
 export function Geraete() {
   const { data, error, reload } = usePoll(() => api.devices(), true)
@@ -129,6 +130,7 @@ function DeviceCard({ device, onChanged }: { device: Device; onChanged: () => vo
 
       <DeviceExtras device={device} onChanged={onChanged} />
       <DevicePrompt device={device} onChanged={onChanged} />
+      <DeviceRegeln device={device} onChanged={onChanged} />
     </Card>
   )
 }
@@ -194,6 +196,64 @@ function DevicePrompt({ device, onChanged }: { device: Device; onChanged: () => 
       <label className="field">
         <span>Beschreibung</span>
         <textarea value={text} onChange={(event) => setText(event.target.value)} />
+      </label>
+      <div className="inline-actions">
+        <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save(false)}>
+          {saving ? 'Speichern…' : 'Speichern'}
+        </button>
+        <button type="button" className="btn btn-ghost" disabled={saving} onClick={() => void save(true)}>
+          Leeren
+        </button>
+      </div>
+    </>
+  )
+}
+
+
+/** Freitext-Betriebsregeln des Geräts (D-060): die Vorgabe, gegen die die KI begründen muss. */
+function DeviceRegeln({ device, onChanged }: { device: Device; onChanged: () => void }) {
+  const [text, setText] = useState(device.ai_regeln ?? '')
+  const [saving, setSaving] = useState(false)
+  const { toast } = useToast()
+
+  const save = async (clear: boolean) => {
+    const value = clear ? '' : text
+    if (clear) setText('')
+    setSaving(true)
+    try {
+      const result = await api.saveDeviceRegeln({ device_name: device.name, regeln: value })
+      if (result.ok) {
+        toast(result.is_custom ? 'Regeln gespeichert.' : 'Regeln geleert.')
+        onChanged()
+      } else {
+        toast(result.reason ?? 'Speichern fehlgeschlagen.', 'err')
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <h3>Regeln für dieses Gerät</h3>
+      <p className="muted">
+        Was <b>du</b> willst — im Unterschied zur Beschreibung darüber, die sagt, was das Gerät
+        <i> ist</i>. Formuliere die Bedingungen in eigenen Worten und nenne konkrete Werte, z. B.
+        „Steht die Warmwassertemperatur über 70 °C oder werden die nächsten zwei Tage über 25 °C
+        warm, bleibt der Heizstab gesperrt — die Solarthermie deckt das Warmwasser.“ Die KI muss
+        ihre Entscheidung für dieses Gerät gegen diese Regeln begründen; die Begründung steht
+        anschließend im Plan-Tab.
+      </p>
+      <label className="field">
+        <span>Regeln</span>
+        <textarea
+          value={text}
+          rows={5}
+          placeholder="Eine Regel je Zeile, mit konkreten Schwellwerten."
+          onChange={(event) => setText(event.target.value)}
+        />
       </label>
       <div className="inline-actions">
         <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save(false)}>

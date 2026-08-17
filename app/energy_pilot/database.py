@@ -154,6 +154,47 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        11,
+        # Semantische Rolle je Zusatzwert (D-061): ist | grenze | sollwert. Backfill ohne Raten:
+        # liefert die KI für einen Zusatzwert einen Vorschlag, ist der Wert per Definition eine
+        # Vorgabe und kein Messwert => `sollwert`; reine Lesewerte sind `ist`. Der frühere
+        # Heizstab-Seed (D-035) ist namentlich bekannt und damit eindeutig eine `grenze`.
+        """
+        ALTER TABLE device_extras ADD COLUMN rolle TEXT NOT NULL DEFAULT 'ist';
+        UPDATE device_extras SET rolle = 'sollwert' WHERE ai_suggestion = 1;
+        UPDATE device_extras SET rolle = 'grenze'
+            WHERE read_entity_id = 'input_number.ep_heizstab_max_temperatur';
+        """,
+    ),
+    (
+        12,
+        # Freitext-Regeln je Gerät (D-060): die vom User formulierte Betriebsabsicht. Geht als
+        # eigener, im Prompt referenzierter Block in den KI-Kontext — nicht als weiteres Feld im
+        # Datenrauschen. Hausweite Regeln liegen im KV-Store (`config`), nicht hier.
+        """
+        CREATE TABLE IF NOT EXISTS device_regeln (
+            device_name TEXT PRIMARY KEY,
+            regeln TEXT NOT NULL DEFAULT '',
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        """,
+    ),
+    (
+        13,
+        # Nachvollziehbarkeit eines Planungslaufs (D-063): ohne Prompt, Kontext und Roh-Antwort
+        # ist ein Lauf nicht reproduzierbar und zwei Läufe sind nicht vergleichbar.
+        # `context_hash` ist der Fingerabdruck des quantisierten Kontexts.
+        """
+        ALTER TABLE plans ADD COLUMN prompt TEXT;
+        ALTER TABLE plans ADD COLUMN context_json TEXT;
+        ALTER TABLE plans ADD COLUMN response_json TEXT;
+        ALTER TABLE plans ADD COLUMN context_hash TEXT;
+        ALTER TABLE plans ADD COLUMN publish_blocked TEXT;
+        ALTER TABLE ai_calls ADD COLUMN context_hash TEXT;
+        ALTER TABLE ai_calls ADD COLUMN sampling_dropped INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
 ]
 
 

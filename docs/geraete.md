@@ -36,7 +36,7 @@ entfernter Geräte automatisch.
 | Gerät | Besonderheit |
 |---|---|
 | **Batterie (E3DC)** | immer Prio 1, immer freigegeben, **kein** SOC-Limit, **keine** Entladung (nur PV-Überschuss); nur max. Ladeleistung relevant. Einziger Schreibwert: `ep_batterie_geschutzte_mindestleistung_w_vorschlag` (D-037). `constraints.py: BATTERY_PREFIX = "batterie"` erzwingt `forced_prio=1`/`forced_freigabe=True`. |
-| **Heizstab** | regelbar; max./min. Leistung + Freigabe als `ems_*` (EP liest). Max. Wassertemperatur ist **nicht** HEMS-relevant — läuft als generische Zusatz-Entität (D-047), beim ersten HEMS-Sync einmalig geseedet (`input_number.ep_heizstab_max_temperatur` → `sensor.ep_heizstab_max_temperatur_vorschlag`), danach im Geräte-Tab frei editier-/löschbar. |
+| **Heizstab** | regelbar; max./min. Leistung + Freigabe als `ems_*` (EP liest). Max. Wassertemperatur ist **nicht** HEMS-relevant — läuft als generische Zusatz-Entität (D-047) mit Rolle `grenze` (D-061), beim ersten HEMS-Sync einmalig geseedet (`input_number.ep_heizstab_max_temperatur` → `sensor.ep_heizstab_max_temperatur_vorschlag`), danach im Geräte-Tab frei editier-/löschbar. Die **gemessene** Speichertemperatur ist keine Zusatz-Entität, sondern die Mess-Rolle `hot_water_temp`. |
 | **Heizlüfter 1 & 2** | feste 1500 W (binär). Ist-Leistung als `ems_<name>_leistung_w` — falls das Feld fehlt, nimmt `constraints.py` `DEFAULT_BINARY_POWER_W = 1500.0` als Fallback an. Freigabe als `ems_<name>_technische_freigabe`. |
 
 Wallbox/E-Auto, Wärmepumpe, dynamische Tarife, mehrere Speicher: bewusst **später**
@@ -61,3 +61,40 @@ advisorisch, fließt nur in den Planungs-Prompt ein, wenn gesetzt (Datenminimum)
 geht nie an HEMS. Zwei Prompt-Ebenen existieren parallel: der globale Planungs-Prompt
 (gesamte Strategie, siehe [planungs-engine.md](planungs-engine.md)) und dieser
 Pro-Gerät-Prompt (Einzelgeräte-Erklärung).
+
+### Regeln je Gerät (D-060)
+
+**Dritte** Ebene neben globalem Prompt und Beschreibung: `device_regeln.py`, Tabelle
+`device_regeln`, gepflegt im Geräte-Tab als Freitext. Abgrenzung — und der Grund für die
+Trennung:
+
+| Feld | Beantwortet | Kontext-Schlüssel |
+|---|---|---|
+| KI-Beschreibung (D-051) | **Was** ist das Gerät, wie verhält es sich? | `funktion` |
+| Regeln (D-060) | **Was will der User** — unter welchen Bedingungen soll es laufen? | `regeln` |
+
+Die Regeln sind der Block, gegen den die KI ihre Entscheidung **begründen muss**: das
+Antwortschema verlangt je Gerät `begruendung` (ein Satz mit der maßgeblichen Messgröße) und
+`angewandte_regeln` (die Regeln, auf die sich die Entscheidung stützt; leere Liste, wenn keine
+greift). Beides erscheint im Plan-Tab. Es gibt **keine** nachträgliche Erzwingung der Regeln
+gegen die Modellantwort — bewusst so entschieden (D-060), die Gegenkontrolle ist die
+Sichtbarkeit. Hausweite Regeln liegen daneben im KV-Store (`global_regeln`, Tab
+„Grenzen & Ziele“) und gelten für alle Geräte.
+
+Beispiel, das den belegten Fehlfall abdeckt:
+
+> Steht die Warmwassertemperatur über 70 °C oder werden die nächsten zwei Tage über 25 °C
+> warm, bleibt der Heizstab gesperrt — die Solarthermie deckt das Warmwasser und der Speicher
+> darf nicht überhitzen.
+
+### Rolle je Zusatzwert (D-061)
+
+Jeder Zusatzwert trägt eine **Rolle**: `ist` (gemessen), `grenze` (vom User gesetzte Ober-/
+Untergrenze) oder `sollwert` (Vorgabe). Sie steht im Kontext als `rolle` samt Klartext
+(`rolle_bedeutung`) und ist im Geräte-Tab ein Auswahlfeld.
+
+Der Grund ist ein realer Fehlfall: am Heizstab lag als Zusatzwert die **Obergrenze** 85 °C.
+Ohne Rollenangabe liest ein Modell sie als aktuelle Speichertemperatur — und schlug 80 °C vor,
+während der Speicher schon bei 76,1 °C stand. Die gemessene Speichertemperatur gehört seit
+D-061 als Mess-Rolle in den `state`-Block ([konfiguration.md](konfiguration.md#sensor-zuordnung-sensoren)),
+nicht als Zusatzwert.

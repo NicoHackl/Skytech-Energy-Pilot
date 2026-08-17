@@ -5,6 +5,7 @@ import type {
   Diagnostics,
   DevicesResponse,
   EntityRow,
+  ExtraRole,
   Forecast,
   Health,
   HemsStatus,
@@ -12,6 +13,7 @@ import type {
   PlanResponse,
   PromptResponse,
   PublishResult,
+  RegelnResponse,
   StateReading,
   TestResult,
   Weather,
@@ -96,11 +98,20 @@ export const api = {
     label: string
     unit: string
     write_original: boolean
+    rolle: ExtraRole
   }) => request<{ ok: boolean; reason?: string }>('api/devices/extras', post(data)),
   deleteExtra: (data: { device_name: string; read_entity_id: string }) =>
     request<{ ok: boolean; reason?: string }>('api/devices/extras', del(data)),
   saveDevicePrompt: (data: { device_name: string; prompt: string }) =>
     request<{ ok: boolean; is_custom?: boolean; reason?: string }>('api/devices/prompt', post(data)),
+  saveDeviceRegeln: (data: { device_name: string; regeln: string }) =>
+    request<{ ok: boolean; is_custom?: boolean; reason?: string }>('api/devices/regeln', post(data)),
+  regeln: () => request<RegelnResponse>('api/regeln'),
+  saveGlobalRegeln: (regeln: string) =>
+    request<{ ok: boolean; is_custom?: boolean; regeln?: string; reason?: string }>(
+      'api/regeln',
+      post({ regeln }),
+    ),
 
   forecast: () => request<Forecast>('api/forecast'),
   weather: () => request<Weather>('api/weather'),

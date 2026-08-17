@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import type { Device, DeviceExtra } from '../types'
+import type { Device, DeviceExtra, ExtraRole } from '../types'
 import { DataTable, anyValue, srcDe } from './Data'
 import { Icon } from './Icon'
 import { useToast } from './Toast'
@@ -10,7 +10,31 @@ import { useToast } from './Toast'
    zurückschreiben. Der Rückschreibweg greift zusätzlich nur, wenn die HEMS-Modus-Achse
    für das Gerät die Quelle `ep` ergibt (D-057). */
 
-const EMPTY = { entity: '', label: '', unit: '', suggest: false, original: false, hint: '' }
+const EMPTY = {
+  entity: '',
+  label: '',
+  unit: '',
+  suggest: false,
+  original: false,
+  hint: '',
+  rolle: 'ist' as ExtraRole,
+}
+
+/* Rollen-Auswahl (D-061): sagt der KI, WAS der Wert ist. Ohne diese Angabe liest ein Modell
+   einen Sollwert wie „Max. Wassertemperatur 85 °C" als Ist-Temperatur — genau der Fehler
+   hinter dem 80-°C-Vorschlag bei 76 °C im Speicher. */
+const ROLE_LABEL: Record<ExtraRole, string> = {
+  ist: 'Messwert (Ist)',
+  grenze: 'Grenze (vom User gesetzt)',
+  sollwert: 'Sollwert / Vorgabe',
+}
+
+function RoleBadge({ rolle }: { rolle?: ExtraRole }) {
+  const value: ExtraRole = rolle ?? 'ist'
+  return (
+    <span className={value === 'ist' ? 'pill ok' : 'pill muted'}>{ROLE_LABEL[value]}</span>
+  )
+}
 
 /** Typ und gelesene Grenzen/Optionen einer Zusatz-Entität als Klartext (D-048). */
 function typeInfo(extra: DeviceExtra): string {
@@ -70,6 +94,7 @@ export function DeviceExtras({ device, onChanged }: { device: Device; onChanged:
       suggest: Boolean(extra.ai_suggestion),
       original: Boolean(extra.write_original),
       hint: extra.ai_hint ?? '',
+      rolle: extra.rolle ?? 'ist',
     })
 
   const remove = async (entity: string) => {
@@ -99,6 +124,7 @@ export function DeviceExtras({ device, onChanged }: { device: Device; onChanged:
         label: form.label,
         unit: form.unit,
         write_original: form.suggest && form.original,
+        rolle: form.rolle,
       })
       if (result.ok) {
         toast('Zusatz-Entität gespeichert.')
@@ -128,6 +154,7 @@ export function DeviceExtras({ device, onChanged }: { device: Device; onChanged:
           head={
             <tr>
               <th>Entität (gelesen)</th>
+              <th>Rolle</th>
               <th>Typ</th>
               <th>KI-Vorschlag</th>
               <th>Vorschlags-Sensor</th>
@@ -145,6 +172,9 @@ export function DeviceExtras({ device, onChanged }: { device: Device; onChanged:
                   <code className="mono">{extra.read_entity_id}</code>
                 </span>
                 {extra.label ? <span className="cell-sub">{extra.label}</span> : null}
+              </td>
+              <td title={extra.rolle_bedeutung ?? ''}>
+                <RoleBadge rolle={extra.rolle} />
               </td>
               <td className="muted">{typeInfo(extra)}</td>
               <td>{extra.ai_suggestion ? 'Ja' : 'Nein'}</td>
@@ -203,6 +233,24 @@ export function DeviceExtras({ device, onChanged }: { device: Device; onChanged:
         <label className="field">
           <span>Anzeigename</span>
           <input value={form.label} onChange={(event) => patch({ label: event.target.value })} />
+        </label>
+
+        <label className="field">
+          <span>Rolle</span>
+          <select
+            value={form.rolle}
+            onChange={(event) => patch({ rolle: event.target.value as ExtraRole })}
+          >
+            {(Object.keys(ROLE_LABEL) as ExtraRole[]).map((role) => (
+              <option key={role} value={role}>
+                {ROLE_LABEL[role]}
+              </option>
+            ))}
+          </select>
+          <small>
+            Sagt der KI, ob der Wert gemessen ist oder eine Vorgabe. Ein Sollwert, der als
+            Messwert gelesen wird, führt zu Vorschlägen an der Anlage vorbei.
+          </small>
         </label>
 
         <label className="field">

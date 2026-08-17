@@ -31,12 +31,13 @@ Update nicht verloren; nach dem Update sollte er ins Gemini-Untermenü eingetrag
 | `providers.<name>.timeout_s` | 30 | 5–600 | Timeout je KI-Aufruf |
 | `providers.<name>.rate_limit_per_min` | gemini 10 / claude 50 / openai 60 | 1–1000 | Wartedrossel (Gemini-Free ~10/min) |
 | `ai_temperature` | 0.0 | 0–2 | Determinismus (Gemini/OpenAI; Claude ignoriert Sampling-Params). siehe [planungs-engine.md](planungs-engine.md) |
-| `ai_seed` | 42 | frei | Determinismus |
+| `ai_seed` | 42 | frei | Determinismus. Wirkt nur zusammen mit der Kontext-Quantisierung (D-063) — bei jedem Lauf anderer Prompt ⇒ Seed ohne Wirkung |
+| `ai_thinking_budget` | 0 | 0–32768 | **Nur Gemini** (D-063): `thinkingConfig.thinkingBudget`. 0 = Thinking aus (reproduzierbar), >0 begrenzt es, Wert entfernt ⇒ Anbieter-Default |
 | `ai_repair_missing` | true | bool | Nachforder-Aufruf bei fehlenden Pflichtfeldern |
 | `planning_interval_min` | 60 | 15–60 | Gültigkeitsdauer eines Plans (`valid_until = now + Wert`). **Kein** Planungstakt — es gibt keinen Scheduler |
 | `plan_update_interval_min` | 15 | 5–60 | **Config existiert, wird nicht ausgewertet** |
 | `forecast_horizon_h` | 24 | 12–48 | Planungshorizont |
-| `min_confidence_percent` | 70 | 0–100 | **Config existiert, Validator-Stufe 6 nicht implementiert** |
+| `min_confidence_percent` | 70 | 0–100 | Konfidenz-Gate (D-064): ein gültiger Plan unter der Schwelle wird gespeichert und angezeigt, aber **nicht** nach HA geschrieben. Grundlage sind die vier Konfidenz-Teilnoten, aggregiert als schwächstes Glied. 0 ⇒ kein Gate |
 | `collect_interval_s` | 30 | 5–300 | Haupt-Poll-Takt (Mess-Rollen, Geräte, Prognose) |
 | `publish_suggestions` | true | bool | `sensor.ep_*_vorschlag` nach HA schreiben; `false` = reiner Beobachten-Modus |
 | `hems_base_url` | leer | frei | leer = keine HEMS-Anbindung, keine Geräte-Discovery |
@@ -94,9 +95,17 @@ werden aus den `ems_*`-Werten abgeleitet (`constraints.py`).
 ## Sensor-Zuordnung (`sensoren`)
 
 `entity_pv_power`, `entity_house_load`, `entity_grid_power`, `entity_grid_import`,
-`entity_grid_export`, `entity_battery_power`, `entity_battery_soc` — Mapping der 7
+`entity_grid_export`, `entity_battery_power`, `entity_battery_soc`,
+`entity_hot_water_temp`, `entity_outdoor_temp` — Mapping der 9
 festen Mess-Rollen ([roles.py](../app/energy_pilot/roles.py)) auf reale HA-Entity-IDs.
 Änderung erfordert Addon-Neustart (Mapping wird beim Boot geladen).
+
+Die beiden **Temperatur-Rollen** (D-061) sind neu und werden **gemittelt** geführt (Ausnahme
+zu D-003): EP liefert der KI `latest` **und** die 1-/15-/60-Minuten-Mittel. Erst dieser
+Verlauf zeigt, ob eine andere Wärmequelle arbeitet — steigt die Speichertemperatur, ohne dass
+der Heizstab Leistung zieht, lädt die Solarthermie. Gerätespezifische **Grenzen und Sollwerte**
+bleiben Zusatzwerte im Geräte-Tab ([geraete.md](geraete.md)); die Rollen sind für gemessene,
+anlagenweite Größen.
 
 ## DB-gestützte Laufzeit-Einstellungen (`settings.py`, **nicht** Addon-Config)
 
@@ -107,4 +116,6 @@ ohne Git-Push:
 - **Planungs-Prompt** (`PLANNING_PROMPT_KEY`) — editierbar im Plan-Tab.
 - **Klassifizierungs-Prompt** (`CLASSIFICATION_PROMPT_KEY`, D-055) — ebenfalls im Plan-Tab
   editierbar, steuert den vorgelagerten Ziel-Gewichtungs-Aufruf.
+- **Hausweite Freitext-Regeln** (`GLOBAL_RULES_KEY`, D-060) — gepflegt im Tab
+  „Grenzen & Ziele“; Regeln je Gerät liegen in der Tabelle `device_regeln`.
 - **OneCall-Tagesbudget-Zähler** (`onecall_budget.py`).

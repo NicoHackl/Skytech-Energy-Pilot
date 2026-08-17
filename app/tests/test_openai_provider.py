@@ -127,3 +127,54 @@ async def test_generate_wraps_timeout_as_provider_error():
         await provider.generate("hi", {})
     assert "Zeitüberschreitung" in str(excinfo.value)
     assert str(excinfo.value).strip()
+
+
+async def test_sampling_retry_is_reported_not_silent():
+    """D-063: Der Wegfall von temperature/seed muss sichtbar sein – vorher verschwand er stumm."""
+    err_body = json.dumps({"error": {"message": "Unsupported value: 'temperature' ..."}})
+    session = _FakeSession(
+        _FakeResponse(status=400, text=err_body),
+        _FakeResponse(payload=_ok_payload({"devices": []})),
+    )
+    provider = OpenAIProvider("k", temperature=0.0, seed=42, session=session)
+
+    resp = await provider.generate("hi", {"type": "OBJECT"})
+
+    assert resp.sampling_dropped is True
+
+
+async def test_successful_call_reports_no_sampling_drop():
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = OpenAIProvider("k", temperature=0.0, seed=42, session=session)
+    resp = await provider.generate("hi", {"type": "OBJECT"})
+    assert resp.sampling_dropped is False
+
+
+async def test_generic_unsupported_error_is_not_treated_as_sampling():
+    """Ein bloßes „unsupported" ohne Parametername löste früher einen sinnlosen Retry aus."""
+    err_body = json.dumps({"error": {"message": "Unsupported model for this endpoint"}})
+    session = _FakeSession(_FakeResponse(status=400, text=err_body))
+    provider = OpenAIProvider("k", temperature=0.0, seed=42, session=session)
+    with pytest.raises(ProviderError):
+        await provider.generate("hi", {"type": "OBJECT"})
+    assert len(session.calls) == 1
+
+
+async def test_generate_sends_instruction_as_system_message():
+    """D-062: Instruktion als System-Nachricht, Daten als User-Nachricht."""
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = OpenAIProvider("k", session=session)
+
+    await provider.generate("Daten:\n{}", {"type": "OBJECT"}, system="ROLLE UND REGELN")
+
+    messages = session.calls[0]["json"]["messages"]
+    assert messages[0] == {"role": "system", "content": "ROLLE UND REGELN"}
+    assert messages[1] == {"role": "user", "content": "Daten:\n{}"}
+
+
+async def test_generate_without_system_sends_only_user_message():
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = OpenAIProvider("k", session=session)
+    await provider.generate("nur Daten", {"type": "OBJECT"})
+    messages = session.calls[0]["json"]["messages"]
+    assert len(messages) == 1 and messages[0]["role"] == "user"

@@ -348,3 +348,113 @@ def test_battery_excluded_from_priority_ranking():
     devs = {d["name"]: d for d in result.normalized_plan["devices"]}
     assert "prio_vorschlag" not in devs["batterie"]
     assert devs["heizstab"]["prio_vorschlag"] == 10
+
+
+# --- Konfidenz als Teilnoten, Gegenrechnung und Veröffentlichungs-Gate (D-064) ----------------
+
+
+def _full_devices(**heizstab_extra):
+    heizstab = {
+        "name": "heizstab",
+        "prio_vorschlag": 10,
+        "freigabe_vorschlag": True,
+        "geschutzte_mindestleistung_w_vorschlag": 800.0,
+        "extra_heizstab_max_temperatur_vorschlag": 55.0,
+    }
+    heizstab.update(heizstab_extra)
+    return [
+        heizstab,
+        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+        {"name": "heizluefter_1", "prio_vorschlag": 20, "freigabe_vorschlag": False},
+    ]
+
+
+def _teilnoten_plan(parts, **overrides):
+    return _plan(_full_devices(), konfidenz_teilnoten=parts, **overrides)
+
+
+def test_confidence_aggregates_as_weakest_link():
+    """Minimum statt Mittelwert: eine schwache Teilnote darf nicht wegrechenbar sein."""
+    plan = _teilnoten_plan(
+        {"datenlage": 90, "prognosesicherheit": 80, "regelklarheit": 40, "zielkonflikt": 70}
+    )
+    result = validate(plan, _constraints(), now=NOW)
+    assert result.ok
+    assert result.normalized_plan["confidence"] == 40
+
+
+def test_confidence_gate_blocks_publishing_and_names_weakest_part():
+    plan = _teilnoten_plan(
+        {"datenlage": 90, "prognosesicherheit": 80, "regelklarheit": 40, "zielkonflikt": 70}
+    )
+    result = validate(plan, _constraints(), now=NOW, min_confidence=70)
+    # Der Plan ist NICHT ungültig – er wird nur nicht wirksam.
+    assert result.ok
+    assert "40 %" in result.publish_blocked
+    assert "70 %" in result.publish_blocked
+    assert "regelklarheit" in result.publish_blocked
+
+
+def test_confidence_gate_passes_when_above_threshold():
+    plan = _teilnoten_plan(
+        {"datenlage": 90, "prognosesicherheit": 80, "regelklarheit": 75, "zielkonflikt": 90}
+    )
+    result = validate(plan, _constraints(), now=NOW, min_confidence=70)
+    assert result.publish_blocked is None
+    assert result.normalized_plan["confidence"] == 75
+
+
+def test_ep_measurement_caps_optimistic_datenlage_note():
+    """Behauptet das Modell 90 bei 40 % veralteten Werten, gewinnt die EP-Messung."""
+    plan = _teilnoten_plan(
+        {"datenlage": 90, "prognosesicherheit": 95, "regelklarheit": 95, "zielkonflikt": 95}
+    )
+    context = {"datenlage": {"frische_prozent": 60, "fehlende_werte": ["pv_power"]}}
+    result = validate(plan, _constraints(), now=NOW, context=context)
+    assert result.normalized_plan["konfidenz_teilnoten"]["datenlage"] == 60
+    assert result.normalized_plan["confidence"] == 60
+    assert any("konfidenz.datenlage: 90 -> 60" in entry for entry in result.clamped)
+
+
+def test_ep_measurement_does_not_raise_a_pessimistic_note():
+    """Die Gegenrechnung deckelt nur – sie hebt eine ehrliche Selbsteinschätzung nie an."""
+    plan = _teilnoten_plan(
+        {"datenlage": 30, "prognosesicherheit": 95, "regelklarheit": 95, "zielkonflikt": 95}
+    )
+    context = {"datenlage": {"frische_prozent": 100, "fehlende_werte": []}}
+    result = validate(plan, _constraints(), now=NOW, context=context)
+    assert result.normalized_plan["konfidenz_teilnoten"]["datenlage"] == 30
+    assert result.clamped == [] or not any("konfidenz" in c for c in result.clamped)
+
+
+def test_unknown_confidence_keys_are_dropped():
+    plan = _teilnoten_plan({"datenlage": 80, "erfunden": 5})
+    result = validate(plan, _constraints(), now=NOW)
+    assert result.normalized_plan["konfidenz_teilnoten"] == {"datenlage": 80}
+    assert result.normalized_plan["confidence"] == 80
+
+
+def test_flat_confidence_without_teilnoten_survives_unchanged():
+    """Ältere Templates liefern nur eine Gesamtnote – Verhalten bleibt wie vorher."""
+    result = validate(_plan(_full_devices(), confidence=55), _constraints(), now=NOW)
+    assert result.normalized_plan["confidence"] == 55
+    assert result.publish_blocked is None
+
+
+def test_no_gate_without_threshold():
+    plan = _teilnoten_plan({"datenlage": 5, "prognosesicherheit": 5,
+                            "regelklarheit": 5, "zielkonflikt": 5})
+    assert validate(plan, _constraints(), now=NOW).publish_blocked is None
+
+
+def test_explanation_fields_are_not_a_contract_violation():
+    """Begründung und angewandte Regeln sind Diagnose, kein Vorschlagswert (D-060)."""
+    devices = _full_devices(
+        begruendung="Warmwasser bei 76 °C, Regel greift.",
+        angewandte_regeln=["Über 70 °C kein Heizstab"],
+    )
+    result = validate(_plan(devices), _constraints(), now=NOW)
+    assert result.ok, result.errors
+    entry = next(d for d in result.normalized_plan["devices"] if d["name"] == "heizstab")
+    assert entry["begruendung"].startswith("Warmwasser")
+    assert entry["angewandte_regeln"] == ["Über 70 °C kein Heizstab"]

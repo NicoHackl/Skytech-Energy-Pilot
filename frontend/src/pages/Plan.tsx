@@ -17,7 +17,18 @@ import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
 import { PromptEditor } from '../components/PromptEditor'
 import { useToast } from '../components/Toast'
-import type { ClassificationResponse, PlanResponse, PublishResult } from '../types'
+import type { ClassificationResponse, Plan, PlanDevice, PlanResponse, PublishResult } from '../types'
+
+/** Felder, die je Gerät die Entscheidung erklären (D-060) – keine Vorschlagswerte. */
+const EXPLANATION_KEYS = new Set(['name', 'begruendung', 'angewandte_regeln'])
+
+/** Klartext der Konfidenz-Teilnoten (D-064). */
+const CONFIDENCE_LABEL: Record<string, string> = {
+  datenlage: 'Datenlage',
+  prognosesicherheit: 'Prognosesicherheit',
+  regelklarheit: 'Regelklarheit',
+  zielkonflikt: 'Zielkonflikt',
+}
 
 /* Der einzige Weg, auf dem ein Plan entsteht: der Knopf hier (es gibt keinen
    Scheduler, siehe docs/bekannte-luecken.md). Der Plan ist ein Vorschlag — validiert
@@ -251,7 +262,7 @@ function PlanView({ data }: { data: PlanResponse }) {
   const meta: [string, string][] = [
     ['Status', validation.ok ? 'gültig' : 'abgelehnt'],
     ['Anbieter / Modell', `${plan.provider ?? '–'} / ${plan.model ?? '–'}`],
-    ['Konfidenz', plan.confidence == null ? '–' : `${plan.confidence} %`],
+    ['Konfidenz (schwächstes Glied)', plan.confidence == null ? '–' : `${plan.confidence} %`],
     ['Gültig von', isoDE(plan.valid_from)],
     ['Gültig bis', isoDE(plan.valid_until)],
   ]
@@ -263,6 +274,31 @@ function PlanView({ data }: { data: PlanResponse }) {
   return (
     <>
       <Kv rows={meta} />
+      {data.reused ? (
+        <div className="info-strip">
+          <Icon name="check" size={16} />
+          <span>
+            Unverändert übernommen: die Sachlage ist identisch zum letzten Lauf, deshalb wurde
+            die KI nicht erneut gefragt.
+          </span>
+        </div>
+      ) : null}
+      {data.ai_call?.sampling_dropped ? (
+        <div className="info-strip">
+          <Icon name="warn" size={16} />
+          <span>
+            Determinismus aus: das Modell nimmt <code className="mono">temperature</code> und
+            <code className="mono"> seed</code> nicht an. Gleiche Daten können unterschiedliche
+            Antworten ergeben.
+          </span>
+        </div>
+      ) : null}
+      {validation.publish_blocked ? (
+        <div className="info-strip">
+          <Icon name="warn" size={16} />
+          <span>Nicht nach HA geschrieben — {validation.publish_blocked}</span>
+        </div>
+      ) : null}
       {errors.length ? <Alert>Fehler: {errors.join('; ')}</Alert> : null}
       {clamped.length ? (
         <div className="info-strip">
@@ -273,7 +309,7 @@ function PlanView({ data }: { data: PlanResponse }) {
 
       <h3>Geräte-Vorschläge</h3>
       {(plan.devices ?? []).map((device) => {
-        const entries = Object.entries(device).filter(([key]) => key !== 'name')
+        const entries = Object.entries(device).filter(([key]) => !EXPLANATION_KEYS.has(key))
         return (
           <div key={String(device.name)}>
             <h3>{deviceHeading(String(device.name))}</h3>
@@ -296,6 +332,7 @@ function PlanView({ data }: { data: PlanResponse }) {
             ) : (
               <p className="muted">Keine Vorschläge für dieses Gerät.</p>
             )}
+            <DeviceReasoning device={device} />
           </div>
         )
       })}
@@ -308,6 +345,8 @@ function PlanView({ data }: { data: PlanResponse }) {
           <p>{plan.reasoning}</p>
         </>
       ) : null}
+
+      <ConfidenceView plan={plan} />
 
       {plan.warnings?.length ? (
         <>
@@ -380,5 +419,76 @@ function ContextDetails({ title, context }: { title: string; context: unknown })
       <summary>{title}</summary>
       <pre className="mono">{JSON.stringify(context, null, 2)}</pre>
     </details>
+  )
+}
+
+
+/** Begründung und angewandte Regeln je Gerät (D-060): macht eine Fehlentscheidung lesbar. */
+function DeviceReasoning({ device }: { device: PlanDevice }) {
+  const begruendung = typeof device.begruendung === 'string' ? device.begruendung : ''
+  const regeln = Array.isArray(device.angewandte_regeln)
+    ? (device.angewandte_regeln as unknown[]).map(String)
+    : []
+  if (!begruendung && !regeln.length) return null
+  return (
+    <div className="info-strip">
+      <Icon name="info" size={16} />
+      <span>
+        {begruendung}
+        {regeln.length ? (
+          <>
+            {' '}
+            <b>Regeln:</b> {regeln.join(' · ')}
+          </>
+        ) : (
+          <>
+            {' '}
+            <b>Keine Regel gegriffen.</b>
+          </>
+        )}
+      </span>
+    </div>
+  )
+}
+
+/** Konfidenz-Teilnoten und offene Unsicherheiten (D-064).
+
+    Eine nackte Gesamtzahl sagt nicht, WARUM die KI unsicher war — die Teilnoten schon, und
+    die Gesamtnote ist deren Minimum (schwächstes Glied). */
+function ConfidenceView({ plan }: { plan: Plan }) {
+  const parts = Object.entries(plan.konfidenz_teilnoten ?? {})
+  const unsicherheiten = plan.unsicherheiten ?? []
+  if (!parts.length && !unsicherheiten.length) return null
+  return (
+    <>
+      <h3>Konfidenz</h3>
+      {parts.length ? (
+        <DataTable
+          head={
+            <tr>
+              <th>Teilnote</th>
+              <th className="num">Wert</th>
+            </tr>
+          }
+        >
+          {parts.map(([key, value]) => (
+            <tr key={key}>
+              <td className="cell-title">{CONFIDENCE_LABEL[key] ?? key}</td>
+              <td className="num">{value} %</td>
+            </tr>
+          ))}
+        </DataTable>
+      ) : null}
+      {unsicherheiten.length ? (
+        <>
+          <h3>Was der KI gefehlt hat</h3>
+          <ul>
+            {unsicherheiten.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </>
   )
 }

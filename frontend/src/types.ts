@@ -54,6 +54,8 @@ export interface EntityRow {
 
 export type DeviceClass = 'controllable' | 'binary'
 export type ExtraKind = 'number' | 'bool' | 'datetime' | 'select' | 'text' | 'auto'
+/** Semantik eines Zusatzwerts (D-061): Messwert, User-Grenze oder Sollwert. */
+export type ExtraRole = 'ist' | 'grenze' | 'sollwert'
 /** Aufgelöste Steuerquelle der HEMS-Modus-Achse (D-057). */
 export type ControlSource = 'ep' | 'user' | 'aus'
 
@@ -75,6 +77,8 @@ export interface DeviceExtra {
   source: Source
   ai_suggestion: boolean
   ai_hint?: string
+  rolle?: ExtraRole
+  rolle_bedeutung?: string
   suggestion_entity_id?: string
   write_original?: boolean
   should_write_original?: boolean
@@ -95,6 +99,8 @@ export interface Device {
   fields: DeviceField[]
   extras?: DeviceExtra[]
   ai_prompt?: string
+  /** Freitext-Betriebsregeln des Users (D-060), getrennt von der Beschreibung. */
+  ai_regeln?: string
   mode?: string | null
   global_mode?: string | null
   control_source?: ControlSource
@@ -104,6 +110,14 @@ export interface Device {
 export interface DevicesResponse {
   devices: Device[]
   source: string
+  /** Auswahlpool für das Rollen-Feld eines Zusatzwerts (D-061). */
+  extra_roles?: ExtraRole[]
+}
+
+/** Freitext-Regeln: hausweit plus je Gerät (D-060). */
+export interface RegelnResponse {
+  global: string
+  devices: Record<string, string>
 }
 
 export interface ForecastValue {
@@ -210,6 +224,10 @@ export interface AiCall {
   tokens_out?: number | null
   ok?: boolean
   error?: string | null
+  /** D-063: Anbieter hat temperature/seed verworfen – Determinismus ist dann nicht aktiv. */
+  sampling_dropped?: boolean
+  /** D-063: Antwort kam aus dem Vorplan, es gab keinen KI-Aufruf. */
+  reused?: boolean
 }
 
 /** Ein Geräte-Eintrag im Plan: `name` plus die je Gerät erlaubten Vorschlagsfelder. */
@@ -219,7 +237,10 @@ export interface Plan {
   plan_id?: string
   provider?: string
   model?: string
+  /** Aggregierte Konfidenz: schwächstes Glied der Teilnoten (D-064). */
   confidence?: number | null
+  konfidenz_teilnoten?: Record<string, number>
+  unsicherheiten?: string[]
   valid_from?: string
   valid_until?: string
   devices?: PlanDevice[]
@@ -231,6 +252,8 @@ export interface Validation {
   ok?: boolean
   errors?: string[]
   clamped?: string[]
+  /** Grund, warum ein gültiger Plan nicht nach HA geschrieben wurde (D-064). */
+  publish_blocked?: string | null
 }
 
 export interface PublishResult {
@@ -250,6 +273,9 @@ export interface PlanResponse {
   published?: PublishResult | null
   error?: string | null
   ts?: string
+  /** D-063: Kontext unverändert => kein KI-Aufruf, der gespeicherte Plan gilt weiter. */
+  reused?: boolean
+  context_hash?: string | null
 }
 
 export interface ClassificationResponse {

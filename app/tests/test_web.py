@@ -647,6 +647,8 @@ class _ContextBombResult:
     context = {"generated_at": datetime(2026, 7, 3, 12, 0)}  # datetime → json.dumps wirft
     published = None
     error = None
+    reused = False
+    context_hash = "deadbeef"
 
 
 class _ContextBombPlanner:
@@ -669,3 +671,91 @@ async def test_plan_run_survives_non_serializable_context(aiohttp_client, app):
     data = await resp.json()  # darf NICHT werfen – Beweis: gültiges JSON, kein HTML
     assert data["ok"] is True
     assert "2026-07-03" in data["context"]["generated_at"]  # datetime → lesbarer String
+
+
+# --- Rollen-Semantik der Zusatzwerte und Freitext-Regeln (D-060/D-061) -----------------------
+
+
+async def test_device_extra_carries_role_and_defaults_to_ist(aiohttp_client, tmp_path):
+    """Ein Zusatzwert sagt der KI, ob er Messwert, Grenze oder Sollwert ist."""
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+
+    grenze = await (await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "input_number.e3dc_heizstab_maxtemperatur",
+        "ai_suggestion": True, "unit": "°C", "rolle": "grenze",
+    })).json()
+    assert grenze["rolle"] == "grenze"
+
+    ist = await (await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "sensor.elwa_modbus_isttemperatur",
+        "ai_suggestion": False, "unit": "°C",
+    })).json()
+    assert ist["rolle"] == "ist"  # Default, wenn nichts angegeben ist
+
+    data = await (await client.get("/api/devices")).json()
+    assert data["extra_roles"] == ["ist", "grenze", "sollwert"]
+    extras = {e["read_entity_id"]: e for e in data["devices"][0]["extras"]}
+    assert extras["input_number.e3dc_heizstab_maxtemperatur"]["rolle"] == "grenze"
+    assert "kein Messwert" in (
+        extras["input_number.e3dc_heizstab_maxtemperatur"]["rolle_bedeutung"]
+    )
+    assert extras["sensor.elwa_modbus_isttemperatur"]["rolle"] == "ist"
+    # Der geseedete Grenzwert ist als Grenze markiert, nicht als Messwert.
+    assert extras["input_number.ep_heizstab_max_temperatur"]["rolle"] == "grenze"
+
+
+async def test_device_extra_rejects_unknown_role_by_falling_back(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    body = await (await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "sensor.irgendwas",
+        "ai_suggestion": False, "rolle": "quatsch",
+    })).json()
+    assert body["rolle"] == "ist"
+
+
+async def test_device_regeln_roundtrip(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    regel = "Über 70 °C Warmwasser bleibt der Heizstab gesperrt."
+
+    res = await client.post("/api/devices/regeln", json={
+        "device_name": "heizstab", "regeln": regel,
+    })
+    assert (await res.json()) == {"ok": True, "device_name": "heizstab", "is_custom": True}
+
+    data = await (await client.get("/api/devices")).json()
+    assert data["devices"][0]["ai_regeln"] == regel
+    assert (await (await client.get("/api/regeln")).json())["devices"] == {"heizstab": regel}
+
+    # Leerer Text löscht die Regeln wieder.
+    res = await client.post("/api/devices/regeln", json={"device_name": "heizstab", "regeln": ""})
+    assert (await res.json())["is_custom"] is False
+    assert (await (await client.get("/api/regeln")).json())["devices"] == {}
+
+
+async def test_device_regeln_rejects_unknown_device(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/regeln", json={
+        "device_name": "gibtsnicht", "regeln": "x",
+    })
+    assert res.status == 400
+    assert "unbekanntes Gerät" in (await res.json())["reason"]
+
+
+async def test_global_regeln_roundtrip(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    assert (await (await client.get("/api/regeln")).json())["global"] == ""
+
+    res = await client.post("/api/regeln", json={"regeln": "  Im Sommer nicht elektrisch heizen. "})
+    body = await res.json()
+    assert body["is_custom"] is True
+    assert body["regeln"] == "Im Sommer nicht elektrisch heizen."
+    assert (await (await client.get("/api/regeln")).json())["global"] == (
+        "Im Sommer nicht elektrisch heizen."
+    )
+
+    assert (await (await client.post("/api/regeln", json={"regeln": ""})).json())["is_custom"] is (
+        False
+    )

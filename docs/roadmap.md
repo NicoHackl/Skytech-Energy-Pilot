@@ -22,12 +22,16 @@ Wetter, read-only Dashboard/Geräte-/Prognose-Ansichten.
 
 Geräte-/Constraint-Modell + Objective-Manager, Gemini-Provider-Integration,
 Planungs-Engine, wetterhaltiger Kontext + editierbarer Prompt, Plan-JSON-Schema +
-Validator (Stufen 1–3), Vorschlags-Sensoren automatisch bei jedem gültigen Plan
-publiziert + manueller "Erneut nach HA schreiben"-Button.
+Validator (Stufen 1–4 und 6), Vorschlags-Sensoren automatisch bei jedem gültigen Plan
+publiziert + manueller "Erneut nach HA schreiben"-Button. Seit 0.0.61 zusätzlich
+Freitext-Regeln je Gerät mit Begründungspflicht, Temperatur-Mess-Rollen,
+Wetter-Kennzahlen, Kontext-Quantisierung mit Plan-Wiederverwendung und ein
+Konfidenz-Gate (D-060 – D-064).
 
 **Offen:** automatische periodische Planung (Scheduler) — siehe
 [bekannte-luecken.md](bekannte-luecken.md#kein-automatischer-scheduler).
-Validator-Stufen 4–6 (Frische/Delta-Limit/Mindestkonfidenz) ebenfalls offen.
+Validator-Stufe 5 (Delta-Limit zum Vorplan) bleibt **bewusst** offen: nachgelagerte
+Dämpfung der KI-Ausgabe ist als Ansatz verworfen (D-060).
 
 ## M3 — HEMS-Schnittstelle — ◐ nur ein Teilstück ("Durchstich 1")
 

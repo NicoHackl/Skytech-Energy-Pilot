@@ -68,11 +68,13 @@ class ClaudeProvider(AIProvider):
             await self._session.close()
             self._session = None
 
-    async def generate(self, prompt: str, response_schema: dict) -> ProviderResponse:
+    async def generate(
+        self, prompt: str, response_schema: dict, *, system: str | None = None
+    ) -> ProviderResponse:
         await self._limiter.acquire()
         session = await self._ensure_session()
         url = f"{self.base_url}/messages"
-        body = {
+        body: dict[str, object] = {
             "model": self.model,
             "max_tokens": MAX_TOKENS,
             "messages": [{"role": "user", "content": prompt}],
@@ -81,6 +83,9 @@ class ClaudeProvider(AIProvider):
                 "format": {"type": "json_schema", "schema": to_json_schema(response_schema)}
             },
         }
+        # Instruktion in den System-Kanal (D-062), Daten bleiben User-Nachricht.
+        if system and system.strip():
+            body["system"] = system.strip()
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": ANTHROPIC_VERSION,

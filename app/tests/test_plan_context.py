@@ -16,6 +16,9 @@ from energy_pilot.plan_context import (
     build_prompt,
     build_repair_prompt,
     build_response_schema,
+    context_hash,
+    quantize,
+    weather_metrics,
 )
 
 # Fixe Objective-Liste als Ersatz für das frühere `objectives_from_config({})` (D-055: Ziele
@@ -69,7 +72,13 @@ def _constraints():
 def test_build_response_schema_forces_all_fields_per_device():
     schema = build_response_schema(_constraints())
     assert schema["type"] == "OBJECT"
-    assert "confidence" in schema["properties"]
+    # Konfidenz als definierte Teilnoten statt einer frei erfundenen Gesamtnote (D-064).
+    konfidenz = schema["properties"]["konfidenz"]
+    assert set(konfidenz["required"]) == {
+        "datenlage", "prognosesicherheit", "regelklarheit", "zielkonflikt",
+    }
+    assert all(prop.get("description") for prop in konfidenz["properties"].values())
+    assert "unsicherheiten" in schema["properties"]
     # Kein JSON-Schema-Dialekt, den Gemini ablehnt:
     assert "$schema" not in schema
     assert "additionalProperties" not in schema
@@ -80,14 +89,20 @@ def test_build_response_schema_forces_all_fields_per_device():
     assert set(devices["required"]) == {"batterie", "heizstab", "heizluefter_1"}
     heizstab = devices["properties"]["heizstab"]
     assert heizstab["properties"]["name"]["type"] == "STRING"
-    # ALLE Vertragsfelder des Heizstabs sind Pflicht (das Modell darf keines weglassen).
+    # ALLE Vertragsfelder des Heizstabs sind Pflicht (das Modell darf keines weglassen), plus
+    # die erzwungene Selbsterklärung je Gerät (D-060).
     assert set(heizstab["required"]) == {
         "name", "prio_vorschlag", "freigabe_vorschlag",
         "geschutzte_mindestleistung_w_vorschlag",
+        "begruendung", "angewandte_regeln",
     }
+    # Harte Grenzen wirken als Schema-Keyword, nicht nur als Prosa (D-062).
+    assert heizstab["properties"]["prio_vorschlag"]["minimum"] == 10
+    assert heizstab["properties"]["geschutzte_mindestleistung_w_vorschlag"]["maximum"] == 3000.0
     # Batterie: nur geschützte Mindestleistung Pflicht, keine Prio (D-037).
     assert set(devices["properties"]["batterie"]["required"]) == {
         "name", "geschutzte_mindestleistung_w_vorschlag",
+        "begruendung", "angewandte_regeln",
     }
 
 
@@ -553,3 +568,198 @@ def test_build_classification_response_schema_requires_all_ziel_ids():
 def test_build_classification_response_schema_empty_ziele():
     schema = build_classification_response_schema([])
     assert schema["properties"]["gewichtung"]["required"] == []
+
+
+# --- Wetter-Kennzahlen (D-062) ---------------------------------------------------------------
+
+
+def test_weather_kennzahlen_present_alongside_models():
+    """Kennzahlen liegen zusätzlich zu den Slot-Reihen vor und tragen das heutige Maximum."""
+    out = _condense_weather(_onecall_snapshot(), horizon_h=24, detail="compact", now=_OC_NOW)
+    kennzahlen = out["kennzahlen"]
+    # Tages-Slot von heute: temp_max = 25.0 (Fixture k=0) – die Stundenreihe kennt nur 20.0.
+    assert kennzahlen["temp_max_heute"] == 25.0
+    assert kennzahlen["temp_min_heute"] == 10.0
+    assert kennzahlen["temp_jetzt"] == 20.0
+    assert kennzahlen["temp_max_24h"] >= 25.0
+    assert kennzahlen["temp_max_48h"] >= kennzahlen["temp_max_24h"]
+    assert kennzahlen["pop_max_24h"] == 0.1
+
+
+def test_weather_kennzahlen_survive_after_21_when_hourly_window_is_empty():
+    """Kernfall des Abendlochs: 23:30 Ortszeit – Stundenreihe leer, Kennzahlen vollständig."""
+    now = _OC_NOW.replace(hour=21, minute=30)  # 23:30 Ortszeit (+2 h)
+    out = _condense_weather(_onecall_snapshot(now), horizon_h=24, detail="compact", now=now)
+    assert out["models"]["1h"]["slots"] == []  # bisheriges Verhalten unverändert
+    kennzahlen = out["kennzahlen"]
+    assert kennzahlen["temp_max_heute"] == 25.0
+    assert "temp_max_48h" in kennzahlen
+
+
+def test_weather_kennzahlen_without_daily_fall_back_to_intraday():
+    """Ohne Tagesmodell entsteht das Tagesmaximum aus den verbleibenden Stunden-Slots."""
+    snap = _onecall_snapshot(enable_1h=True, enable_1day=False)
+    out = _condense_weather(snap, horizon_h=24, detail="compact", now=_OC_NOW)
+    assert out["kennzahlen"]["temp_max_heute"] == 20.0
+
+
+def test_weather_kennzahlen_empty_without_forecast():
+    assert weather_metrics({}, now=_OC_NOW) == {}
+    assert weather_metrics({"source": "forecast3h"}, now=_OC_NOW) == {}
+
+
+# --- Frische, Datenlage, Quantisierung (D-063/D-064) -----------------------------------------
+
+
+def _state(*, source="live", pv=1234.7):
+    return {
+        "pv_power": {
+            "label": "PV-Leistung", "unit": "W", "averaged": True, "source": source,
+            "latest": pv, "mean_1m": pv, "mean_15m": pv, "mean_60m": pv,
+        },
+        "hot_water_temp": {
+            "label": "Warmwassertemperatur", "unit": "°C", "averaged": True, "source": "live",
+            "latest": 76.13, "mean_1m": 76.0, "mean_15m": 74.82, "mean_60m": 71.21,
+        },
+    }
+
+
+def _ctx(state=None, *, constraints=None, global_regeln="", now=None):
+    return build_context(
+        state if state is not None else _state(),
+        {}, constraints if constraints is not None else _constraints(), _OBJECTIVES,
+        valid_from="2026-07-10T09:30:00+00:00",
+        valid_until="2026-07-10T10:30:00+00:00",
+        now=now or _OC_NOW,
+        global_regeln=global_regeln,
+    )
+
+
+def test_context_quantizes_numbers():
+    """Rohe Messwerte werden auf fachliche Stufen gerundet – sonst ist kein Hash stabil."""
+    ctx = _ctx()
+    pv = next(e for e in ctx["state"] if e["role"] == "pv_power")
+    assert pv["latest"] == 1230.0  # 10-W-Raster
+    ww = next(e for e in ctx["state"] if e["role"] == "hot_water_temp")
+    assert ww["latest"] == 76.0  # 0,5-°C-Raster
+    assert ww["mean_15m"] == 75.0
+    assert ww["mean_60m"] == 71.0
+
+
+def test_context_marks_stale_values_and_reports_data_quality():
+    """Ein nicht gelesener Wert ist als `veraltet` erkennbar und senkt die gemessene Datenlage."""
+    ctx = _ctx(_state(source="none", pv=None))
+    pv = next(e for e in ctx["state"] if e["role"] == "pv_power")
+    assert pv["veraltet"] is True
+    ww = next(e for e in ctx["state"] if e["role"] == "hot_water_temp")
+    assert "veraltet" not in ww
+    # Zwei erwartete Mess-Rollen, eine davon nicht gelesen (die Geräte hier haben keine
+    # Zusatzwerte, die zusätzlich zählen würden).
+    assert ctx["datenlage"]["frische_prozent"] == 50
+    assert ctx["datenlage"]["fehlende_werte"] == ["pv_power"]
+
+
+def test_context_data_quality_full_when_everything_read():
+    assert _ctx()["datenlage"]["frische_prozent"] == 100
+
+
+def test_context_carries_now_and_global_regeln():
+    ctx = _ctx(global_regeln="Im Sommer keine elektrische Nachheizung.")
+    assert ctx["now"] == _OC_NOW.isoformat()
+    assert ctx["globale_regeln"] == "Im Sommer keine elektrische Nachheizung."
+
+
+def test_context_omits_global_regeln_when_empty():
+    assert "globale_regeln" not in _ctx(global_regeln="   ")
+
+
+def test_context_hash_ignores_now_but_not_data():
+    """Gleiche Sachlage ⇒ gleicher Hash, obwohl `now` sich zwischen den Läufen bewegt."""
+    first = _ctx(now=_OC_NOW)
+    second = _ctx(now=_OC_NOW + timedelta(minutes=3))
+    assert first["now"] != second["now"]
+    assert context_hash(first, prompt="P", model="M") == context_hash(second, prompt="P", model="M")
+    # Ein geänderter Messwert ändert den Hash – sonst wäre er als Nachweis wertlos.
+    changed = _ctx(_state(pv=5000.0))
+    assert context_hash(changed, prompt="P", model="M") != context_hash(
+        first, prompt="P", model="M"
+    )
+    # Instruktion und Modell gehen mit ein (anderer Prompt ⇒ anderer Plan).
+    assert context_hash(first, prompt="Q", model="M") != context_hash(first, prompt="P", model="M")
+    assert context_hash(first, prompt="P", model="N") != context_hash(first, prompt="P", model="M")
+
+
+def test_quantize_leaves_non_numbers_and_bools_untouched():
+    assert quantize(True, 10) is True
+    assert quantize("76.1", 0.5) == "76.1"
+    assert quantize(None, 0.5) is None
+    assert quantize(76.13, 0.5) == 76.0
+
+
+# --- Geräteregeln und Rollen-Semantik (D-060/D-061) ------------------------------------------
+
+
+def test_device_regeln_and_extra_role_in_context():
+    devices = [
+        Device(
+            "heizstab", "Heizstab", "heizstab", CONTROLLABLE, "watt",
+            extras=(
+                DeviceExtra(
+                    read_entity_id="input_number.e3dc_heizstab_maxtemperatur",
+                    ai_suggestion=True, label="Obergrenze", unit="°C", rolle="grenze",
+                ),
+            ),
+            ai_regeln="Über 70 °C Warmwasser bleibt der Heizstab gesperrt.",
+        ),
+    ]
+    readings = {
+        "heizstab": {
+            "technische_freigabe": {"value": True},
+            "min_technisch": {"value": 0.0},
+            "max_technisch": {"value": 3500.0},
+            "extra_e3dc_heizstab_maxtemperatur": {"value": 85.0, "attrs": {"min": 50, "max": 95}},
+        },
+    }
+    ctx = _ctx(constraints=build_constraints(devices, readings))
+    entry = ctx["devices"][0]
+    assert entry["regeln"] == "Über 70 °C Warmwasser bleibt der Heizstab gesperrt."
+    extra = entry["zusatzwerte"][0]
+    # Der 85-°C-Wert ist eine Grenze, kein Messwert – genau die Verwechslung, die den
+    # 80-°C-Vorschlag bei 76 °C Ist-Temperatur ermöglicht hat.
+    assert extra["rolle"] == "grenze"
+    assert "kein Messwert" in extra["rolle_bedeutung"]
+
+
+def test_planning_prompt_names_the_new_context_blocks():
+    """Der Prompt muss die neuen Blöcke benennen, sonst liest das Modell sie nicht."""
+    for needle in ("regeln", "kennzahlen", "rolle", "veraltet", "konfidenz", "angewandte_regeln"):
+        assert needle in DEFAULT_PLANNING_PROMPT
+
+
+def test_context_hash_ignores_model_derived_keys():
+    """`objectives` und `previous_plan` sind Modell-/EP-Ausgabe, keine Sachlage (D-063).
+
+    Steckten sie im Hash, würde ein streuender Klassifizierungs-Aufruf bzw. der eigene Vorplan
+    den Vergleich bei jedem Lauf zerstören — und die Wiederverwendung könnte nie greifen.
+    """
+    base = _ctx()
+    other_weights = build_context(
+        _state(), {}, _constraints(), [Objective('test_ziel', 'Test-Ziel', 20)],
+        valid_from="2026-07-10T09:30:00+00:00",
+        valid_until="2026-07-10T10:30:00+00:00",
+        now=_OC_NOW,
+    )
+    with_previous = build_context(
+        _state(), {}, _constraints(), _OBJECTIVES,
+        valid_from="2026-07-10T09:30:00+00:00",
+        valid_until="2026-07-10T10:30:00+00:00",
+        now=_OC_NOW,
+        previous_plan={"plan": {"devices": [{"name": "heizstab", "prio_vorschlag": 10}]}},
+    )
+
+    assert base["objectives"] != other_weights["objectives"]
+    assert "previous_plan" in with_previous
+    for variant in (other_weights, with_previous):
+        assert context_hash(variant, prompt="P", model="M") == context_hash(
+            base, prompt="P", model="M"
+        )

@@ -14,6 +14,8 @@ import sqlite3
 PLANNING_PROMPT_KEY = "planning_prompt"
 # Schlüssel des editierbaren Klassifizierungs-Prompts (D-055, vorgelagerter Ziel-Aufruf).
 CLASSIFICATION_PROMPT_KEY = "classification_prompt"
+# Schlüssel der hausweiten Freitext-Regeln (D-060); Geräteregeln liegen in `device_regeln`.
+GLOBAL_RULES_KEY = "global_regeln"
 
 
 def get_setting(db: sqlite3.Connection | None, key: str) -> str | None:

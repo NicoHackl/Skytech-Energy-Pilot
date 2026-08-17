@@ -143,3 +143,43 @@ async def test_rate_limiter_waits_when_over_limit():
     limiter = AsyncRateLimiter(1, window_s=0.05)
     assert await limiter.acquire() == 0.0
     assert await limiter.acquire() > 0.0
+
+
+async def test_generate_sends_instruction_as_system_channel():
+    """D-062: Instruktion und Daten in getrennten Kanälen, nicht in einer User-Nachricht."""
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = GeminiProvider("k", session=session)
+
+    await provider.generate("Daten:\n{}", {"type": "OBJECT"}, system="ROLLE UND REGELN")
+
+    body = session.calls[0]["json"]
+    assert body["systemInstruction"] == {"parts": [{"text": "ROLLE UND REGELN"}]}
+    assert body["contents"] == [{"role": "user", "parts": [{"text": "Daten:\n{}"}]}]
+
+
+async def test_generate_omits_system_channel_when_empty():
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = GeminiProvider("k", session=session)
+
+    await provider.generate("nur Daten", {"type": "OBJECT"}, system="   ")
+
+    assert "systemInstruction" not in session.calls[0]["json"]
+
+
+async def test_generate_sends_thinking_budget_when_configured():
+    """D-063: Denkbudget explizit setzen – Thinking ist bei Flash-Modellen eine Varianzquelle."""
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = GeminiProvider("k", thinking_budget=0, session=session)
+
+    await provider.generate("hi", {"type": "OBJECT"})
+
+    assert session.calls[0]["json"]["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+
+
+async def test_generate_omits_thinking_budget_when_unset():
+    session = _FakeSession(_FakeResponse(payload=_ok_payload({"devices": []})))
+    provider = GeminiProvider("k", thinking_budget=None, session=session)
+
+    await provider.generate("hi", {"type": "OBJECT"})
+
+    assert "thinkingConfig" not in session.calls[0]["json"]["generationConfig"]

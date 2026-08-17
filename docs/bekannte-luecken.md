@@ -12,21 +12,35 @@ vertraut — Spec und Code laufen an mehreren Stellen auseinander. Bei jeder gr�
 einem Timer auf. `planning_interval_min` wird zwar gelesen, aber **nur** als
 Plan-Gültigkeitsdauer (`valid_until = now + planning_interval_min`, `planner.py`) — nicht als
 Takt; `plan_update_interval_min` wird nirgends gelesen. Ein Plan entsteht ausschließlich über
-den manuellen Button/Endpunkt `POST /api/plan/run`. Das widerspricht der in
-`AGENTS.md` beschriebenen "EP plant alle 15–60 min" — wer einen Scheduler baut, muss
+den manuellen Button/Endpunkt `POST /api/plan/run`. (Der frühere Querverweis auf einen Satz
+"EP plant alle 15–60 min" in `AGENTS.md` ist **tot** — dort steht nur noch der Horizont
+24–48 h.) Wer einen Scheduler baut, muss
 zusätzlich das Event-basierte Nachplanungs-Konzept (E-Auto Stecker, Abfahrtszeit-
 Änderung, SOC-Ziel-Änderung, PV-/Lastprognose-Abweichung, …) aus dem alten
 Decision-Log berücksichtigen ([design-entscheidungen.md](design-entscheidungen.md)).
 
-### `min_confidence_percent` unbenutzt
+### Validator-Stufe 5 (Delta-Limit) fehlt — bewusst
 
-Seit Projektbeginn in der Config, im Validator-Modul-Docstring als offene "Stufe 6"
-vermerkt, aber sonst im gesamten Code nirgends gelesen.
+Daten-Frische (Stufe 4) und Mindestkonfidenz (Stufe 6) sind seit D-064 implementiert,
+`min_confidence_percent` wird ausgewertet. **Stufe 5** (Delta-Limit zum Vorplan, ±20 %
+Leistung / ±10 % SOC-Ziel, D-021) bleibt offen, und zwar absichtlich: nachgelagerte Dämpfung
+der KI-Ausgabe ist als Ansatz verworfen (D-060) — Stabilität soll im Aufruf entstehen, nicht
+dahinter. Siehe [sicherheit-datenschutz.md](sicherheit-datenschutz.md).
 
-### Validator-Stufen 4–6 fehlen
+### Determinismus hängt am Modell, nicht an der Einstellung
 
-Daten-Frische, Delta-Limit zum Vorplan, Mindestkonfidenz-Gate — alle drei im
-`validator.py`-Docstring als TODO markiert. Siehe [sicherheit-datenschutz.md](sicherheit-datenschutz.md).
+`ai_temperature`/`ai_seed` erreichen nur **Gemini und OpenAI** die API; Claude bekommt keine
+Sampling-Parameter. Reasoning-Modelle wie `gpt-5` lehnen sie ab — EP wiederholt dann ohne, und
+die eingestellte Temperatur 0 wird faktisch zum Anbieter-Default. Seit D-063 ist dieser Fall
+sichtbar (Warnung im Log, `ai_calls.sampling_dropped`, Hinweis im Plan-Tab), aber er
+verschwindet dadurch nicht. Wer Reproduzierbarkeit braucht, braucht ein Modell, das die
+Parameter annimmt — plus die Kontext-Quantisierung, ohne die ein Seed ohnehin wirkungslos ist.
+
+### Modellverfügbarkeit ist nicht prüfbar, ohne sie zu probieren
+
+Gilt weiter die Lehre aus dem `gemini-3.5-flash`-Hang unten: **kein** Modellname wird als
+Default gesetzt, ohne dass ein echter Planungslauf damit nachweislich durchgelaufen ist. Das
+betrifft auch neuere Namen wie `gemini-3.1-flash-lite`.
 
 ### Steuermodi/Betriebsmodi nicht verdrahtet
 

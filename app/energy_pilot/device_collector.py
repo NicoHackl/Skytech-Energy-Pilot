@@ -155,6 +155,8 @@ class DeviceCollector:
                     "class": device.device_class,
                     "output_unit": device.output_unit,
                     "ai_prompt": device.ai_prompt,
+                    # Freitext-Betriebsregeln des Users (D-060), getrennt von der Beschreibung.
+                    "ai_regeln": device.ai_regeln,
                     # Modus-Achse (D-057): roher Gerätemodus + aufgelöste Steuerquelle.
                     "mode": mode_entry.get("mode"),
                     "global_mode": mode_entry.get("global_mode"),

@@ -18,6 +18,9 @@ Alle State liegt auf `app[...]`-Keys (Config/DB/Ring-Puffer/Clients/Collector/Pl
 | POST | `/api/devices/extras` | Zusatz-Entität anlegen/ändern |
 | DELETE | `/api/devices/extras` | Zusatz-Entität löschen |
 | POST | `/api/devices/prompt` | Pro-Gerät-KI-Beschreibung setzen/löschen |
+| POST | `/api/devices/regeln` | Freitext-Betriebsregeln eines Geräts setzen/löschen (D-060, `{device_name, regeln}`) |
+| GET | `/api/regeln` | hausweite Regeln + Regeln je Gerät (`{global, devices}`) |
+| POST | `/api/regeln` | hausweite Regeln setzen/löschen (`{regeln}`) |
 | GET | `/api/forecast` | PV-Prognose-Snapshot |
 | GET | `/api/weather` | Wetter-Snapshot (je nach Quelle) |
 | GET | `/api/weather/test` | Live-Wetterabruf-Test |
@@ -35,7 +38,7 @@ Alle State liegt auf `app[...]`-Keys (Config/DB/Ring-Puffer/Clients/Collector/Pl
 | GET | `/api/classification-prompt` | aktueller/Default-Klassifizierungs-Prompt (D-055) |
 | POST | `/api/classification-prompt` | Klassifizierungs-Prompt speichern/zurücksetzen |
 | POST | `/api/classification/run` | Klassifizierungs-Aufruf isoliert auslösen (Testbutton, D-055) |
-| POST | `/api/plan/run` | Planungslauf auslösen (**der einzige Weg, wie ein Plan entsteht**) |
+| POST | `/api/plan/run` | Planungslauf auslösen (**der einzige Weg, wie ein Plan entsteht**). Antwort enthält zusätzlich `reused` und `context_hash` (D-063): war die Sachlage identisch zum letzten Lauf, kam der Plan ohne KI-Aufruf zurück. `validation.publish_blocked` nennt den Grund, wenn ein gültiger Plan am Konfidenz-Gate scheitert (D-064) |
 | POST | `/api/plan/publish` | letzten gültigen Plan erneut nach HA schreiben |
 | GET | `/api/plan` | letzter gespeicherter Plan + Validierungsergebnis |
 | GET | `/api/ai/test` | KI-Provider-Verbindungstest |

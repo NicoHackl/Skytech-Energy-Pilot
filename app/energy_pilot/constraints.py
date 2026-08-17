@@ -59,6 +59,7 @@ class DeviceConstraint:
     forced_freigabe: bool | None  # Batterie: True (D-016)
     extras: tuple[ConstraintExtra, ...] = ()  # user-gepflegte Zusatz-Entitäten (D-047)
     ai_prompt: str = ""  # user-gepflegte KI-Beschreibung des Geräts (D-051), advisorisch
+    ai_regeln: str = ""  # user-gepflegte Freitext-Betriebsregeln des Geräts (D-060)
 
 
 def _entry(readings: dict, name: str, key: str) -> object:
@@ -161,6 +162,7 @@ def build_constraints(devices: list[Device], readings: dict) -> list[DeviceConst
                 forced_freigabe=True if is_battery else None,
                 extras=extras,
                 ai_prompt=device.ai_prompt,
+                ai_regeln=device.ai_regeln,
             )
         )
     return result

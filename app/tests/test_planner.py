@@ -1,7 +1,8 @@
 """Tests für die Planning-Engine (Orchestrator) mit Fake-Provider."""
 
 import io
-from datetime import UTC, datetime
+import json
+from datetime import UTC, datetime, timedelta
 
 from energy_pilot.ai_provider import AIProvider, ProviderError, ProviderResponse
 from energy_pilot.config import AddonConfig
@@ -25,7 +26,7 @@ class _FakeProvider(AIProvider):
         self._exc = exc
         self.closed = False
 
-    async def generate(self, prompt, response_schema):
+    async def generate(self, prompt, response_schema, *, system=None):
         if self._exc is not None:
             raise self._exc
         return ProviderResponse(data=self._data, tokens_in=11, tokens_out=22)
@@ -49,7 +50,7 @@ class _SequenceProvider(AIProvider):
         self._exc_on = exc_on
         self.calls = 0
 
-    async def generate(self, prompt, response_schema):
+    async def generate(self, prompt, response_schema, *, system=None):
         idx = self.calls
         self.calls += 1
         if self._exc_on is not None and idx == self._exc_on:
@@ -490,3 +491,165 @@ async def test_publish_latest_respects_manual_mode(tmp_path):
     assert result["ok"]
     assert ha.service_calls == []  # Nutzerwert bleibt stehen
     assert result["skipped"][0]["entity_id"] == "input_number.ep_heizstab_max_temperatur"
+
+
+# --- Kontext-Hash und Plan-Wiederverwendung (D-063) ------------------------------------------
+
+
+async def test_run_grids_the_validity_window(tmp_path):
+    """Zeitfenster liegt auf dem 15-Minuten-Raster – ohne das ist kein Hash je stabil."""
+    planner, _ = _planner(tmp_path, _FakeProvider(_VALID_DATA))
+
+    result = await planner.run(now=NOW.replace(minute=37, second=41, microsecond=999))
+
+    assert result.plan["valid_from"] == "2026-06-19T12:30:00+00:00"
+    assert result.plan["valid_until"].startswith("2026-06-19T13:30:00")
+
+
+async def test_run_reuses_plan_when_context_is_unchanged(tmp_path):
+    """Kernsymptom „fünfmal drücken, fünf Antworten": bei gleicher Sachlage kein neuer Aufruf."""
+    provider = _SequenceProvider([_VALID_DATA])
+    planner, _ = _planner(tmp_path, provider)
+
+    first = await planner.run(now=NOW)
+    assert first.ok and first.reused is False
+    assert provider.calls == 1
+
+    # Drei Minuten später, gleiches Rasterfenster, unveränderte Messwerte.
+    second = await planner.run(now=NOW + timedelta(minutes=3))
+
+    assert second.reused is True
+    assert second.context_hash == first.context_hash
+    assert provider.calls == 1  # kein weiterer KI-Aufruf
+    assert second.plan == first.plan
+
+
+async def test_run_calls_provider_again_when_grid_window_advances(tmp_path):
+    """Neues Rasterfenster => neues `valid_from` => neuer Hash => echter Lauf."""
+    provider = _SequenceProvider([_VALID_DATA, _VALID_DATA])
+    planner, _ = _planner(tmp_path, provider)
+
+    await planner.run(now=NOW)
+    second = await planner.run(now=NOW + timedelta(minutes=20))
+
+    assert second.reused is False
+    assert provider.calls == 2
+
+
+async def test_run_does_not_reuse_a_rejected_plan(tmp_path):
+    """Ein abgelehnter Plan darf nie wiederverwendet werden – sonst friert der Fehler ein."""
+    invalid = {
+        "devices": [{"name": "batterie", "prio_vorschlag": 1,
+                     "geschutzte_mindestleistung_w_vorschlag": 1000.0}],
+        "confidence": 50,
+        "reasoning": "x",
+    }
+    provider = _SequenceProvider([invalid, invalid])
+    planner, _ = _planner(tmp_path, provider, options={"ai_repair_missing": False})
+
+    first = await planner.run(now=NOW)
+    second = await planner.run(now=NOW + timedelta(minutes=2))
+
+    assert not first.ok and not second.ok
+    assert second.reused is False
+    assert provider.calls == 2
+
+
+async def test_run_persists_prompt_context_and_response(tmp_path):
+    """Ohne Prompt, Kontext und Roh-Antwort ist ein Lauf nachträglich nicht reproduzierbar."""
+    planner, db = _planner(tmp_path, _FakeProvider(_VALID_DATA))
+
+    result = await planner.run(now=NOW)
+
+    row = db.execute(
+        "SELECT prompt, context_json, response_json, context_hash FROM plans "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert row["context_hash"] == result.context_hash
+    assert "Daten:" in row["prompt"]
+    assert json.loads(row["context_json"])["datenlage"]["frische_prozent"] == 100
+    assert json.loads(row["response_json"])["reasoning"] == "Test"
+
+
+async def test_run_records_sampling_drop_in_ai_calls(tmp_path):
+    """D-063: Ein verworfener Sampling-Parameter ist in `ai_calls` nachweisbar."""
+
+    class _DroppingProvider(_FakeProvider):
+        async def generate(self, prompt, response_schema, *, system=None):
+            return ProviderResponse(
+                data=_VALID_DATA, tokens_in=1, tokens_out=1, sampling_dropped=True
+            )
+
+    planner, db = _planner(tmp_path, _DroppingProvider(_VALID_DATA))
+    await planner.run(now=NOW)
+
+    row = db.execute(
+        "SELECT sampling_dropped FROM ai_calls ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert row["sampling_dropped"] == 1
+
+
+async def test_run_blocks_publishing_below_confidence_threshold(tmp_path):
+    """D-064: gültiger Plan, aber zu unsicher => gespeichert und sichtbar, nicht geschrieben."""
+    data = dict(_VALID_DATA)
+    data["konfidenz"] = {
+        "datenlage": 90, "prognosesicherheit": 80, "regelklarheit": 30, "zielkonflikt": 80,
+    }
+    ha = _FakeHA()
+    planner, _ = _planner(tmp_path, _FakeProvider(data), ha_client=ha,
+                          options={"min_confidence_percent": 70})
+
+    result = await planner.run(now=NOW)
+
+    assert result.ok
+    assert result.plan["confidence"] == 30
+    assert "regelklarheit" in result.validation["publish_blocked"]
+    assert result.published["ok"] is False
+    assert ha.calls == []  # nichts nach HA geschrieben
+
+
+async def test_run_publishes_when_confidence_is_sufficient(tmp_path):
+    data = dict(_VALID_DATA)
+    data["konfidenz"] = {
+        "datenlage": 90, "prognosesicherheit": 80, "regelklarheit": 90, "zielkonflikt": 80,
+    }
+    ha = _FakeHA()
+    planner, _ = _planner(tmp_path, _FakeProvider(data), ha_client=ha,
+                          options={"min_confidence_percent": 70})
+
+    result = await planner.run(now=NOW)
+
+    assert result.validation["publish_blocked"] is None
+    assert result.plan["confidence"] == 80
+    assert ha.calls  # Vorschlagswerte geschrieben
+
+
+async def test_run_keeps_device_explanations_in_the_plan(tmp_path):
+    """Die erzwungene Selbsterklärung (D-060) landet im gespeicherten Plan."""
+    data = {
+        "devices": [
+            {
+                "name": "heizstab",
+                "prio_vorschlag": 10,
+                "freigabe_vorschlag": False,
+                "geschutzte_mindestleistung_w_vorschlag": 500.0,
+                "begruendung": "Warmwasser bei 76 °C, Regel greift.",
+                "angewandte_regeln": ["Über 70 °C kein Heizstab"],
+            },
+            {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+        ],
+        "konfidenz": {"datenlage": 90, "prognosesicherheit": 90,
+                      "regelklarheit": 90, "zielkonflikt": 90},
+        "unsicherheiten": ["Außentemperatur nicht gemessen"],
+        "reasoning": "Test",
+    }
+    planner, _ = _planner(tmp_path, _FakeProvider(data))
+
+    result = await planner.run(now=NOW)
+
+    assert result.ok, result.validation
+    heizstab = next(d for d in result.plan["devices"] if d["name"] == "heizstab")
+    assert heizstab["begruendung"].startswith("Warmwasser")
+    assert heizstab["angewandte_regeln"] == ["Über 70 °C kein Heizstab"]
+    assert result.plan["unsicherheiten"] == ["Außentemperatur nicht gemessen"]
+    assert result.plan["konfidenz_teilnoten"]["regelklarheit"] == 90

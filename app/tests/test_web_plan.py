@@ -19,7 +19,7 @@ class _FakeProvider(AIProvider):
     def __init__(self, data):
         self._data = data
 
-    async def generate(self, prompt, response_schema):
+    async def generate(self, prompt, response_schema, *, system=None):
         return ProviderResponse(data=self._data, tokens_in=5, tokens_out=7)
 
     async def close(self):
@@ -30,7 +30,11 @@ class _FakeProvider(AIProvider):
 
 
 class _CapturingProvider(AIProvider):
-    """Merkt sich den zuletzt gesendeten Prompt (für den Custom-Prompt-Test)."""
+    """Merkt sich die zuletzt gesendete Instruktion und den Datenblock (Custom-Prompt-Test).
+
+    Seit D-062 gehen beide getrennt an den Provider: die Instruktion im System-Kanal, die Daten
+    als User-Nachricht.
+    """
 
     name = "cap"
     model = "cap-1"
@@ -38,9 +42,11 @@ class _CapturingProvider(AIProvider):
     def __init__(self, data):
         self._data = data
         self.last_prompt = None
+        self.last_system = None
 
-    async def generate(self, prompt, response_schema):
+    async def generate(self, prompt, response_schema, *, system=None):
         self.last_prompt = prompt
+        self.last_system = system
         return ProviderResponse(data=self._data, tokens_in=1, tokens_out=1)
 
     async def close(self):
@@ -57,7 +63,7 @@ class _SequencedProvider(AIProvider):
     def __init__(self, responses):
         self._responses = list(responses)
 
-    async def generate(self, prompt, response_schema):
+    async def generate(self, prompt, response_schema, *, system=None):
         return ProviderResponse(data=self._responses.pop(0), tokens_in=2, tokens_out=3)
 
     async def close(self):
@@ -68,7 +74,7 @@ class _FailingProvider(AIProvider):
     name = "fail"
     model = "fail-1"
 
-    async def generate(self, prompt, response_schema):
+    async def generate(self, prompt, response_schema, *, system=None):
         raise RuntimeError("Klassifizierung kaputt")
 
     async def close(self):
@@ -150,8 +156,10 @@ async def test_custom_prompt_is_used_in_plan_run(aiohttp_client, tmp_path):
     await client.post("/api/prompt", json={"prompt": "SONDER-INSTRUKTION"})
     await client.post("/api/plan/run")
 
-    assert provider.last_prompt.startswith("SONDER-INSTRUKTION")
-    assert "Daten:" in provider.last_prompt  # Datenblock immer angehängt
+    # Instruktion im System-Kanal (D-062), Daten als User-Nachricht – getrennt statt verkettet.
+    assert provider.last_system == "SONDER-INSTRUKTION"
+    assert provider.last_prompt.startswith("Daten:")  # Datenblock immer mitgesendet
+    assert "SONDER-INSTRUKTION" not in provider.last_prompt
 
 
 async def test_plan_run_uses_classification_weights_when_ziele_configured(aiohttp_client, tmp_path):

@@ -44,6 +44,28 @@ _DOMAIN_KIND: dict[str, str] = {
     "select": "select",
 }
 
+# Semantische Rolle eines Zusatzwerts (D-061): sagt der KI, ob sie einen **gemessenen** Wert oder
+# eine vom User gesetzte Vorgabe vor sich hat. Ohne diese Unterscheidung liest ein Modell einen
+# Sollwert wie „Max. Wassertemperatur 85 °C" als Ist-Temperatur und plant daran vorbei.
+EXTRA_ROLE_IST = "ist"  # gemessener Wert (Sensor)
+EXTRA_ROLE_GRENZE = "grenze"  # vom User gesetzte Ober-/Untergrenze
+EXTRA_ROLE_SOLLWERT = "sollwert"  # Zielwert/Vorgabe, ggf. von der KI vorgeschlagen
+EXTRA_ROLES: tuple[str, ...] = (EXTRA_ROLE_IST, EXTRA_ROLE_GRENZE, EXTRA_ROLE_SOLLWERT)
+
+# Klartext je Rolle für den KI-Kontext (die KI liest die Bedeutung, nicht das Kürzel).
+EXTRA_ROLE_TEXT: dict[str, str] = {
+    EXTRA_ROLE_IST: "gemessener Ist-Wert",
+    EXTRA_ROLE_GRENZE: "vom User gesetzte Grenze, kein Messwert",
+    EXTRA_ROLE_SOLLWERT: "Sollwert/Vorgabe, kein Messwert",
+}
+
+
+def normalize_extra_role(value: object) -> str:
+    """Bringt eine Rollenangabe auf einen gültigen Wert; unbekannt/leer => `ist`."""
+    text = str(value or "").strip().lower()
+    return text if text in EXTRA_ROLES else EXTRA_ROLE_IST
+
+
 # Domänen echter HA-„Helfer" (D-052): einzige Domänen, in die EP per Service zurückschreiben
 # darf ("In Original schreiben"). `switch`/`light`/`binary_sensor` sind Geräte-Entitäten, kein
 # Helfer, und `sensor` ist grundsätzlich read-only – dort entsteht nur der `_vorschlag`-Sensor.
@@ -73,6 +95,10 @@ class DeviceExtra:
     Attribute (input_number: `min`/`max` als Ober-/Untergrenze für die KI; input_datetime:
     `has_date`/`has_time` für das erwartete Format).
 
+    `rolle` (D-061) sagt der KI, **was** der Wert ist: `ist` (gemessen), `grenze` (vom User
+    gesetzte Ober-/Untergrenze) oder `sollwert` (Vorgabe/Zielwert). Ohne diese Angabe liest ein
+    Modell einen Sollwert wie „Max. Wassertemperatur 85 °C" als Ist-Temperatur.
+
     Diese Vorschläge sind rein **advisorisch** (nur HA-Sensor, D-047): sie werden NICHT an
     das HEMS übergeben (das HEMS kennt sie nicht); der Freitext (`ai_hint`) erklärt der KI
     Bedeutung und Verwendung des Werts.
@@ -90,6 +116,7 @@ class DeviceExtra:
     label: str = ""  # Anzeigename (leer => aus der object_id abgeleitet)
     unit: str = ""  # optionale Einheit für Anzeige/HA-Sensor (z.B. "°C", "%")
     write_original: bool = False  # D-052: Vorschlag zusätzlich in die Original-Entität schreiben
+    rolle: str = EXTRA_ROLE_IST  # D-061: ist | grenze | sollwert (Semantik für die KI)
 
     @property
     def domain(self) -> str:
@@ -145,6 +172,11 @@ class DeviceExtra:
         return self.label.strip() or self.object_id.replace("_", " ").title()
 
     @property
+    def rolle_text(self) -> str:
+        """Klartext der semantischen Rolle für den KI-Kontext (D-061)."""
+        return EXTRA_ROLE_TEXT[normalize_extra_role(self.rolle)]
+
+    @property
     def is_writable_helper(self) -> bool:
         """True, wenn die Quell-Domäne ein echter HA-Helfer ist (D-052), kein `sensor.*`."""
         return self.domain in _WRITABLE_HELPER_DOMAINS
@@ -175,6 +207,10 @@ class Device:
     # Funktion/Besonderheiten des Geräts. Rein advisorisch (geht als Kontext-Feld `funktion`
     # in den Planungs-Prompt, nie an das HEMS); nach der Discovery aus der DB gemergt.
     ai_prompt: str = ""
+    # User-gepflegte Freitext-Betriebsregeln dieses Geräts (D-060): was der User will, nicht
+    # was das Gerät ist. Geht als eigener Kontext-Block `regeln` in den Planungs-Prompt; die
+    # KI muss ihre Entscheidung je Gerät dagegen begründen (`angewandte_regeln`).
+    ai_regeln: str = ""
 
 
 @dataclass(frozen=True)
