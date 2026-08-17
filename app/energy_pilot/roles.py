@@ -28,10 +28,14 @@ class Role:
 
 # Mess-/Flussgrößen werden über 1/15/60 min gemittelt.
 # Zustandsgrößen (averaged=False) führen den letzten gültigen Wert.
+#
+# Die frühere Rolle `grid_power` („Netzleistung" am Übergabepunkt) ist entfernt: `grid_import` und
+# `grid_export` tragen dieselbe Information, und zwar richtungsrein — ohne Vorzeichenkonvention,
+# über die man sich vertun kann. Sie war reine Durchleitung an die KI; kein Codepfad rechnete
+# mit ihr.
 MEASUREMENT_ROLES: tuple[Role, ...] = (
     Role("pv_power", "PV-Leistung", averaged=True, unit="W"),
     Role("house_load", "Hausverbrauch", averaged=True, unit="W"),
-    Role("grid_power", "Netzleistung", averaged=True, unit="W"),
     Role("grid_import", "Netzbezug", averaged=True, unit="W"),
     Role("grid_export", "Einspeisung", averaged=True, unit="W"),
     Role("battery_power", "Batterieleistung", averaged=True, unit="W"),

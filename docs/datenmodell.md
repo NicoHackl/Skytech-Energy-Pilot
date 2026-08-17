@@ -23,6 +23,7 @@ Liste (`database.py: MIGRATIONS`), Tracking über Tabelle `schema_migrations`,
 | v13 | `plans.prompt`/`context_json`/`response_json`/`context_hash`/`publish_blocked` + `ai_calls.context_hash`/`sampling_dropped` (Nachvollziehbarkeit und Konfidenz-Gate, D-063/D-064) |
 | v14 | `daily_history` (Tages-Rückblick je Messgröße, D-065; löst das offene D-012 ein) |
 | v15 | `device_speicher` (Volumen/Komfortminimum/Zielwert je Wärmespeicher, D-066) |
+| v16 | räumt Altlasten der entfernten Mess-Rolle `grid_power` auf (`daily_history`, `entity_map`) |
 
 ## Zentrale Tabellen (Zweck)
 

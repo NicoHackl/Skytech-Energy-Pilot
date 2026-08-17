@@ -1,6 +1,6 @@
 # Home-Assistant-Addon-Manifest für Skytech Energy Pilot
 name: Skytech Energy Pilot (Dev)
-version: "0.0.63"
+version: "0.0.64"
 slug: skytech_energy_pilot_dev
 description: KI-gestützte, vorausschauende Energieplanung für Home Assistant und Skytech HEMS
 url: https://github.com/NicoHackl/Skytech-Energy-Pilot
@@ -119,7 +119,6 @@ options:
   sensoren:
     entity_pv_power: ""
     entity_house_load: ""
-    entity_grid_power: ""
     entity_grid_import: ""
     entity_grid_export: ""
     entity_battery_power: ""
@@ -190,7 +189,6 @@ schema:
   sensoren:
     entity_pv_power: str?
     entity_house_load: str?
-    entity_grid_power: str?
     entity_grid_import: str?
     entity_grid_export: str?
     entity_battery_power: str?

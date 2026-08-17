@@ -205,9 +205,6 @@ configuration:
       entity_house_load:
         name: House load
         description: HA entity for current house consumption (e.g. sensor.e3dc_leistung_haus).
-      entity_grid_power:
-        name: Grid power
-        description: HA entity for power at the grid connection point.
       entity_grid_import:
         name: Grid import
         description: HA entity for grid import.

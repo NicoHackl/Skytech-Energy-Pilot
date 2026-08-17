@@ -33,14 +33,14 @@ def test_mapping_from_options_reads_entities():
     values = {
         "entity_pv_power": "sensor.pv",
         "entity_house_load": "  ",  # nur Leerzeichen -> ignorieren
-        "entity_grid_power": "",  # leer -> ignorieren
+        "entity_grid_export": "",  # leer -> ignorieren
     }
     mapping = mapping_from_options(values)
 
     assert mapping["pv_power"].entity_id == "sensor.pv"
     # leere/whitespace-Einträge erzeugen keine Zuordnung
     assert "house_load" not in mapping
-    assert "grid_power" not in mapping
+    assert "grid_export" not in mapping
 
 
 def test_mapping_from_options_reads_nested_group():

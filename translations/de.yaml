@@ -206,9 +206,6 @@ configuration:
       entity_house_load:
         name: Hausverbrauch
         description: HA-Entität für den aktuellen Hausverbrauch (z. B. sensor.e3dc_leistung_haus).
-      entity_grid_power:
-        name: Netzleistung
-        description: HA-Entität für die Leistung am Netzübergabepunkt.
       entity_grid_import:
         name: Netzbezug
         description: HA-Entität für den Netzbezug.

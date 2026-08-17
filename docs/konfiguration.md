@@ -95,11 +95,15 @@ werden aus den `ems_*`-Werten abgeleitet (`constraints.py`).
 
 ## Sensor-Zuordnung (`sensoren`)
 
-`entity_pv_power`, `entity_house_load`, `entity_grid_power`, `entity_grid_import`,
-`entity_grid_export`, `entity_battery_power`, `entity_battery_soc`,
-`entity_hot_water_temp`, `entity_outdoor_temp` — Mapping der 9
-festen Mess-Rollen ([roles.py](../app/energy_pilot/roles.py)) auf reale HA-Entity-IDs.
-Änderung erfordert Addon-Neustart (Mapping wird beim Boot geladen).
+`entity_pv_power`, `entity_house_load`, `entity_grid_import`, `entity_grid_export`,
+`entity_battery_power`, `entity_battery_soc`, `entity_hot_water_temp`, `entity_outdoor_temp` —
+Mapping der 8 festen Mess-Rollen ([roles.py](../app/energy_pilot/roles.py)) auf reale
+HA-Entity-IDs. Änderung erfordert Addon-Neustart (Mapping wird beim Boot geladen).
+
+Die frühere Rolle **`entity_grid_power`** („Netzleistung" am Übergabepunkt) ist seit 0.0.64
+entfernt: `entity_grid_import` und `entity_grid_export` tragen dieselbe Information
+richtungsrein, ohne Vorzeichenkonvention. Sie war reine Durchleitung an die KI; kein Codepfad
+rechnete mit ihr.
 
 Die beiden **Temperatur-Rollen** (D-061) sind neu und werden **gemittelt** geführt (Ausnahme
 zu D-003): EP liefert der KI `latest` **und** die 1-/15-/60-Minuten-Mittel. Erst dieser

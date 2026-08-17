@@ -110,14 +110,13 @@ DEFAULTS: dict[str, object] = {
             "refresh_alerts": 30,
         },
     },
-    # Zuordnung der 9 festen Mess-Rollen (roles.py) auf reale HA-Entity-IDs (D-027). Leer =>
+    # Zuordnung der 8 festen Mess-Rollen (roles.py) auf reale HA-Entity-IDs (D-027). Leer =>
     # Rolle ohne Wert; Änderungen greifen erst nach einem Addon-Neustart (Mapping wird beim
     # Boot geladen). Die beiden Temperatur-Rollen (D-061) liefern der KI den Verlauf, nicht
     # nur den Momentanwert.
     "sensoren": {
         "entity_pv_power": "",
         "entity_house_load": "",
-        "entity_grid_power": "",
         "entity_grid_import": "",
         "entity_grid_export": "",
         "entity_battery_power": "",

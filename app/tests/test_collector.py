@@ -111,3 +111,12 @@ async def test_temperature_roles_are_averaged_so_the_trend_is_visible():
 def test_measurement_roles_include_both_temperatures():
     keys = {role.key for role in MEASUREMENT_ROLES}
     assert {"hot_water_temp", "outdoor_temp"} <= keys
+
+
+def test_grid_power_role_is_gone_but_import_and_export_remain():
+    """„Netzleistung" ist entfernt: Bezug und Einspeisung tragen dieselbe Information
+    richtungsrein, ohne Vorzeichenkonvention."""
+    keys = {role.key for role in MEASUREMENT_ROLES}
+    assert "grid_power" not in keys
+    assert {"grid_import", "grid_export"} <= keys
+    assert len(MEASUREMENT_ROLES) == 8

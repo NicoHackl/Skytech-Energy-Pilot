@@ -230,3 +230,98 @@ def test_sources_skip_entries_without_entity():
 
     mapping = {"pv_power": EntityMapping("pv_power", None)}
     assert sources_from(mapping, []) == []
+
+
+# --- Verwaiste Größen nach dem Entfernen einer Rolle ------------------------------------------
+
+
+def _insert_orphan(db, tag: str, groesse: str = "grid_power"):
+    """Zeile einer Größe einfügen, die es nicht mehr gibt (z. B. nach Wegfall von `grid_power`)."""
+    db.execute(
+        "INSERT INTO daily_history (tag, groesse, entity_id, wert_min, wert_max, wert_mittel, "
+        "wert_delta, energie_kwh, proben, vollstaendig) "
+        "VALUES (?, ?, 'sensor.alt', 1.0, 2.0, 1.5, 0.5, NULL, 5, 1)",
+        (tag, groesse),
+    )
+    db.commit()
+
+
+@pytest.mark.asyncio
+async def test_orphan_size_does_not_mark_an_incomplete_day_as_done():
+    """Regression: sonst gilt ein Tag als fertig, obwohl eine echte Quelle fehlt.
+
+    `_complete_days` verglich die reine Zeilenzahl mit der Anzahl der Quellen. Eine Zeile einer
+    entfernten Größe blähte den Zähler auf — der Tag wurde nie nachgeholt.
+    """
+    db = init_db(":memory:")
+    ha = _FakeHA({"sensor.ww": _rows(date(2026, 8, 13), (6, 60.0), (18, 80.0))})
+    collector = HistoryCollector(ha, db, days=2)
+    collector.set_sources(
+        [
+            HistorySource("warmwasser", "sensor.ww", unit="°C"),
+            HistorySource("aussen", "sensor.aussen", unit="°C"),
+        ]
+    )
+    # Nur EINE echte Quelle ist für den 13.08. abgeschlossen, dazu eine verwaiste Zeile.
+    _insert_orphan(db, "2026-08-13")
+    db.execute(
+        "INSERT INTO daily_history (tag, groesse, entity_id, wert_min, wert_max, wert_mittel, "
+        "wert_delta, energie_kwh, proben, vollstaendig) "
+        "VALUES ('2026-08-13', 'warmwasser', 'sensor.ww', 60.0, 80.0, 70.0, 20.0, NULL, 9, 1)"
+    )
+    db.commit()
+
+    await collector.collect_once(now=NOW_TS)
+
+    # Der 13.08. war offen (die Größe `aussen` fehlte) und wurde erneut angefragt.
+    assert any(call[0] == "sensor.aussen" for call in ha.calls)
+
+
+@pytest.mark.asyncio
+async def test_orphan_size_is_not_reported_in_the_snapshot():
+    """Eine entfernte Messgröße darf nicht als Geisterwert im Rückblick und im KI-Kontext landen."""
+    db = init_db(":memory:")
+    collector = _collector(_FakeHA(), db)
+    _insert_orphan(db, "2026-08-14")
+
+    tage = collector.snapshot(now=NOW)
+
+    assert all("grid_power" not in tag["groessen"] for tag in tage)
+
+
+def test_migration_16_removes_orphan_rows_of_the_dropped_role():
+    """Migration v16 räumt die Altlast der entfernten Rolle auf.
+
+    Dafür wird eine Datenbank auf dem Stand **vor** v16 aufgebaut, die Altlast eingefügt und dann
+    migriert — sonst prüft der Test die Migration nicht, sondern nur das eigene DELETE.
+    """
+    from energy_pilot.database import MIGRATIONS, connect, current_version, migrate
+
+    db = connect(":memory:")
+    current_version(db)  # legt `schema_migrations` an
+    for version, sql in MIGRATIONS:
+        if version >= 16:
+            break
+        db.executescript(sql)
+        db.execute("INSERT INTO schema_migrations (version) VALUES (?)", (version,))
+    db.commit()
+    assert current_version(db) == 15
+
+    _insert_orphan(db, "2026-08-14")
+    db.execute("INSERT INTO entity_map (role, ha_entity_id) VALUES ('grid_power', 'sensor.alt')")
+    # Eine noch gültige Größe daneben, damit der Test das Löschen nicht mit „Tabelle leeren"
+    # verwechselt.
+    _insert_orphan(db, "2026-08-14", groesse="warmwasser")
+    db.commit()
+
+    assert migrate(db) == [16]
+
+    assert db.execute(
+        "SELECT COUNT(*) AS n FROM daily_history WHERE groesse = 'grid_power'"
+    ).fetchone()["n"] == 0
+    assert db.execute(
+        "SELECT COUNT(*) AS n FROM entity_map WHERE role = 'grid_power'"
+    ).fetchone()["n"] == 0
+    assert db.execute(
+        "SELECT COUNT(*) AS n FROM daily_history WHERE groesse = 'warmwasser'"
+    ).fetchone()["n"] == 1

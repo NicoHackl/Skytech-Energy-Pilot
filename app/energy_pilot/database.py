@@ -236,6 +236,17 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         """,
     ),
+    (
+        16,
+        # Aufräumen nach dem Wegfall der Mess-Rolle `grid_power` („Netzleistung"): `grid_import`
+        # und `grid_export` tragen dieselbe Information richtungsrein. Der Rückblick filtert
+        # entfernte Größen inzwischen selbst (history_collector), aber die alten Zeilen sollen
+        # auch nicht als toter Ballast liegen bleiben.
+        """
+        DELETE FROM daily_history WHERE groesse = 'grid_power';
+        DELETE FROM entity_map WHERE role = 'grid_power';
+        """,
+    ),
 ]
 
 

@@ -105,7 +105,7 @@ ist er es nicht.
 | `ha_client.py` | HA-Core-API-Client (lesen mit Allowlist-Guard, schreiben, Service-Calls) |
 | `hems_client.py` | HEMS-Addon-Client (`/api/status`, `/api/controls`, `/api/device_controls_schema`) |
 | `allowlist.py` | `EntityAllowlist` — weiche Durchsetzung erlaubter Lese-Entitäten (D-038) |
-| `roles.py` | Feste Mess-Rollen (PV/Hausverbrauch/Netz/Batterie) |
+| `roles.py` | Feste Mess-Rollen (PV/Hausverbrauch/Netzbezug/Einspeisung/Batterie/Temperaturen) |
 | `entity_map.py` | Rollen→Entity-ID-Mapping aus `sensoren`-Config |
 | `collector.py` | `StateCollector` — liest Mess-Rollen, füttert Aggregation |
 | `aggregation.py` | `RollingAggregator` — 1/15/60-min-Mittelwerte (D-003) |

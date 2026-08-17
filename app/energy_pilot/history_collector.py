@@ -197,17 +197,26 @@ class HistoryCollector:
         return [tag for tag in fenster if tag.isoformat() not in fertig]
 
     def _complete_days(self) -> set[str]:
-        """Tage, für die **jede** konfigurierte Größe als abgeschlossen gespeichert ist."""
+        """Tage, für die **jede aktuell konfigurierte** Größe als abgeschlossen gespeichert ist.
+
+        Die Einschränkung auf die aktuellen Quellen ist wesentlich, nicht kosmetisch: würde hier
+        einfach die Zeilenzahl gezählt, blähten Zeilen einer **entfernten** Größe den Zähler auf
+        (z.B. `grid_power` nach dem Wegfall der Rolle). Ein Tag könnte dadurch als abgeschlossen
+        gelten, obwohl eine echte Quelle noch fehlt — und würde nie nachgeholt.
+        """
         if self.db is None or not self.sources:
             return set()
+        keys = [source.groesse for source in self.sources]
+        platzhalter = ",".join("?" for _ in keys)
         try:
             rows = self.db.execute(
                 "SELECT tag, COUNT(*) AS fertig FROM daily_history "
-                "WHERE vollstaendig = 1 GROUP BY tag"
+                f"WHERE vollstaendig = 1 AND groesse IN ({platzhalter}) GROUP BY tag",
+                keys,
             ).fetchall()
         except sqlite3.Error:  # pragma: no cover - DB-Defensive, blockiert nie
             return set()
-        return {row["tag"] for row in rows if row["fertig"] >= len(self.sources)}
+        return {row["tag"] for row in rows if row["fertig"] >= len(keys)}
 
     async def _aggregate_and_store(
         self, source: HistorySource, tag: date, *, heute: date, jetzt: datetime
@@ -266,11 +275,17 @@ class HistoryCollector:
 
         Je Tag ein Eintrag mit allen Größen als Unterobjekt. Tage ohne jede Probe entfallen —
         ein leerer Tag trägt keine Information und würde nur Kontext kosten.
+
+        Es werden nur die **aktuell konfigurierten** Größen ausgegeben. Andernfalls schleppte eine
+        entfernte Messgröße (z.B. `grid_power` nach dem Wegfall der Rolle) ihre alten Zeilen
+        dauerhaft in Rückblick, UI und KI-Kontext — ein Geisterwert mit einem Namen, den das System
+        nicht mehr kennt.
         """
         if self.db is None:
             return []
         fenster = days_in_window(now or datetime.now(UTC), days or self.days)
         erlaubt = {tag.isoformat() for tag in fenster}
+        bekannt = {source.groesse for source in self.sources}
         try:
             rows = self.db.execute(
                 "SELECT tag, groesse, wert_min, wert_max, wert_mittel, wert_delta, "
@@ -282,6 +297,8 @@ class HistoryCollector:
         for row in rows:
             if row["tag"] not in erlaubt or not row["proben"]:
                 continue
+            if bekannt and row["groesse"] not in bekannt:
+                continue  # entfernte Messgröße: nicht mehr ausgeben
             eintrag = nach_tag.setdefault(
                 row["tag"], {"tag": row["tag"], "vollstaendig": bool(row["vollstaendig"]),
                              "groessen": {}}

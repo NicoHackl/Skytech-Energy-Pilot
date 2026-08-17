@@ -8,6 +8,36 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Entfernt
+- **Mess-Rolle „Netzleistung" (`entity_grid_power`) aus der Addon-Konfiguration entfernt
+  (0.0.63 → 0.0.64).** `entity_grid_import` (Netzbezug) und `entity_grid_export` (Einspeisung)
+  tragen dieselbe Information — und zwar richtungsrein, ohne Vorzeichenkonvention, über die man
+  sich vertun kann. Die Rolle war reine Durchleitung an die KI; kein Codepfad hat mit ihr
+  gerechnet, weder die Überschussermittlung noch die Bilanz. Die Sensor-Zuordnung führt damit
+  **acht** statt neun Rollen.
+  - **Nebeneffekt bei der Konfidenz, damit er später nicht rätselhaft wirkt:** eine leer gelassene
+    Rolle zählte im Kontext als `veraltet` und senkte `datenlage.frische_prozent` — und damit über
+    die Teilnote `datenlage` die Gesamtkonfidenz (D-064). Bei dieser Installation war
+    `entity_grid_power` leer, die Datenlage lag also bei 8 von 9 Rollen. Nach dem Entfernen sind
+    es 8 von 8: die Konfidenzwerte steigen leicht und sind **nicht** mit denen vorheriger Läufe
+    vergleichbar.
+  - **Bestehende Installationen:** steht der Wert noch in den gespeicherten Addon-Optionen, ist er
+    ab jetzt ein unbekannter Schlüssel. Sollte Home Assistant die Konfiguration deshalb als
+    ungültig melden, genügt es, sie einmal zu öffnen und zu speichern.
+
+### Behoben
+- **Zwei Stellen, an denen eine entfernte Messgröße dauerhaft nachgewirkt hätte** — gefunden beim
+  Aufräumen der Rolle, aber allgemein und für jede künftige Rollenentfernung relevant:
+  - `history_collector._complete_days()` verglich die reine **Zeilenzahl** in `daily_history` mit
+    der Anzahl der konfigurierten Quellen. Zeilen einer entfernten Größe blähten den Zähler auf,
+    sodass ein Tag als abgeschlossen gelten konnte, obwohl eine echte Quelle noch fehlte — und
+    dann nie nachgeholt wurde. Gezählt werden jetzt nur die aktuell konfigurierten Größen.
+  - `history_collector.snapshot()` gab **alle** gespeicherten Größen aus. Eine entfernte Messgröße
+    wäre als Geisterwert dauerhaft in Rückblick, Oberfläche und KI-Kontext geblieben. Ausgegeben
+    werden jetzt nur bekannte Größen.
+  - Migration v16 räumt zusätzlich die Altlasten von `grid_power` aus `daily_history` und
+    `entity_map`.
+
 ### Hinzugefügt
 - **Rückblick und Energiebilanz: die KI kann jetzt rechnen statt zu schätzen (D-065/D-066,
   0.0.62 → 0.0.63).** Anlass war ein Einwand, der jede Schwellwert-Logik widerlegt: ein
