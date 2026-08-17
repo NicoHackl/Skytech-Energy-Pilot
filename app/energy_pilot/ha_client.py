@@ -7,6 +7,7 @@ und auditiert, aber **nicht blockiert** (Soft-Durchsetzung, D-038).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -81,6 +82,52 @@ class HAClient:
         ) as resp:
             await raise_for_status(resp, service="Home Assistant")
             return await resp.json()
+
+    async def get_history(
+        self,
+        entity_id: str,
+        start: datetime,
+        end: datetime | None = None,
+        *,
+        minimal: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Liest den Verlauf einer Entität (`GET /api/history/period/<start>`, D-065).
+
+        Der einzige Weg, an Werte zu kommen, die älter als der 60-Minuten-Aggregator sind
+        (`aggregation.py`) — nötig, um Tagesbilanzen zu bilden: „wie viel Wärme kam gestern ohne
+        Strom in den Speicher?" ist ohne Verlauf nicht beantwortbar.
+
+        `minimal_response` und `significant_changes_only` sind gesetzt, weil ein einzelner
+        Temperaturfühler leicht fünfstellige Zeilenzahlen pro Woche erzeugt und EP je Wert nur
+        Minimum, Maximum und Differenz braucht. Liefert die flache Liste der Zustände (HA
+        antwortet mit einer Liste **pro** Entität; hier wird genau eine abgefragt).
+
+        Wie `get_state` läuft der weiche Allowlist-Guard mit (D-038): protokollieren, nicht
+        blockieren.
+        """
+        if self._allowlist is not None:
+            self._allowlist.check(entity_id)
+        params: dict[str, str] = {
+            "filter_entity_id": entity_id,
+            "minimal_response": "true" if minimal else "false",
+            "significant_changes_only": "true" if minimal else "false",
+        }
+        if end is not None:
+            params["end_time"] = end.isoformat()
+        session = await self._ensure_session()
+        async with session.get(
+            f"{self.base_url}/history/period/{start.isoformat()}",
+            headers=self.headers,
+            params=params,
+        ) as resp:
+            await raise_for_status(resp, service="Home Assistant")
+            payload = await resp.json()
+        # HA liefert eine Liste von Listen (eine je Entität). Bei einer angefragten Entität ist
+        # das entweder [[...]] oder – wenn nichts aufgezeichnet wurde – [].
+        if not isinstance(payload, list) or not payload:
+            return []
+        first = payload[0]
+        return [row for row in first if isinstance(row, dict)] if isinstance(first, list) else []
 
     async def set_state(
         self, entity_id: str, state: str, attributes: dict[str, Any] | None = None

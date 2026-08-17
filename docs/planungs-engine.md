@@ -185,8 +185,67 @@ naive **Ortszeit** (`_local_dt`), forecast3h-Slots die naive **UTC** aus dem OWM
 `dt_txt`. Wer die Reihen vergleicht, muss das wissen.
 
 Top-Level-Schlüssel des Kontexts: `now`, `valid_from`, `valid_until`, `state`, `forecast`,
-`weather`, `devices`, `objectives`, `datenlage`, optional `globale_regeln` und
-`previous_plan`.
+`weather`, `devices`, `objectives`, `datenlage`, optional `globale_regeln`, `rueckblick`,
+`merkmale` und `previous_plan`.
+
+## Bilanz über Tage (D-065/D-066)
+
+Der Grund, warum es diese Schicht gibt, in einem Beispiel: ein Pufferspeicher mit **65 °C**
+braucht bei drei sonnigen Tagen keinen Strom — bei zwei trüben Tagen mit heutigem Überschuss
+dagegen schon, weil sonst niemand mehr nachliefert. **Dieselbe Temperatur, zwei entgegengesetzte
+richtige Antworten.** Keine Schwelle kann das ausdrücken; eine Energiebilanz über mehrere Tage
+schon. Genau die konnte EP vorher nicht liefern.
+
+### `rueckblick` — gemessene Tageswerte (D-065)
+
+`history_collector.py` holt die Verläufe über `ha_client.get_history` und `history.py` verdichtet
+sie je **Kalendertag in Berliner Zeit** zu Minimum, Maximum, zeitgewichtetem Mittel,
+Tagesänderung und – bei Leistungs-/Zählergrößen – Energie. Persistiert in `daily_history`.
+
+Zwei Fallen, die beide echte Rechenfehler waren und als Regressionstest festgehalten sind:
+
+1. Python subtrahiert zwei Zeitpunkte mit **derselben** `tzinfo` als Wanduhr-Differenz — ein Tag
+   mit Zeitumstellung käme als 24 h statt 23 bzw. 25 h heraus. Deshalb liefert `day_bounds` die
+   Grenzen nach UTC normalisiert.
+2. HA speichert mit `significant_changes_only` nur **Änderungen**, und ein Zustand gilt bis zur
+   nächsten Änderung. Eine zu enge Lückengrenze verwirft damit den Normalfall: 1000 W, die eine
+   Stunde nicht neu gemeldet werden, sind 1 kWh und nicht 0. `MAX_GAP_S` liegt bei sechs Stunden
+   und schützt nur gegen echte Ausfälle.
+
+Aufwandsgrenze: ein als `vollstaendig` markierter Tag wird **genau einmal** geholt. Allein ein
+Speicherfühler liefert rund 16.000 Zeilen die Woche.
+
+Quellen ohne neue Konfiguration (`sources_from`): Mess-Rollen aus dem Mapping plus die
+user-gepflegten **Zusatzwerte** je Gerät. Die `ems_*`-Standardfelder bleiben draußen —
+`min_technisch`/`max_technisch` tragen die Einheit W, sind aber Grenzwerte; als Leistung
+integriert ergäbe ein 3500-W-Limit 84 kWh am Tag und jeder Tag sähe wie „geheizt" aus.
+
+### `merkmale` — gerechnete Größen (D-066)
+
+`features.py`, reine Funktionen. Je Gerät mit gepflegten Speicher-Kennwerten
+(`device_speicher.py`: Volumen, Komfortminimum, optional Zielwert):
+
+| Merkmal | Rechnung |
+|---|---|
+| `reserve_kwh` | `m·c·ΔT` von Ist bis Komfortminimum |
+| `energiebedarf_kwh` | `m·c·ΔT` von Ist bis Zielwert (nie negativ) |
+| `fremdwaerme_tage` | je Tag die Speicheränderung **nur an Tagen mit ≈ 0 kWh elektrisch** — an einem Tag mit Heizbetrieb lässt sich nicht trennen, woher die Wärme kam |
+| `fremdwaerme_mittel_kwh` | Mittel daraus |
+| `deckung_tage` | `reserve_kwh` geteilt durch den täglichen Verlust — nur wenn der Speicher ohne Strom tatsächlich verliert |
+
+Systemweit: `grundlast_w` als Mittel der Tagesminima des Hausverbrauchs und daraus der
+**Netto**-Überschuss. Ohne Grundlast bleibt der Überschuss bewusst leer statt gleich der
+Bruttoprognose — eine Bruttozahl als Überschuss auszugeben wäre eine stille Übertreibung.
+
+Fehlt eine Eingabe, bleibt das Merkmal `None` und erscheint als `fehlt` im Kontext. Ein stiller
+Nullwert wäre hier gefährlicher als eine Lücke: „0 kWh Reserve" liest sich wie „Speicher leer".
+
+### Grenze der Vorausschau, ausdrücklich benannt
+
+Die PV-Prognose liefert vier Summenwerte bis **morgen** (D-026) — keine Stundenkurve, kein Tag 3.
+`forecast.horizont` und `FORECAST_HORIZON_NOTE` sagen das im Kontext, samt Anweisung, spätere Tage
+aus dem Rückblick abzuleiten (gemessener Ertrag gegen Bewölkung desselben Tages). Ohne diesen Satz
+erfindet ein Modell Erträge für übermorgen.
 
 Der Planungs-Prompt (`DEFAULT_PLANNING_PROMPT`) ist über die UI editierbar (Plan-Tab)
 und in der DB persistiert (`config`-Tabelle, Key `PLANNING_PROMPT_KEY`) — überlebt

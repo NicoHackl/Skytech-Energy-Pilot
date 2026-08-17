@@ -14,6 +14,7 @@ import type {
   PromptResponse,
   PublishResult,
   RegelnResponse,
+  RueckblickResponse,
   StateReading,
   TestResult,
   Weather,
@@ -107,6 +108,16 @@ export const api = {
   saveDeviceRegeln: (data: { device_name: string; regeln: string }) =>
     request<{ ok: boolean; is_custom?: boolean; reason?: string }>('api/devices/regeln', post(data)),
   regeln: () => request<RegelnResponse>('api/regeln'),
+  rueckblick: () => request<RueckblickResponse>('api/rueckblick'),
+  saveSpeicher: (data: {
+    device_name: string
+    volumen_liter: number | null
+    komfort_min_c: number | null
+    ziel_c: number | null
+  }) => request<{ ok: boolean; rechenbar?: boolean; fehlt?: string[]; reason?: string }>(
+    'api/devices/speicher',
+    post(data),
+  ),
   saveGlobalRegeln: (regeln: string) =>
     request<{ ok: boolean; is_custom?: boolean; regeln?: string; reason?: string }>(
       'api/regeln',

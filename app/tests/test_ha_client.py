@@ -1,5 +1,7 @@
 """Tests für den HA-Connector ohne echte Netzwerkverbindung (Fake-Session)."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from energy_pilot.allowlist import SOURCE_MEASUREMENT, EntityAllowlist
@@ -40,10 +42,12 @@ class _FakeSession:
         self._status = status
         self._text = text
         self.urls = []
+        self.params = []
         self.posts = []
 
-    def get(self, url, headers=None):
+    def get(self, url, headers=None, params=None):
         self.urls.append(url)
+        self.params.append(params or {})
         return _FakeResponse(self._payload, self._status, self._text, path=url)
 
     def post(self, url, headers=None, json=None):
@@ -174,3 +178,64 @@ async def test_get_state_soft_guard_does_not_block_unlisted_entity():
     ).fetchone()["n"]
     assert violations == 1
     conn.close()
+
+
+# --- Verlaufsabruf für den Tages-Rückblick (D-065) --------------------------------------------
+
+_HISTORY_START = datetime(2026, 8, 14, 0, 0, tzinfo=UTC)
+_HISTORY_END = datetime(2026, 8, 15, 0, 0, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_get_history_flattens_the_per_entity_list():
+    """HA antwortet mit einer Liste **pro** Entität; EP fragt genau eine ab."""
+    rows = [{"state": "60.0", "last_changed": "2026-08-14T06:00:00+02:00"}]
+    session = _FakeSession([rows])
+    client = HAClient(token="t", session=session)
+
+    result = await client.get_history("sensor.ww", _HISTORY_START, _HISTORY_END)
+
+    assert result == rows
+    assert session.urls[0].endswith(f"/history/period/{_HISTORY_START.isoformat()}")
+    params = session.params[0]
+    assert params["filter_entity_id"] == "sensor.ww"
+    # Ohne diese beiden Parameter liefert ein Temperaturfühler fünfstellige Zeilenzahlen.
+    assert params["minimal_response"] == "true"
+    assert params["significant_changes_only"] == "true"
+    assert params["end_time"] == _HISTORY_END.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_get_history_without_end_time_omits_the_parameter():
+    session = _FakeSession([[]])
+    client = HAClient(token="t", session=session)
+
+    await client.get_history("sensor.ww", _HISTORY_START)
+
+    assert "end_time" not in session.params[0]
+
+
+@pytest.mark.asyncio
+async def test_get_history_tolerates_empty_and_unexpected_payloads():
+    """Ohne Aufzeichnung antwortet HA mit `[]` — das darf keinen Fehler auslösen."""
+    for payload in ([], {}, [None], "kaputt"):
+        client = HAClient(token="t", session=_FakeSession(payload))
+        assert await client.get_history("sensor.ww", _HISTORY_START) == []
+
+
+@pytest.mark.asyncio
+async def test_get_history_runs_through_the_allowlist_guard():
+    """Wie `get_state`: nicht freigegebene Entitäten werden protokolliert, nicht blockiert."""
+    db = init_db(":memory:")
+    allowlist = EntityAllowlist(db)
+    allowlist.register_all({"sensor.erlaubt": SOURCE_MEASUREMENT})
+    session = _FakeSession([[]])
+    client = HAClient(token="t", session=session, allowlist=allowlist)
+
+    await client.get_history("sensor.fremd", _HISTORY_START)
+
+    assert session.urls  # der Read läuft trotzdem (Soft-Durchsetzung, D-038)
+    verstoesse = db.execute(
+        "SELECT COUNT(*) AS n FROM audit WHERE action LIKE '%allowlist%'"
+    ).fetchone()["n"]
+    assert verstoesse >= 1

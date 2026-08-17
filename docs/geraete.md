@@ -87,6 +87,23 @@ Beispiel, das den belegten Fehlfall abdeckt:
 > warm, bleibt der Heizstab gesperrt — die Solarthermie deckt das Warmwasser und der Speicher
 > darf nicht überhitzen.
 
+### Wärmespeicher-Kennwerte (D-066)
+
+Je Gerät, das einen Wärmespeicher lädt, drei Zahlen in `device_speicher` (Geräte-Tab):
+**Volumen** in Liter, **Komfortminimum** und optional **Zielwert** in °C. Erst damit wird aus
+einer Temperatur eine Energiemenge und aus „65 °C" die Aussage „4,1 kWh Reserve über dem
+Komfortminimum".
+
+Abgrenzung, die den Unterschied zu D-060 ausmacht: das sind **Anlagendaten und eine
+Anforderung**, keine Entscheidungsregel. „Nie unter 45 °C" sagt nicht, wann der Heizstab läuft —
+es sagt, was nicht passieren darf. Wann geladen wird, folgt aus der Bilanz und bleibt die
+Entscheidung der KI.
+
+Die **gemessene** Speichertemperatur kommt nicht von hier, sondern aus der Mess-Rolle
+`hot_water_temp` ([konfiguration.md](konfiguration.md#sensor-zuordnung-sensoren)); EP führt genau
+eine Warmwasser-Rolle. Fehlt Volumen oder Komfortminimum, entfallen die kWh-Merkmale und der
+KI-Kontext nennt sie als `fehlt` — nie ein stiller Nullwert.
+
 ### Rolle je Zusatzwert (D-061)
 
 Jeder Zusatzwert trägt eine **Rolle**: `ist` (gemessen), `grenze` (vom User gesetzte Ober-/

@@ -92,6 +92,13 @@ export interface DeviceExtra {
   }
 }
 
+/** Wärmespeicher-Kennwerte eines Geräts (D-066). `null` heißt „nicht gepflegt", nie 0. */
+export interface SpeicherDaten {
+  volumen_liter: number | null
+  komfort_min_c: number | null
+  ziel_c: number | null
+}
+
 export interface Device {
   name: string
   label: string
@@ -101,6 +108,8 @@ export interface Device {
   ai_prompt?: string
   /** Freitext-Betriebsregeln des Users (D-060), getrennt von der Beschreibung. */
   ai_regeln?: string
+  /** Kennwerte des Wärmespeichers (D-066); Grundlage der kWh-Rechnung. */
+  speicher?: SpeicherDaten
   mode?: string | null
   global_mode?: string | null
   control_source?: ControlSource
@@ -112,6 +121,37 @@ export interface DevicesResponse {
   source: string
   /** Auswahlpool für das Rollen-Feld eines Zusatzwerts (D-061). */
   extra_roles?: ExtraRole[]
+}
+
+/** Eine Größe im Tages-Rückblick (D-065). `null` heißt „nicht bestimmbar". */
+export interface RueckblickWert {
+  min: number | null
+  max: number | null
+  mittel: number | null
+  delta: number | null
+  energie_kwh: number | null
+}
+
+export interface RueckblickTag {
+  tag: string
+  vollstaendig: boolean
+  groessen: Record<string, RueckblickWert>
+}
+
+export interface RueckblickQuelle {
+  groesse: string
+  entity_id: string
+  einheit: string
+  label: string
+  art: 'level' | 'power' | 'counter'
+}
+
+export interface RueckblickResponse {
+  aktiv: boolean
+  tage: RueckblickTag[]
+  quellen: RueckblickQuelle[]
+  letzter_lauf_ts?: number | null
+  letzter_fehler?: string | null
 }
 
 /** Freitext-Regeln: hausweit plus je Gerät (D-060). */

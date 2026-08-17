@@ -119,4 +119,7 @@ ohne Git-Push:
   editierbar, steuert den vorgelagerten Ziel-Gewichtungs-Aufruf.
 - **Hausweite Freitext-Regeln** (`GLOBAL_RULES_KEY`, D-060) — gepflegt im Tab
   „Grenzen & Ziele“; Regeln je Gerät liegen in der Tabelle `device_regeln`.
+- **Wärmespeicher-Kennwerte** je Gerät (Tabelle `device_speicher`, D-066) — Volumen,
+  Komfortminimum, Zielwert; gepflegt im Geräte-Tab. Grundlage der kWh-Bilanz
+  ([geraete.md](geraete.md)).
 - **OneCall-Tagesbudget-Zähler** (`onecall_budget.py`).

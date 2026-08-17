@@ -23,6 +23,9 @@ from energy_pilot.ai_provider import AIProvider
 from energy_pilot.config import AddonConfig
 from energy_pilot.constraints import build_constraints
 from energy_pilot.device_regeln import get_global_regeln
+from energy_pilot.device_speicher import load_speicher
+from energy_pilot.features import build_device_features, build_system_features
+from energy_pilot.history_collector import energy_sources_for
 from energy_pilot.logging_setup import log
 from energy_pilot.objectives import load_ziele, objectives_from_classification
 from energy_pilot.plan_context import (
@@ -164,6 +167,7 @@ class Planner:
         forecast_collector: object | None = None,
         device_collector: object | None = None,
         weather_collector: object | None = None,
+        history_collector: object | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.provider = provider
@@ -174,6 +178,7 @@ class Planner:
         self.forecast_collector = forecast_collector
         self.device_collector = device_collector
         self.weather_collector = weather_collector
+        self.history_collector = history_collector
         self.logger = logger
 
     @property
@@ -212,6 +217,9 @@ class Planner:
 
         weather_detail = weather_config_from_options(self.config.values).llm_detail
         global_regeln = get_global_regeln(self.db)
+        # Rückblick + gerechnete Merkmale (D-065/D-066): die Grundlage, auf der „reicht es die
+        # nächsten Tage?" eine Bilanz statt einer Vermutung ist.
+        rueckblick, merkmale, system_merkmale = self._bilanz(state, forecast, devices)
         run_id = uuid4().hex[:12]
 
         if self.provider is None:
@@ -241,7 +249,8 @@ class Planner:
                 now=now, state=state, forecast=forecast, weather=weather, constraints=constraints,
                 valid_from=valid_from, valid_until=valid_until, weather_detail=weather_detail,
                 previous_plan=previous_plan, ziele=ziele, run_id=run_id,
-                global_regeln=global_regeln,
+                global_regeln=global_regeln, rueckblick=rueckblick,
+                features=merkmale, system_features=system_merkmale,
             )
             if not outcome.ok:
                 return PlanRunResult(
@@ -276,6 +285,9 @@ class Planner:
             now=now,
             previous_plan=previous_plan,
             global_regeln=global_regeln,
+            rueckblick=rueckblick,
+            features=merkmale,
+            system_features=system_merkmale,
         )
 
         # Editierbare Instruktion aus der EP-Oberfläche (sonst Default). Sie geht als
@@ -457,6 +469,9 @@ class Planner:
         ziele: list,
         run_id: str,
         global_regeln: str = "",
+        rueckblick: list | None = None,
+        features: list | None = None,
+        system_features: dict | None = None,
     ) -> _ClassificationOutcome:
         """Führt den Klassifizierungs-Aufruf aus (D-055); gemeinsamer Kern von `run()` und
         `run_classification()`. Baut Kontext/Prompt/Schema, ruft den Provider, protokolliert den
@@ -470,6 +485,9 @@ class Planner:
             now=now,
             previous_plan=previous_plan,
             global_regeln=global_regeln,
+            rueckblick=rueckblick,
+            features=features,
+            system_features=system_features,
         )
         classification_template = get_setting(self.db, CLASSIFICATION_PROMPT_KEY)
         classification_schema = build_classification_response_schema(ziele)
@@ -537,11 +555,13 @@ class Planner:
         weather_detail = weather_config_from_options(self.config.values).llm_detail
         run_id = uuid4().hex[:12]
 
+        rueckblick, merkmale, system_merkmale = self._bilanz(state, forecast, devices)
         outcome = await self._run_classification_call(
             now=now, state=state, forecast=forecast, weather=weather, constraints=constraints,
             valid_from=valid_from, valid_until=valid_until, weather_detail=weather_detail,
             previous_plan=previous_plan, ziele=ziele, run_id=run_id,
-            global_regeln=get_global_regeln(self.db),
+            global_regeln=get_global_regeln(self.db), rueckblick=rueckblick,
+            features=merkmale, system_features=system_merkmale,
         )
         if not outcome.ok:
             return ClassificationRunResult(
@@ -589,6 +609,31 @@ class Planner:
                 "publish_blocked": row["publish_blocked"],
             },
         }
+
+    def _bilanz(self, state: dict, forecast: dict, devices: list) -> tuple[list, list, dict]:
+        """Rückblick und gerechnete Merkmale für den Kontext (D-065/D-066).
+
+        Liefert `(rueckblick, geraete_merkmale, system_merkmale)`. Merkmale entstehen nur für
+        Geräte mit gepflegten Speicher-Kennwerten — ohne Volumen und Komfortminimum gibt es
+        nichts zu rechnen, und eine erfundene Zahl wäre schlimmer als keine.
+        """
+        hc = self.history_collector
+        rueckblick = hc.snapshot() if hc is not None else []
+        quellen = tuple(getattr(hc, "sources", ())) if hc is not None else ()
+        speicher = load_speicher(self.db)  # einmal lesen, nicht je Gerät
+        merkmale = [
+            build_device_features(
+                device.name,
+                speicher[device.name],
+                state,
+                rueckblick,
+                strom_quellen=energy_sources_for(device.name, quellen),
+            )
+            for device in devices
+            if device.name in speicher
+        ]
+        system = build_system_features(forecast, rueckblick) if rueckblick else {}
+        return rueckblick, merkmale, system
 
     def _min_confidence(self) -> int | None:
         """Schwelle des Konfidenz-Gates (D-064); 0 oder fehlend => kein Gate."""

@@ -4,14 +4,19 @@ import { Alert, Card, DataTable, Empty, Loading, fmt, fmtUnit, srcDe, tsDE, useP
 import { Icon } from '../components/Icon'
 import { PageHeader } from '../components/Layout'
 import { useToast } from '../components/Toast'
-import type { Forecast, Weather, WeatherSlot } from '../types'
+import type { Forecast, RueckblickResponse, RueckblickTag, Weather, WeatherSlot } from '../types'
 
-/* PV-Prognose (aus HA-Sensoren, D-006/D-018/D-026) und Wetter (direkt über
-   OpenWeatherMap, D-042/D-044). Beides nur EP-intern: keine HA-Sensoren, keine
-   HEMS-Übergabe. */
+/* PV-Prognose (aus HA-Sensoren, D-006/D-018/D-026), Wetter (direkt über OpenWeatherMap,
+   D-042/D-044) und der Tages-Rückblick (D-065). Alles nur EP-intern: keine HA-Sensoren,
+   keine HEMS-Übergabe.
+
+   Der Rückblick steht bewusst hier neben der Prognose: die beiden gehören zusammen. Erst der
+   Vergleich „gemessener Ertrag bei welcher Bewölkung" erlaubt eine Aussage über Tage, für die
+   es keine Ertragsprognose gibt. */
 
 export function Prognose() {
   const forecast = usePoll(() => api.forecast(), true)
+  const rueckblick = usePoll(() => api.rueckblick(), true)
   const weather = usePoll(() => api.weather(), true)
   const [testing, setTesting] = useState(false)
   const { toast } = useToast()
@@ -42,6 +47,7 @@ export function Prognose() {
               onClick={() => {
                 void forecast.reload()
                 void weather.reload()
+                void rueckblick.reload()
               }}
             >
               <Icon name="refresh" size={16} />
@@ -61,6 +67,19 @@ export function Prognose() {
             <Loading />
           ) : (
             <ForecastView data={forecast.data} />
+          )}
+        </Card>
+
+        <Card
+          title="Rückblick"
+          sub="Gemessene Tageswerte — dieselbe Tabelle, die auch die KI sieht"
+        >
+          {rueckblick.error ? (
+            <Alert>{rueckblick.error}</Alert>
+          ) : !rueckblick.data ? (
+            <Loading />
+          ) : (
+            <RueckblickView data={rueckblick.data} />
           )}
         </Card>
 
@@ -316,4 +335,92 @@ function SlotTable({ slots, daily }: { slots: WeatherSlot[]; daily: boolean }) {
       ))}
     </DataTable>
   )
+}
+
+
+/** Tages-Rückblick (D-065): eine Zeile je Tag, eine Spalte je gemessener Größe.
+
+    Bewusst dieselben Zahlen, die im KI-Kontext stehen. Nur so ist eine Fehlentscheidung
+    prüfbar: steht hier „Speicher +8 °C bei 0 kWh Heizstab", stimmt die Grundlage. */
+function RueckblickView({ data }: { data: RueckblickResponse }) {
+  const tage = data.tage ?? []
+  if (!data.aktiv && !tage.length) {
+    return (
+      <Empty
+        icon="chart"
+        text="Der Rückblick ist inaktiv — er braucht eine HA-Verbindung und mindestens eine zugeordnete Messgröße in der Addon-Konfiguration."
+      />
+    )
+  }
+  if (!tage.length) {
+    return (
+      <p className="muted">
+        Noch keine Tageswerte. Der Rückblick wird stündlich aus der HA-Historie nachgezogen;
+        beim ersten Lauf holt er die im Recorder verfügbaren Tage.
+        {data.letzter_fehler ? ` Letzter Fehler: ${data.letzter_fehler}` : ''}
+      </p>
+    )
+  }
+
+  // Spalten aus den tatsächlich belegten Größen ableiten, in der Reihenfolge der Quellen.
+  const belegt = new Set<string>()
+  for (const tag of tage) for (const key of Object.keys(tag.groessen)) belegt.add(key)
+  const quellen = (data.quellen ?? []).filter((q) => belegt.has(q.groesse))
+  const spalten = quellen.length
+    ? quellen
+    : [...belegt].map((groesse) => ({ groesse, label: groesse, einheit: '', art: 'level' as const }))
+
+  return (
+    <>
+      <p className="muted">
+        Steigt eine Speichertemperatur, während die elektrische Energie desselben Geräts bei 0
+        liegt, kam die Wärme von einer anderen Quelle — z. B. der Solarthermie. Genau dieser
+        Vergleich macht die Frage „reicht es die nächsten Tage?" beantwortbar.
+      </p>
+      <DataTable
+        head={
+          <tr>
+            <th>Tag</th>
+            {spalten.map((spalte) => (
+              <th key={spalte.groesse} className="num">
+                {spalte.label || spalte.groesse}
+              </th>
+            ))}
+          </tr>
+        }
+      >
+        {tage.map((tag) => (
+          <tr key={tag.tag}>
+            <td>
+              <span className="cell-title">{tagDE(tag.tag)}</span>
+              {tag.vollstaendig ? null : <span className="cell-sub">läuft noch</span>}
+            </td>
+            {spalten.map((spalte) => (
+              <td key={spalte.groesse} className="num">
+                {zelle(tag, spalte.groesse, spalte.einheit, spalte.art)}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </DataTable>
+    </>
+  )
+}
+
+/** Datum als TT.MM.JJJJ (eiserne Regel 15); unlesbare Werte bleiben unverändert. */
+function tagDE(tag: string): string {
+  const teile = tag.split('-')
+  return teile.length === 3 ? `${teile[2]}.${teile[1]}.${teile[0]}` : tag
+}
+
+/** Ein Rückblick-Feld: bei Energie die kWh, bei Zustandsgrößen Min–Max samt Tagesänderung. */
+function zelle(tag: RueckblickTag, groesse: string, einheit: string, art: string) {
+  const wert = tag.groessen[groesse]
+  if (!wert) return <span className="muted">–</span>
+  if (art === 'power' || art === 'counter') {
+    return wert.energie_kwh == null ? <span className="muted">–</span> : `${fmt(wert.energie_kwh)} kWh`
+  }
+  if (wert.min == null || wert.max == null) return <span className="muted">–</span>
+  const delta = wert.delta == null ? '' : ` (${wert.delta > 0 ? '+' : ''}${fmt(wert.delta)})`
+  return `${fmt(wert.min)}–${fmtUnit(wert.max, einheit)}${delta}`
 }

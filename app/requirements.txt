@@ -1,2 +1,6 @@
 aiohttp==3.14.1
 jsonschema==4.23.0
+# Zeitzonendatenbank für `zoneinfo` (D-065): der Tages-Rückblick schneidet Kalendertage in
+# Berliner Zeit, inklusive Sommerzeitumstellung (eiserne Regel 15). Das Basis-Image bringt
+# tzdata nicht garantiert mit; ohne dieses Paket würde `ZoneInfo("Europe/Berlin")` scheitern.
+tzdata==2024.1

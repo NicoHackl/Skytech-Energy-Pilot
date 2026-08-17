@@ -26,7 +26,9 @@ Validator (Stufen 1–4 und 6), Vorschlags-Sensoren automatisch bei jedem gülti
 publiziert + manueller "Erneut nach HA schreiben"-Button. Seit 0.0.61 zusätzlich
 Freitext-Regeln je Gerät mit Begründungspflicht, Temperatur-Mess-Rollen,
 Wetter-Kennzahlen, Kontext-Quantisierung mit Plan-Wiederverwendung und ein
-Konfidenz-Gate (D-060 – D-064).
+Konfidenz-Gate (D-060 – D-064). Seit 0.0.63 zusätzlich der Tages-Rückblick aus der
+HA-Historie und die gerechneten Geräte-/Systemmerkmale (D-065/D-066) — damit ist die nie
+gebaute Hälfte von `plan/longterm_plan.md` §3.2/§3.3 (dort B1/B5) umgesetzt.
 
 **Offen:** automatische periodische Planung (Scheduler) — siehe
 [bekannte-luecken.md](bekannte-luecken.md#kein-automatischer-scheduler).

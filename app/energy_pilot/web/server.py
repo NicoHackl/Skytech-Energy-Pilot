@@ -36,8 +36,10 @@ from energy_pilot.device_regeln import (
     set_device_regeln,
     set_global_regeln,
 )
+from energy_pilot.device_speicher import SpeicherDaten, load_speicher, set_speicher
 from energy_pilot.devices import EXTRA_ROLES, DeviceExtra, normalize_extra_role
 from energy_pilot.ha_client import HAClient
+from energy_pilot.history_collector import sources_from
 from energy_pilot.logging_setup import RingBufferHandler, log
 from energy_pilot.objectives import delete_ziel, load_ziele, upsert_ziel
 from energy_pilot.plan_context import DEFAULT_CLASSIFICATION_PROMPT, DEFAULT_PLANNING_PROMPT
@@ -88,6 +90,7 @@ def create_app(
     weather_collector: object | None = None,
     hems_client: object | None = None,
     hems_status_collector: object | None = None,
+    history_collector: object | None = None,
     allowlist: object | None = None,
     planner: object | None = None,
     version: str = "0.0.1",
@@ -107,6 +110,7 @@ def create_app(
     app["weather_collector"] = weather_collector
     app["hems_client"] = hems_client
     app["hems_status_collector"] = hems_status_collector
+    app["history_collector"] = history_collector
     app["allowlist"] = allowlist
     app["planner"] = planner
     app["version"] = version
@@ -131,6 +135,8 @@ def create_app(
             web.post("/api/devices/regeln", device_regeln_post),
             web.get("/api/regeln", regeln_get),
             web.post("/api/regeln", regeln_post),
+            web.get("/api/rueckblick", rueckblick_get),
+            web.post("/api/devices/speicher", device_speicher_post),
             web.get("/api/forecast", forecast_get),
             web.get("/api/weather", weather_get),
             web.get("/api/weather/test", weather_test),
@@ -195,6 +201,8 @@ async def rediscover_devices(app: web.Application) -> tuple[list, str]:
     )
     device_collector.set_devices(devices, source)
 
+    _refresh_history_sources(app, devices)
+
     allowlist = app.get("allowlist")
     if allowlist is not None:
         allowlist.rebuild(collect_entity_ids(devices=devices))
@@ -228,11 +236,26 @@ def reapply_device_extras(app: web.Application) -> None:
         load_device_regeln(db),
     )
     device_collector.set_devices(devices, device_collector.discovery_source)
+    _refresh_history_sources(app, devices)
 
     allowlist = app.get("allowlist")
     if allowlist is not None:
         allowlist.rebuild(collect_entity_ids(devices=devices))
         allowlist.persist(db)
+
+
+def _refresh_history_sources(app: web.Application, devices: list) -> None:
+    """Leitet die Rückblick-Quellen neu ab (D-065).
+
+    Nötig nach jeder Geräteänderung: die Mess-Rollen stehen schon beim Boot fest, die
+    **Zusatzwerte** eines Geräts aber nicht — und nur dort hängt eine echte Leistungs- oder
+    Energiegröße, mit der sich ein Tag mit Heizbetrieb von einem ohne unterscheiden lässt.
+    """
+    history_collector = app.get("history_collector")
+    if history_collector is None:
+        return
+    mapping = getattr(app.get("collector"), "mapping", {}) or {}
+    history_collector.set_sources(sources_from(mapping, devices))
 
 
 async def _discover_devices(app: web.Application) -> None:
@@ -320,6 +343,7 @@ async def _start_poller(app: web.Application) -> None:
             device_collector=app.get("device_collector"),
             forecast_collector=app.get("forecast_collector"),
             weather_collector=app.get("weather_collector"),
+            history_collector=app.get("history_collector"),
             hems_status_collector=app.get("hems_status_collector"),
         )
     )
@@ -520,8 +544,11 @@ async def devices_get(request: web.Request) -> web.Response:
     if device_collector is None:
         return web.json_response({"source": "none", "devices": []})
     devices = device_collector.snapshot()
+    speicher = load_speicher(request.app.get("db"))
     for dev in devices:
         dev["extras"] = _extras_payload(device_collector, dev["name"])
+        # Wärmespeicher-Kennwerte (D-066); fehlende Werte bleiben None, nie 0.
+        dev["speicher"] = asdict(speicher.get(dev["name"], SpeicherDaten()))
     return web.json_response(
         {
             "source": getattr(device_collector, "discovery_source", "none"),
@@ -724,6 +751,79 @@ async def regeln_post(request: web.Request) -> web.Response:
         db, "global_regeln_updated" if regeln else "global_regeln_reset", len(regeln)
     )
     return web.json_response({"ok": True, "regeln": regeln, "is_custom": bool(regeln)})
+
+
+async def device_speicher_post(request: web.Request) -> web.Response:
+    """Speichert die Wärmespeicher-Kennwerte eines Geräts (D-066).
+
+    Body: `{device_name, volumen_liter?, komfort_min_c?, ziel_c?}`. Leere Felder bedeuten „nicht
+    gepflegt" (nicht 0) und entfernen den Wert; sind alle leer, entfällt der Eintrag ganz.
+
+    Erst mit Volumen **und** Komfortminimum lässt sich der Speicherinhalt in kWh ausdrücken und
+    damit die Frage „reicht es die nächsten Tage?" rechnen. Es sind Anlagendaten und eine
+    Anforderung — **keine** Entscheidungsregel (Abgrenzung zu D-060).
+    """
+    db = request.app.get("db")
+    device_collector = request.app.get("device_collector")
+    if db is None or device_collector is None:
+        return web.json_response({"ok": False, "reason": "keine Datenbank/Geräte"}, status=503)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "reason": "ungültiger Request-Body"}, status=400)
+
+    device_name = str(body.get("device_name") or "").strip()
+    known = {d.name for d in getattr(device_collector, "devices", [])}
+    if device_name not in known:
+        return web.json_response(
+            {"ok": False, "reason": f"unbekanntes Gerät: {device_name or '(leer)'}"}, status=400
+        )
+
+    daten = set_speicher(
+        db,
+        device_name,
+        volumen_liter=body.get("volumen_liter"),
+        komfort_min_c=body.get("komfort_min_c"),
+        ziel_c=body.get("ziel_c"),
+    )
+    if daten.volumen_liter is not None and daten.volumen_liter <= 0:
+        return web.json_response(
+            {"ok": False, "reason": "Volumen muss größer als 0 sein"}, status=400
+        )
+    _audit_extra(db, "device_speicher_updated", device_name, "")
+    return web.json_response(
+        {
+            "ok": True,
+            "device_name": device_name,
+            "speicher": asdict(daten),
+            "rechenbar": daten.rechenbar,
+            "fehlt": list(daten.fehlende_felder),
+        }
+    )
+
+
+async def rueckblick_get(request: web.Request) -> web.Response:
+    """Liefert den Tages-Rückblick (D-065) — dieselbe Tabelle, die auch die KI sieht.
+
+    Ohne diese Sicht wäre eine Fehlentscheidung nicht nachvollziehbar: erst hier lässt sich
+    prüfen, ob die Grundlage stimmt („Speicher +8 °C bei 0 kWh Heizstab" heißt Fremdwärme).
+    """
+    collector = request.app.get("history_collector")
+    if collector is None:
+        return web.json_response({"tage": [], "quellen": [], "aktiv": False})
+    return web.json_response(
+        {
+            "aktiv": bool(getattr(collector, "enabled", False)),
+            "tage": collector.snapshot(),
+            "quellen": [
+                {"groesse": s.groesse, "entity_id": s.entity_id, "einheit": s.unit,
+                 "label": s.label, "art": s.kind}
+                for s in getattr(collector, "sources", ())
+            ],
+            "letzter_lauf_ts": getattr(collector, "last_collect_ts", None),
+            "letzter_fehler": getattr(collector, "last_error", None),
+        }
+    )
 
 
 def _audit_extra(db: sqlite3.Connection, action: str, device_name: str, entity_id: str) -> None:

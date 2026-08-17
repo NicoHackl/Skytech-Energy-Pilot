@@ -149,6 +149,18 @@ def _data_quality(state_entries: list[dict], devices: list[dict]) -> dict:
     return {"frische_prozent": prozent, "fehlende_werte": missing}
 
 
+# Reichweite der PV-Prognose, ausdrücklich benannt (D-066). Die konfigurierten Sensoren liefern
+# genau vier Skalare — laufende Stunde, nächste Stunde, Rest heute, morgen (D-026). Es gibt
+# **keine** Stundenkurve und **keinen** Tag 3. Ohne diesen Satz im Kontext erfindet ein Modell
+# Erträge für übermorgen; mit ihm muss es den Rückblick heranziehen.
+FORECAST_HORIZON_NOTE = (
+    "Die PV-Prognose reicht nur bis morgen (vier Summenwerte, keine Stundenkurve). Für spätere "
+    "Tage gibt es KEINE Ertragsprognose — schätze sie aus `rueckblick`, indem du den dort "
+    "gemessenen Tagesertrag mit der Bewölkung desselben Tages vergleichst und das auf die "
+    "Bewölkung der Folgetage überträgst. Erfinde keine Zahlen für übermorgen."
+)
+
+
 def _condense_forecast(forecast: dict) -> dict:
     """Reduziert die PV-Prognose auf die summierten Werte (keine Einzel-Ausrichtungen)."""
     if not forecast:
@@ -156,6 +168,8 @@ def _condense_forecast(forecast: dict) -> dict:
     unit = forecast.get("unit")
     return {
         "unit": unit,
+        "horizont": "heute und morgen",
+        "hinweis": FORECAST_HORIZON_NOTE,
         "values": [
             {
                 "key": v.get("key"),
@@ -610,6 +624,75 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
 _PREV_SKIP_KEYS = frozenset({"name"})
 
 
+def _condense_rueckblick(rueckblick: list[dict] | None) -> dict:
+    """Verdichtet den Tages-Rückblick für die KI (D-065).
+
+    Das ist der Block, ohne den die eigentliche Frage nicht beantwortbar ist: „reicht der
+    Speicherinhalt, bis die nächste nicht-elektrische Wärme kommt?" Der Hinweis nennt den
+    Zusammenhang ausdrücklich, weil er die ganze Bilanz trägt — steigt die Temperatur, während
+    die elektrische Energie bei 0 liegt, kam die Wärme von einer anderen Quelle.
+    """
+    if not rueckblick:
+        return {}
+    return {
+        "hinweis": (
+            "Gemessene Tageswerte der letzten Tage (`delta` = Änderung über den Tag). Steigt eine "
+            "Speichertemperatur, während die elektrische Tagesenergie desselben Geräts bei ~0 "
+            "liegt, kam die Wärme von einer anderen Quelle (z.B. Solarthermie). Stelle diese Tage "
+            "der Bewölkung desselben Tages gegenüber, um die Folgetage einzuschätzen."
+        ),
+        "tage": rueckblick,
+    }
+
+
+def _condense_features(features: list | None, system: dict | None) -> dict:
+    """Verdichtet die gerechneten Merkmale (D-066) für die KI.
+
+    Bewusst **Zahlen, keine Empfehlung**: Reserve, Bedarf, beobachtete Fremdwärme und die daraus
+    folgende Deckung in Tagen. Die Abwägung bleibt Sache der KI (D-060). Fehlende Eingaben stehen
+    als `fehlt` daneben, damit das Modell eine Lücke nicht als Null missversteht.
+    """
+    out: dict[str, object] = {}
+    geraete: list[dict] = []
+    for merkmal in features or []:
+        eintrag: dict[str, object] = {"name": merkmal.name}
+        for key in (
+            "ist_c", "komfort_min_c", "ziel_c", "volumen_liter",
+            "reserve_kwh", "energiebedarf_kwh", "fremdwaerme_mittel_kwh", "deckung_tage",
+        ):
+            wert = getattr(merkmal, key)
+            if wert is not None:
+                eintrag[key] = wert
+        if merkmal.fremdwaerme_tage:
+            eintrag["fremdwaerme_tage"] = [
+                {
+                    "tag": tag.tag,
+                    "delta_c": tag.delta_c,
+                    "energie_kwh": tag.energie_kwh,
+                    "wolken_mittel": tag.wolken_mittel,
+                    "elektrisch_kwh": tag.elektrisch_kwh,
+                }
+                for tag in merkmal.fremdwaerme_tage
+            ]
+        if merkmal.fehlt:
+            eintrag["fehlt"] = list(merkmal.fehlt)
+        if merkmal.hinweise:
+            eintrag["hinweise"] = list(merkmal.hinweise)
+        geraete.append(eintrag)
+    if geraete:
+        out["geraete"] = geraete
+    if system:
+        out["system"] = system
+    if out:
+        out["hinweis"] = (
+            "Gerechnete Größen, keine Empfehlung. `reserve_kwh` ist die Energie über dem "
+            "Komfortminimum, `energiebedarf_kwh` die Lücke bis zum Zielwert, `deckung_tage` die "
+            "Zeit, die die Reserve beim beobachteten Verlust ohne Strom trägt. Fehlt ein Wert, "
+            "steht der Grund in `fehlt` — behandle ihn dann als unbekannt, nicht als 0."
+        )
+    return out
+
+
 def _condense_previous_plan(previous: dict | None) -> dict:
     """Verdichtet den zuletzt gespeicherten Plan als Anker für den nächsten Lauf (A1).
 
@@ -648,6 +731,9 @@ def build_context(
     now: datetime | None = None,
     previous_plan: dict | None = None,
     global_regeln: str = "",
+    rueckblick: list[dict] | None = None,
+    features: list | None = None,
+    system_features: dict | None = None,
 ) -> dict:
     """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, eiserne Regel 12).
 
@@ -679,6 +765,14 @@ def build_context(
     }
     if global_regeln.strip():
         context["globale_regeln"] = global_regeln.strip()
+    # Rückblick und Merkmale (D-065/D-066): erst damit ist „reicht es die nächsten Tage?" eine
+    # Rechnung. Nur einhängen, wenn vorhanden — ein leerer Block kostet Kontext ohne Nutzen.
+    rueckblick_block = _condense_rueckblick(rueckblick)
+    if rueckblick_block:
+        context["rueckblick"] = rueckblick_block
+    merkmale = _condense_features(features, system_features)
+    if merkmale:
+        context["merkmale"] = merkmale
     prev = _condense_previous_plan(previous_plan)
     if prev:
         context["previous_plan"] = prev
@@ -732,6 +826,9 @@ def build_classification_context(
     now: datetime | None = None,
     previous_plan: dict | None = None,
     global_regeln: str = "",
+    rueckblick: list[dict] | None = None,
+    features: list | None = None,
+    system_features: dict | None = None,
 ) -> dict:
     """Kontext für den vorgelagerten Klassifizierungs-Aufruf (D-055).
 
@@ -746,6 +843,7 @@ def build_classification_context(
         valid_from=valid_from, valid_until=valid_until,
         weather=weather, horizon_h=horizon_h, weather_detail=weather_detail,
         now=now, previous_plan=previous_plan, global_regeln=global_regeln,
+        rueckblick=rueckblick, features=features, system_features=system_features,
     )
     del context["objectives"]
     context["ziele"] = [
@@ -817,6 +915,26 @@ DEFAULT_PLANNING_PROMPT = (
     "Ordnung. Ein unbekannter Wert ist kein Freibrief: wähle dann die vorsichtige Variante "
     "(Last nicht freigeben, Grenze nicht anheben) und vermerke es in `unsicherheiten`.\n"
     "- `datenlage.frische_prozent` sagt dir, wie viel des Kontexts überhaupt belegt ist.\n\n"
+    "Über mehrere Tage bilanzieren, nicht auf Schwellen schauen:\n"
+    "- **Ein Messwert allein entscheidet nichts.** Ein Wärmespeicher mit 65 °C braucht keinen "
+    "Strom, wenn die nächsten Tage sonnig sind und die Solarthermie liefert — und er braucht "
+    "welchen, wenn die nächsten Tage trüb sind und heute der letzte Überschuss ist. Dieselbe "
+    "Temperatur, zwei entgegengesetzte richtige Antworten. Entscheide deshalb nie an einer "
+    "Schwelle, sondern an der Bilanz.\n"
+    "- `rueckblick` liefert die gemessenen Tageswerte. Vergleiche dort die Änderung einer "
+    "Speichertemperatur (`delta`) mit der elektrischen Tagesenergie desselben Geräts: war die "
+    "Energie ~0 und die Temperatur ist gestiegen, hat eine andere Quelle geheizt. Halte das gegen "
+    "die Bewölkung des Tages, um die Folgetage abzuschätzen.\n"
+    "- `merkmale.geraete` rechnet das für dich: `reserve_kwh` (Energie über dem Komfortminimum), "
+    "`energiebedarf_kwh` (Lücke bis zum Zielwert), `fremdwaerme_mittel_kwh` (beobachteter Gewinn "
+    "ohne Strom) und `deckung_tage`. Fehlt ein Wert, steht der Grund in `fehlt` — dann ist er "
+    "unbekannt, nicht 0.\n"
+    "- Reicht die Reserve über die Tage, bis wieder Fremdwärme kommt, gib keine elektrische Last "
+    "frei. Reicht sie nicht, wähle das Fenster mit dem größten Überschuss "
+    "(`merkmale.system.ueberschuss`) — und wenn der morgen wegfällt, ist das heute.\n"
+    "- Nenne in `begruendung` die Bilanz mit Zahlen, nicht nur die Regel: „Reserve 4,1 kWh, "
+    "letzte Tage +6 kWh/Tag ohne Strom, Folgetage ähnlich bewölkt ⇒ kein elektrischer Eintrag\".\n"
+    "\n"
     "Konfidenz:\n"
     "- Gib `konfidenz` als vier Teilnoten (0–100) gemäß der Beschreibung im Schema aus. Bewerte "
     "sie ehrlich und unabhängig voneinander – EP rechnet daraus die Gesamtkonfidenz und "

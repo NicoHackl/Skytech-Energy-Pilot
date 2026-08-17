@@ -9,6 +9,45 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Rückblick und Energiebilanz: die KI kann jetzt rechnen statt zu schätzen (D-065/D-066,
+  0.0.62 → 0.0.63).** Anlass war ein Einwand, der jede Schwellwert-Logik widerlegt: ein
+  Pufferspeicher mit 65 °C braucht bei drei sonnigen Tagen **keinen** Strom — bei zwei trüben
+  Tagen mit heutigem Überschuss **schon**. Dieselbe Temperatur, zwei entgegengesetzte richtige
+  Antworten. Entschieden wird also an einer Bilanz über Tage, nicht an einem Messwert; und
+  genau diese Bilanz konnte EP bisher nicht liefern.
+  - **Tages-Rückblick** aus der Home-Assistant-Historie: je Tag Minimum, Maximum, Mittel,
+    Tagesänderung und (bei Leistungs-/Zählergrößen) die Energie. Neu im Prognose-Tab als Karte
+    „Rückblick" — dieselbe Tabelle, die auch die KI sieht.
+    Der entscheidende Zusammenhang steht darin: **steigt die Speichertemperatur, während die
+    elektrische Energie bei 0 liegt, kam die Wärme von der Solarthermie.** Damit ist ihr Beitrag
+    messbar, ohne einen einzigen neuen Sensor.
+  - **Wärmespeicher-Kennwerte je Gerät** (Geräte-Tab): Volumen in Liter, Komfortminimum und
+    optionaler Zielwert. Damit wird aus °C eine Energiemenge — und aus „65 °C" die Aussage
+    „4,1 kWh Reserve über dem Komfortminimum".
+  - **Gerechnete Merkmale** im KI-Kontext: Reserve, Bedarf bis zum Zielwert, der beobachtete
+    nicht-elektrische Wärmeeintrag je Tag und daraus die **Deckung in Tagen**. Systemweit: die
+    geglättete Grundlast aus den Tagesminima und der daraus folgende Netto-Überschuss.
+    Alles Zahlen, keine Empfehlung — die Abwägung bleibt bei der KI (unverändert D-060).
+  - **Der Prognose-Horizont wird benannt.** Die PV-Prognose reicht nur bis morgen; für spätere
+    Tage sagt der Kontext ausdrücklich, dass es keine Ertragsprognose gibt und die Einschätzung
+    über den Rückblick laufen muss. Ohne diesen Satz erfindet ein Modell Erträge für übermorgen.
+  - Der Rückblick überdauert die Recorder-Aufbewahrung: abgeschlossene Tage werden genau einmal
+    geholt und bleiben dauerhaft in EPs eigener Datenbank. Damit ist auch das seit Projektbeginn
+    offene D-012 („Datenspeicherung auf Aggregation ausgelegt") eingelöst.
+
+### Behoben
+- **Zwei Rechenfehler, die die Tagesbilanz verfälscht hätten** — beide von den neuen Tests
+  gefunden, bevor sie wirken konnten:
+  - Python subtrahiert zwei Zeitpunkte mit derselben Zeitzone als **Wanduhr**-Differenz. Ein Tag
+    mit Zeitumstellung wäre dadurch als 24 Stunden statt 23 bzw. 25 gerechnet worden, und die
+    Umstellung wäre aus Mittelwert und Energie herausgefallen.
+  - Die erste Fassung verwarf Messpunkte mit mehr als 15 Minuten Abstand als „Lücke". Da Home
+    Assistant nur **Änderungen** speichert und ein Zustand bis zur nächsten Änderung gilt, ist
+    ein Abstand von einer Stunde der Normalfall — 1000 W über eine Stunde wären als 0 kWh
+    verbucht worden. Die Grenze liegt jetzt bei sechs Stunden und schützt nur noch gegen echte
+    Ausfälle.
+
+### Hinzugefügt
 - **Stabilere KI-Ergebnisse: Regeln, bessere Daten, echter Determinismus (D-060 – D-064, 0.0.60 → 0.0.61).**
   Anlass waren widersprüchliche Vorschläge bei gleicher Sachlage — der Heizstab wurde bei
   80 °C Warmwasser mal freigegeben, mal gesperrt; Heizlüfter mal mit „Heizunterstützung"

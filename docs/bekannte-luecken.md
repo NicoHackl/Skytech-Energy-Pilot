@@ -27,6 +27,28 @@ Leistung / ±10 % SOC-Ziel, D-021) bleibt offen, und zwar absichtlich: nachgelag
 der KI-Ausgabe ist als Ansatz verworfen (D-060) — Stabilität soll im Aufruf entstehen, nicht
 dahinter. Siehe [sicherheit-datenschutz.md](sicherheit-datenschutz.md).
 
+### PV-Prognose reicht nur bis morgen
+
+Die konfigurierten Sensoren liefern vier Summenwerte — laufende Stunde, nächste Stunde, Rest
+heute, morgen (D-026, Werte im State statt als Attribut). Es gibt **keine** Stundenkurve und
+**keinen** Tag 3. Für spätere Tage bleibt nur die Ableitung „Bewölkung gegen gemessenen Ertrag"
+aus dem Rückblick (D-065); der Kontext sagt das ausdrücklich (`forecast.horizont`), damit ein
+Modell keine Erträge für übermorgen erfindet. Wer den Horizont wirklich verlängern will, braucht
+eine Prognose-Integration, die mehr Tage liefert.
+
+Zweiter Punkt am selben Ort: `weather.uvi` liefert OpenWeatherMap je Tag, der Parser verwirft es
+(`weather.py`). Als Solarthermie-Proxy wäre es deutlich besser als Bewölkung allein — der erste
+Hebel, falls die Einschätzung von Tag 3 in der Praxis nicht trägt.
+
+### Langzeitstatistiken fehlen für die meisten Sensoren
+
+Der Tages-Rückblick (D-065) baut auf der **Roh**-Historie auf, weil die Statistik-API zu wenige
+der gebrauchten Sensoren abdeckt: Speicherfühler und die E3DC-Leistungssensoren haben kein
+`state_class` und damit keine Tagesstatistiken (live geprüft 17.08.2026). EPs eigene Tabelle
+wächst zwar über die ~10 Tage Recorder-Aufbewahrung hinaus, startet aber nur mit dem, was der
+Recorder hergibt. Ein `state_class: measurement` per Customize auf diesen Sensoren macht den
+Rückblick dauerhaft belastbarer — das ist eine Änderung in HA, nicht im Addon.
+
 ### Determinismus hängt am Modell, nicht an der Einstellung
 
 `ai_temperature`/`ai_seed` erreichen nur **Gemini und OpenAI** die API; Claude bekommt keine

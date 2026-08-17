@@ -110,8 +110,8 @@ Eine Route je fachlichem Bereich; die Namen entsprechen den Begriffen der Doku:
 |---|---|---|
 | `/` | Status | Verbindung zu HA/HEMS, Version, Provider, Allowlist |
 | `/daten` | Daten | Mess-Rollen mit 1/15/60-min-Mittelwerten |
-| `/geraete` | Geräte | Geräteauswahl, `ems_*`-Werte, Zusatz-Entitäten (inkl. Rolle `ist`/`grenze`/`sollwert`, D-061), KI-Beschreibung, **Regeln für dieses Gerät** (D-060), Modus |
-| `/prognose` | Prognose | PV-Prognose je Ausrichtung, Wetter |
+| `/geraete` | Geräte | Geräteauswahl, `ems_*`-Werte, Zusatz-Entitäten (inkl. Rolle `ist`/`grenze`/`sollwert`, D-061), KI-Beschreibung, **Regeln für dieses Gerät** (D-060), **Wärmespeicher-Kennwerte** (D-066), Modus |
+| `/prognose` | Prognose | PV-Prognose je Ausrichtung, Wetter, **Rückblick** (gemessene Tageswerte, D-065 — dieselbe Tabelle, die die KI sieht) |
 | `/ziele` | Grenzen & Ziele | abgeleitete harte Grenzen, **hausweite Regeln** (D-060), user-definierte Ziele (D-055) |
 | `/plan` | Plan | Planungslauf, Klassifizierung, Prompts, Ergebnis, Schreib-Ergebnis; zusätzlich Begründung je Gerät, Konfidenz-Teilnoten und Unsicherheiten (D-060/D-064) sowie Hinweise „unverändert übernommen“, „Determinismus aus“ und „nicht geschrieben“ (D-063/D-064) |
 | `/hems` | HEMS | HEMS-Status, Plan-Konformität, Geräte-Sync |

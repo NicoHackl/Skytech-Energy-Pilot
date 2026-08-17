@@ -131,6 +131,7 @@ function DeviceCard({ device, onChanged }: { device: Device; onChanged: () => vo
       <DeviceExtras device={device} onChanged={onChanged} />
       <DevicePrompt device={device} onChanged={onChanged} />
       <DeviceRegeln device={device} onChanged={onChanged} />
+      <DeviceSpeicher device={device} onChanged={onChanged} />
     </Card>
   )
 }
@@ -262,6 +263,107 @@ function DeviceRegeln({ device, onChanged }: { device: Device; onChanged: () => 
         <button type="button" className="btn btn-ghost" disabled={saving} onClick={() => void save(true)}>
           Leeren
         </button>
+      </div>
+    </>
+  )
+}
+
+
+/** Wärmespeicher-Kennwerte (D-066): Anlagendaten und eine Anforderung, keine Regel.
+
+    Erst mit Volumen und Komfortminimum kann EP den Speicherinhalt in kWh ausdrücken — und damit
+    die Frage rechnen, die eine Schwelle nicht beantworten kann: reicht der Inhalt, bis wieder
+    Wärme von außen kommt? */
+function DeviceSpeicher({ device, onChanged }: { device: Device; onChanged: () => void }) {
+  const gespeichert = device.speicher
+  const [form, setForm] = useState({
+    volumen: gespeichert?.volumen_liter?.toString() ?? '',
+    komfort: gespeichert?.komfort_min_c?.toString() ?? '',
+    ziel: gespeichert?.ziel_c?.toString() ?? '',
+  })
+  const [saving, setSaving] = useState(false)
+  const { toast } = useToast()
+
+  const zahl = (text: string): number | null => {
+    const wert = text.trim()
+    if (!wert) return null
+    const parsed = Number(wert.replace(',', '.'))
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const result = await api.saveSpeicher({
+        device_name: device.name,
+        volumen_liter: zahl(form.volumen),
+        komfort_min_c: zahl(form.komfort),
+        ziel_c: zahl(form.ziel),
+      })
+      if (result.ok) {
+        toast(
+          result.rechenbar
+            ? 'Kennwerte gespeichert — die Energiebilanz ist rechenbar.'
+            : 'Kennwerte gespeichert. Für die kWh-Rechnung fehlen noch: ' +
+                (result.fehlt ?? []).join(', '),
+        )
+        onChanged()
+      } else {
+        toast(result.reason ?? 'Speichern fehlgeschlagen.', 'err')
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <h3>Wärmespeicher</h3>
+      <p className="muted">
+        Nur für Geräte, die einen Speicher laden (z. B. Heizstab). Aus Volumen und Temperatur
+        rechnet EP die Reserve über dem Komfortminimum in kWh und daraus, wie viele Tage sie
+        trägt — die Zahlen, an denen die KI abwägt, statt an einer Schwelle. Die gemessene
+        Temperatur kommt aus der Mess-Rolle „Warmwassertemperatur" in der Addon-Konfiguration.
+        Leere Felder heißen „nicht gepflegt", nicht 0.
+      </p>
+      <div className="form-grid">
+        <label className="field">
+          <span>Volumen</span>
+          <input
+            value={form.volumen}
+            inputMode="decimal"
+            placeholder="z. B. 300"
+            onChange={(event) => setForm({ ...form, volumen: event.target.value })}
+          />
+          <small>Liter</small>
+        </label>
+        <label className="field">
+          <span>Komfortminimum</span>
+          <input
+            value={form.komfort}
+            inputMode="decimal"
+            placeholder="z. B. 45"
+            onChange={(event) => setForm({ ...form, komfort: event.target.value })}
+          />
+          <small>°C — darf nie unterschritten werden</small>
+        </label>
+        <label className="field">
+          <span>Zielwert</span>
+          <input
+            value={form.ziel}
+            inputMode="decimal"
+            placeholder="z. B. 60"
+            onChange={(event) => setForm({ ...form, ziel: event.target.value })}
+          />
+          <small>°C — optional, worauf geladen wird</small>
+        </label>
+        <div className="wide inline-actions">
+          <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save()}>
+            {saving ? 'Speichern…' : 'Speichern'}
+          </button>
+        </div>
       </div>
     </>
   )

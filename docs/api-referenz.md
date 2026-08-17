@@ -21,6 +21,8 @@ Alle State liegt auf `app[...]`-Keys (Config/DB/Ring-Puffer/Clients/Collector/Pl
 | POST | `/api/devices/regeln` | Freitext-Betriebsregeln eines Geräts setzen/löschen (D-060, `{device_name, regeln}`) |
 | GET | `/api/regeln` | hausweite Regeln + Regeln je Gerät (`{global, devices}`) |
 | POST | `/api/regeln` | hausweite Regeln setzen/löschen (`{regeln}`) |
+| POST | `/api/devices/speicher` | Wärmespeicher-Kennwerte setzen (D-066, `{device_name, volumen_liter?, komfort_min_c?, ziel_c?}`; leere Felder = nicht gepflegt) |
+| GET | `/api/rueckblick` | Tages-Rückblick (D-065): `{aktiv, tage, quellen, letzter_lauf_ts, letzter_fehler}` |
 | GET | `/api/forecast` | PV-Prognose-Snapshot |
 | GET | `/api/weather` | Wetter-Snapshot (je nach Quelle) |
 | GET | `/api/weather/test` | Live-Wetterabruf-Test |

@@ -21,6 +21,8 @@ Liste (`database.py: MIGRATIONS`), Tracking über Tabelle `schema_migrations`,
 | v11 | `device_extras.rolle`-Spalte (`ist`/`grenze`/`sollwert`, D-061) + Backfill: Zusatzwerte mit KI-Vorschlag ⇒ `sollwert`, reine Lesewerte ⇒ `ist`, der namentlich bekannte Heizstab-Seed ⇒ `grenze` |
 | v12 | `device_regeln` (Freitext-Betriebsregeln je Gerät, D-060; hausweite Regeln liegen als KV-Key `global_regeln` in `config`) |
 | v13 | `plans.prompt`/`context_json`/`response_json`/`context_hash`/`publish_blocked` + `ai_calls.context_hash`/`sampling_dropped` (Nachvollziehbarkeit und Konfidenz-Gate, D-063/D-064) |
+| v14 | `daily_history` (Tages-Rückblick je Messgröße, D-065; löst das offene D-012 ein) |
+| v15 | `device_speicher` (Volumen/Komfortminimum/Zielwert je Wärmespeicher, D-066) |
 
 ## Zentrale Tabellen (Zweck)
 
@@ -45,6 +47,14 @@ Liste (`database.py: MIGRATIONS`), Tracking über Tabelle `schema_migrations`,
   inkl. `write_original`-Flag (D-052) und `rolle` (`ist`/`grenze`/`sollwert`, D-061).
 - **`device_prompts`** — Pro-Gerät-KI-Beschreibung (D-051), `device_name` als PK.
 - **`device_regeln`** — Pro-Gerät-Betriebsregeln als Freitext (D-060), `device_name` als PK.
+- **`daily_history`** — Tages-Rückblick je Messgröße (D-065): `tag` + `groesse` als PK,
+  Minimum/Maximum/Mittel/Tagesänderung und bei Leistungs-/Zählergrößen die Energie.
+  `vollstaendig` markiert einen abgeschlossenen Kalendertag — nur offene Tage werden erneut aus
+  HA geholt, sonst wären es je Lauf fünfstellige Zeilenzahlen allein für einen Temperaturfühler.
+  Die Tabelle wächst über die ~10 Tage Recorder-Aufbewahrung hinaus.
+- **`device_speicher`** — Wärmespeicher-Kennwerte je Gerät (D-066): `volumen_liter`,
+  `komfort_min_c`, `ziel_c`. `NULL` heißt „nicht gepflegt", **nicht** 0 — ohne Volumen und
+  Komfortminimum entfallen die kWh-Merkmale und der KI-Kontext sagt das ausdrücklich.
   Abgrenzung zu `device_prompts`: dort steht, **was** ein Gerät ist, hier **was der User will**.
   Getrennt, weil der Prompt beides unterschiedlich adressiert und die KI ihre Entscheidung
   gegen die Regeln — nicht gegen die Beschreibung — begründen muss.

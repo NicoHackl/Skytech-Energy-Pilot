@@ -195,6 +195,47 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE ai_calls ADD COLUMN sampling_dropped INTEGER NOT NULL DEFAULT 0;
         """,
     ),
+    (
+        14,
+        # Tages-Rückblick je Messgröße (D-065). Löst das offene D-012 ein („Datenspeicherung von
+        # Anfang an auf Aggregation ausgelegt"): der RollingAggregator reicht 60 Minuten weit und
+        # ist nach einem Neustart leer, für eine Tagesbilanz braucht es Tage. Die Tabelle wird
+        # aus der HA-Historie befüllt und wächst danach über die Recorder-Aufbewahrung hinaus.
+        # `vollstaendig` markiert einen abgeschlossenen Kalendertag — nur unvollständige Tage
+        # werden erneut aus HA geholt.
+        """
+        CREATE TABLE IF NOT EXISTS daily_history (
+            tag TEXT NOT NULL,
+            groesse TEXT NOT NULL,
+            entity_id TEXT NOT NULL DEFAULT '',
+            wert_min REAL,
+            wert_max REAL,
+            wert_mittel REAL,
+            wert_delta REAL,
+            energie_kwh REAL,
+            proben INTEGER NOT NULL DEFAULT 0,
+            vollstaendig INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (tag, groesse)
+        );
+        """,
+    ),
+    (
+        15,
+        # Wärmespeicher-Kennwerte je Gerät (D-066): Volumen in Liter plus Komfortminimum und
+        # optionaler Zielwert in °C. Anlagendaten und eine Anforderung — **keine**
+        # Entscheidungsregel: erst damit lässt sich der Speicherinhalt in kWh ausdrücken und
+        # die Frage „reicht es die nächsten Tage?" rechnen statt schätzen.
+        """
+        CREATE TABLE IF NOT EXISTS device_speicher (
+            device_name TEXT PRIMARY KEY,
+            volumen_liter REAL,
+            komfort_min_c REAL,
+            ziel_c REAL,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        """,
+    ),
 ]
 
 

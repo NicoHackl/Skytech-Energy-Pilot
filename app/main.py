@@ -21,6 +21,7 @@ from energy_pilot.gemini_provider import GeminiProvider
 from energy_pilot.ha_client import HAClient
 from energy_pilot.hems_client import HEMSClient
 from energy_pilot.hems_status_collector import HEMSStatusCollector
+from energy_pilot.history_collector import HistoryCollector, sources_from
 from energy_pilot.logging_setup import log, setup_logging
 from energy_pilot.onecall_client import OneCallClient
 from energy_pilot.openai_provider import OpenAIProvider
@@ -164,6 +165,13 @@ def build() -> web.Application:
     else:
         log(logger, "warning", "KI-Provider nicht konfiguriert (api_key fehlt) – Planung inaktiv")
 
+    # Tages-Rückblick (D-065): holt Tageswerte aus der HA-Historie, weil der RollingAggregator
+    # nur 60 Minuten weit reicht und nach einem Neustart leer ist. Die Quellen ergeben sich aus
+    # dem Rollen-Mapping; die Geräte-Zusatzwerte kommen nach der HEMS-Discovery hinzu
+    # (_refresh_history_sources in web/server.py).
+    history_collector = HistoryCollector(ha_client, db, logger)
+    history_collector.set_sources(sources_from(mapping, []))
+
     # Planner immer bauen (auch ohne Provider), damit /api/plan die Historie zeigen kann.
     planner = Planner(
         provider,
@@ -174,6 +182,7 @@ def build() -> web.Application:
         forecast_collector=forecast_collector,
         device_collector=device_collector,
         weather_collector=weather_collector,
+        history_collector=history_collector,
         logger=logger,
     )
 
@@ -206,6 +215,7 @@ def build() -> web.Application:
         weather_collector=weather_collector,
         hems_client=hems_client,
         hems_status_collector=hems_status_collector,
+        history_collector=history_collector,
         allowlist=allowlist,
         planner=planner,
         version=__version__,

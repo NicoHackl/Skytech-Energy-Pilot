@@ -759,3 +759,58 @@ async def test_global_regeln_roundtrip(aiohttp_client, tmp_path):
     assert (await (await client.post("/api/regeln", json={"regeln": ""})).json())["is_custom"] is (
         False
     )
+
+
+# --- Wärmespeicher-Kennwerte und Rückblick (D-065/D-066) --------------------------------------
+
+
+async def test_device_speicher_roundtrip(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+
+    res = await client.post("/api/devices/speicher", json={
+        "device_name": "heizstab", "volumen_liter": 300, "komfort_min_c": 45, "ziel_c": 60,
+    })
+    body = await res.json()
+    assert body["ok"] is True and body["rechenbar"] is True
+    assert body["fehlt"] == []
+
+    data = await (await client.get("/api/devices")).json()
+    assert data["devices"][0]["speicher"] == {
+        "volumen_liter": 300.0, "komfort_min_c": 45.0, "ziel_c": 60.0,
+    }
+
+
+async def test_device_speicher_reports_missing_fields(aiohttp_client, tmp_path):
+    """Nur das Volumen reicht nicht — ohne Komfortminimum gibt es keine Reserve."""
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+
+    body = await (await client.post("/api/devices/speicher", json={
+        "device_name": "heizstab", "volumen_liter": 300,
+    })).json()
+
+    assert body["rechenbar"] is False
+    assert body["fehlt"] == ["komfort_min_c"]
+
+
+async def test_device_speicher_empty_fields_are_not_zero(aiohttp_client, tmp_path):
+    """Ein leeres Formularfeld darf nicht als 0 Liter ankommen."""
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+
+    await client.post("/api/devices/speicher", json={
+        "device_name": "heizstab", "volumen_liter": "", "komfort_min_c": "",
+    })
+
+    data = await (await client.get("/api/devices")).json()
+    assert data["devices"][0]["speicher"]["volumen_liter"] is None
+
+
+async def test_device_speicher_rejects_unknown_device(aiohttp_client, tmp_path):
+    client, _ = await _discovered_client(aiohttp_client, tmp_path)
+    res = await client.post("/api/devices/speicher", json={"device_name": "gibtsnicht"})
+    assert res.status == 400
+
+
+async def test_rueckblick_endpoint_without_collector_is_inactive(aiohttp_client, app):
+    client = await aiohttp_client(app)
+    data = await (await client.get("/api/rueckblick")).json()
+    assert data == {"tage": [], "quellen": [], "aktiv": False}

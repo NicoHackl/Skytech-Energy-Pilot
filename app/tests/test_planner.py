@@ -653,3 +653,124 @@ async def test_run_keeps_device_explanations_in_the_plan(tmp_path):
     assert heizstab["angewandte_regeln"] == ["Über 70 °C kein Heizstab"]
     assert result.plan["unsicherheiten"] == ["Außentemperatur nicht gemessen"]
     assert result.plan["konfidenz_teilnoten"]["regelklarheit"] == 90
+
+
+# --- Bilanz im Kontext: der Leitfall des Users (D-065/D-066) ----------------------------------
+
+
+def _bilanz_planner(tmp_path, provider, *, ww_deltas, ist_c=65.0):
+    """Planner mit Rückblick-Doppel und gepflegten Speicher-Kennwerten für den Heizstab."""
+    from energy_pilot.device_speicher import set_speicher
+    from energy_pilot.history_collector import HistorySource
+
+    class _Collector:
+        def snapshot(self):
+            return {
+                "hot_water_temp": {
+                    "label": "Warmwassertemperatur", "unit": "°C",
+                    "averaged": True, "source": "live", "latest": ist_c,
+                    "mean_1m": ist_c, "mean_15m": ist_c, "mean_60m": ist_c,
+                },
+                "house_load": {
+                    "label": "Hausverbrauch", "unit": "W", "averaged": True,
+                    "source": "live", "latest": 400.0, "mean_1m": 400.0,
+                    "mean_15m": 400.0, "mean_60m": 400.0,
+                },
+            }
+
+    class _History:
+        sources = (
+            HistorySource("heizstab.extra_elwa_istleistung", "sensor.p", unit="W"),
+        )
+
+        def snapshot(self, days=None, now=None):
+            return [
+                {
+                    "tag": f"2026-08-{12 + i}",
+                    "vollstaendig": True,
+                    "groessen": {
+                        "hot_water_temp": {"delta": delta, "min": 55.0, "max": 70.0,
+                                           "mittel": 62.0},
+                        "house_load": {"min": 380.0, "mittel": 700.0},
+                        "heizstab.extra_elwa_istleistung": {"energie_kwh": 0.0},
+                        "wolken": {"mittel": 20.0},
+                    },
+                }
+                for i, delta in enumerate(ww_deltas)
+            ]
+
+    class _Forecast:
+        def snapshot(self):
+            return {"unit": "kWh", "values": [{"key": "tomorrow", "label": "morgen",
+                                               "total": 10.0}]}
+
+    planner, db = _planner(tmp_path, provider)
+    planner.collector = _Collector()
+    planner.forecast_collector = _Forecast()
+    planner.history_collector = _History()
+    set_speicher(db, "heizstab", volumen_liter=300.0, komfort_min_c=45.0, ziel_c=60.0)
+    return planner, db
+
+
+async def test_context_carries_the_balance_for_the_heater(tmp_path):
+    """Sonnige Tage: Reserve vorhanden, Speicher gewinnt ohne Strom ⇒ keine Deckungsgrenze."""
+    planner, _ = _bilanz_planner(
+        tmp_path, _FakeProvider(_VALID_DATA), ww_deltas=[8.0, 7.0, 9.0]
+    )
+
+    result = await planner.run(now=NOW)
+
+    merkmale = result.context["merkmale"]
+    heizstab = next(g for g in merkmale["geraete"] if g["name"] == "heizstab")
+    assert heizstab["reserve_kwh"] == 6.97  # 300 l von 45 auf 65 °C
+    assert heizstab["energiebedarf_kwh"] == 0.0
+    assert heizstab["fremdwaerme_mittel_kwh"] > 0
+    assert "deckung_tage" not in heizstab  # kein Verlust ⇒ keine Deckungsdauer
+    # Systemmerkmale: Grundlast aus dem Rückblick, Überschuss netto.
+    assert merkmale["system"]["grundlast_w"] == 380.0
+    assert merkmale["system"]["ueberschuss"]["morgen_kwh"] == round(10.0 - 380 * 24 / 1000, 2)
+
+
+async def test_context_reports_coverage_in_days_when_the_tank_loses(tmp_path):
+    """Trübe Tage: derselbe Speicherwert, aber Verlust ⇒ Deckung in Tagen wird konkret."""
+    planner, _ = _bilanz_planner(
+        tmp_path, _FakeProvider(_VALID_DATA), ww_deltas=[-4.0, -4.0]
+    )
+
+    result = await planner.run(now=NOW)
+
+    heizstab = next(
+        g for g in result.context["merkmale"]["geraete"] if g["name"] == "heizstab"
+    )
+    assert heizstab["fremdwaerme_mittel_kwh"] == -1.39
+    assert heizstab["deckung_tage"] == 5.0
+
+
+async def test_rueckblick_block_reaches_the_context(tmp_path):
+    planner, _ = _bilanz_planner(tmp_path, _FakeProvider(_VALID_DATA), ww_deltas=[5.0])
+
+    result = await planner.run(now=NOW)
+
+    rueckblick = result.context["rueckblick"]
+    assert len(rueckblick["tage"]) == 1
+    assert "Solarthermie" in rueckblick["hinweis"]
+
+
+async def test_forecast_horizon_is_named_so_day_three_is_not_invented(tmp_path):
+    planner, _ = _bilanz_planner(tmp_path, _FakeProvider(_VALID_DATA), ww_deltas=[5.0])
+
+    result = await planner.run(now=NOW)
+
+    assert result.context["forecast"]["horizont"] == "heute und morgen"
+    assert "KEINE Ertragsprognose" in result.context["forecast"]["hinweis"]
+
+
+async def test_features_absent_without_storage_data(tmp_path):
+    """Ohne gepflegte Kennwerte entstehen keine Merkmale — und keine erfundenen Zahlen."""
+    planner, db = _bilanz_planner(tmp_path, _FakeProvider(_VALID_DATA), ww_deltas=[5.0])
+    db.execute("DELETE FROM device_speicher")
+    db.commit()
+
+    result = await planner.run(now=NOW)
+
+    assert "geraete" not in result.context.get("merkmale", {})
