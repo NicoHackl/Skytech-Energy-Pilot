@@ -189,7 +189,25 @@ class DeviceExtra:
         ohne `ai_suggestion`, oder auf einer `sensor.*`-Quelle) – der tatsächliche Schreibweg
         richtet sich immer nach dieser Eigenschaft, nie nach dem rohen `write_original`-Flag.
         """
-        return self.write_original and self.ai_suggestion and self.is_writable_helper
+        return self.write_original and self.can_suggest and self.is_writable_helper
+
+    @property
+    def can_suggest(self) -> bool:
+        """Grenzen sind immer read-only und dürfen nie zu KI-Ausgaben werden."""
+        return self.ai_suggestion and normalize_extra_role(self.rolle) != EXTRA_ROLE_GRENZE
+
+
+@dataclass(frozen=True)
+class HEMSField:
+    """Ein vom HEMS deklarierter, semantisch typisierter Gerätewert."""
+
+    key: str
+    label: str
+    kind: str
+    entity_id: str
+    unit: str = ""
+    role: str = "diagnostic"
+    planning_relevant: bool = False
 
 
 @dataclass(frozen=True)
@@ -201,6 +219,12 @@ class Device:
     entity_prefix: str
     device_class: str  # CONTROLLABLE | BINARY
     output_unit: str = "watt"  # "watt" | "ampere"
+    control_policy: str = "unknown"
+    allowed_modes: tuple[str, ...] = ()
+    actual_power_entity: str = ""
+    switch_entity: str = ""
+    request_entity: str = ""
+    hems_fields: tuple[HEMSField, ...] = ()
     # User-gepflegte Zusatz-Entitäten (D-047); nach der HEMS-Discovery aus der DB gemergt.
     extras: tuple[DeviceExtra, ...] = ()
     # User-gepflegte Freitext-Beschreibung dieses Geräts für die KI (D-051): erklärt der KI
@@ -223,6 +247,8 @@ class ReadField:
     entity_id: str
     unit: str = ""
     capture_attrs: tuple[str, ...] = ()  # zusätzlich zu lesende HA-Attribute (D-048)
+    role: str = "diagnostic"
+    planning_relevant: bool = False
 
 
 def _unit_suffix(output_unit: str) -> str:
@@ -231,6 +257,22 @@ def _unit_suffix(output_unit: str) -> str:
 
 def read_fields(device: Device) -> list[ReadField]:
     """Leitet die EP-relevanten Lese-Entitäten eines Geräts ab (Read-Schema D-029)."""
+    if device.hems_fields:
+        fields = [
+            ReadField(
+                field.key,
+                field.label,
+                field.kind,
+                field.entity_id,
+                field.unit,
+                role=field.role,
+                planning_relevant=field.planning_relevant,
+            )
+            for field in device.hems_fields
+        ]
+        fields.extend(_extra_read_fields(device))
+        return fields
+
     p = device.entity_prefix
     u = _unit_suffix(device.output_unit)
     unit_label = "A" if device.output_unit == "ampere" else "W"
@@ -264,22 +306,60 @@ def read_fields(device: Device) -> list[ReadField]:
 
     # User-gepflegte Zusatz-Entitäten (D-047, ersetzt den früheren Heizstab-Hardcode D-035).
     # Typ (`kind`) und mitgelesene Attribute folgen der Domäne der Quell-Entität (D-048).
-    for extra in device.extras:
-        fields.append(
-            ReadField(
-                extra.read_key,
-                extra.display_label,
-                extra.kind,
-                extra.read_entity_id,
-                extra.unit,
-                capture_attrs=extra.capture_attrs,
-            )
-        )
+    fields.extend(_extra_read_fields(device))
     return fields
+
+
+def _extra_read_fields(device: Device) -> list[ReadField]:
+    """Lesevertrag der user-gepflegten Zusatzwerte eines Geräts."""
+    return [
+        ReadField(
+            extra.read_key,
+            extra.display_label,
+            extra.kind,
+            extra.read_entity_id,
+            extra.unit,
+            capture_attrs=extra.capture_attrs,
+            role=f"extra_{normalize_extra_role(extra.rolle)}",
+            planning_relevant=True,
+        )
+        for extra in device.extras
+    ]
 
 
 def _default_label(name: str) -> str:
     return name.replace("_", " ").title()
+
+
+def _fields_from_items(items: list[dict]) -> tuple[HEMSField, ...]:
+    """Übernimmt stabile HEMS-Feldmetadaten ohne lokale Suffixheuristik."""
+    fields: list[HEMSField] = []
+    for item in items:
+        entity_id = str(item.get("entity") or "").strip()
+        key = str(item.get("key") or "").strip()
+        if not entity_id or not key:
+            continue
+        fields.append(
+            HEMSField(
+                key=key,
+                label=str(item.get("label") or key),
+                kind=str(item.get("kind") or "auto"),
+                entity_id=entity_id,
+                unit=str(item.get("unit") or ""),
+                role=str(item.get("role") or "diagnostic"),
+                planning_relevant=bool(item.get("planning_relevant", False)),
+            )
+        )
+    return tuple(fields)
+
+
+def global_fields_from_hems_schema(schema: list[dict]) -> tuple[HEMSField, ...]:
+    """Planungsrelevante globale HEMS-Userinputs aus demselben Discovery-Vertrag."""
+    for group in schema:
+        if (group.get("name") or group.get("label") or "").strip().lower() == "global":
+            items = [item for item in group.get("items", []) if isinstance(item, dict)]
+            return _fields_from_items(items)
+    return ()
 
 
 def discover_from_hems_schema(schema: list[dict]) -> list[Device]:
@@ -294,12 +374,14 @@ def discover_from_hems_schema(schema: list[dict]) -> list[Device]:
         label = (group.get("label") or "").strip()
         if label.lower() == "global":
             continue
-        entities = [item.get("entity", "") for item in group.get("items", [])]
+        raw_items = [item for item in group.get("items", []) if isinstance(item, dict)]
+        entities = [item.get("entity", "") for item in raw_items]
 
         prefix = next(
             (m.group("prefix") for e in entities if (m := _PREFIX_RE.search(e))),
             None,
         )
+        prefix = (group.get("entity_prefix") or "").strip() or prefix
         if not prefix:
             continue
 
@@ -310,7 +392,10 @@ def discover_from_hems_schema(schema: list[dict]) -> list[Device]:
 
         has_min_technisch = any(re.search(r"_min_technisch_[wa]$", e) for e in entities)
         has_leistung = any(e.endswith("_leistung_w") for e in entities)
-        if has_min_technisch:
+        explicit_class = (group.get("class") or "").strip()
+        if explicit_class in (CONTROLLABLE, BINARY):
+            device_class = explicit_class
+        elif has_min_technisch:
             device_class = CONTROLLABLE
         elif has_leistung:
             device_class = BINARY
@@ -318,7 +403,54 @@ def discover_from_hems_schema(schema: list[dict]) -> list[Device]:
             continue
 
         is_ampere = any(re.search(r"_(?:min|max)_technisch_a$", e) for e in entities)
-        output_unit = "ampere" if is_ampere else "watt"
+        explicit_unit = (group.get("output_unit") or "").strip()
+        output_unit = explicit_unit if explicit_unit in ("ampere", "watt") else (
+            "ampere" if is_ampere else "watt"
+        )
+
+        hems_fields = list(_fields_from_items(raw_items))
+        request_entity = str(group.get("request_entity") or "").strip()
+        actual_power_entity = str(group.get("actual_power_entity") or "").strip()
+        switch_entity = str(group.get("switch_entity") or "").strip()
+        if request_entity:
+            hems_fields.append(
+                HEMSField(
+                    key="hems_anforderung",
+                    label="HEMS-Anforderung",
+                    kind="bool" if device_class == BINARY else "number",
+                    entity_id=request_entity,
+                    unit=(
+                        "" if device_class == BINARY else (
+                            "A" if output_unit == "ampere" else "W"
+                        )
+                    ),
+                    role="hems_request",
+                    planning_relevant=True,
+                )
+            )
+        if actual_power_entity:
+            hems_fields.append(
+                HEMSField(
+                    key="istleistung",
+                    label="Tatsächliche Leistung",
+                    kind="number",
+                    entity_id=actual_power_entity,
+                    unit="W",
+                    role="actual_power",
+                    planning_relevant=True,
+                )
+            )
+        if switch_entity:
+            hems_fields.append(
+                HEMSField(
+                    key="istzustand",
+                    label="Tatsächlicher Zustand",
+                    kind="bool",
+                    entity_id=switch_entity,
+                    role="actual_state",
+                    planning_relevant=True,
+                )
+            )
 
         devices.append(
             Device(
@@ -327,6 +459,12 @@ def discover_from_hems_schema(schema: list[dict]) -> list[Device]:
                 entity_prefix=prefix,
                 device_class=device_class,
                 output_unit=output_unit,
+                control_policy=str(group.get("control_policy") or "unknown"),
+                allowed_modes=tuple(str(mode) for mode in group.get("allowed_modes", []) if mode),
+                actual_power_entity=actual_power_entity,
+                switch_entity=switch_entity,
+                request_entity=request_entity,
+                hems_fields=tuple(hems_fields),
             )
         )
     return devices
@@ -344,17 +482,27 @@ async def discover(
     vollständig vom HEMS gezogen. Der Aufrufer wiederholt die Discovery bei "none"
     (Auto-Retry) bzw. stößt sie manuell über den HEMS-Sync neu an.
     """
+    devices, source, _global_fields = await discover_contract(hems_client, logger)
+    return devices, source
+
+
+async def discover_contract(
+    hems_client: HEMSClient | None,
+    logger: logging.Logger | None = None,
+) -> tuple[list[Device], str, tuple[HEMSField, ...]]:
+    """Discovery inklusive globaler Userinputs; der alte Zweier-Vertrag bleibt erhalten."""
     if hems_client is not None:
         try:
             schema = await hems_client.device_schema()
             devices = discover_from_hems_schema(schema)
             if devices:
-                return devices, "hems"
+                return devices, "hems", global_fields_from_hems_schema(schema)
         except Exception as exc:
             if logger:
                 log(
-                    logger, "warning",
+                    logger,
+                    "warning",
                     "HEMS-Geräteschema nicht abrufbar – keine Geräte erkannt",
                     context={"error": str(exc)},
                 )
-    return [], "none"
+    return [], "none", ()

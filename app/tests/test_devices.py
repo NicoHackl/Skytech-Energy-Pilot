@@ -9,6 +9,7 @@ from energy_pilot.devices import (
     DeviceExtra,
     discover,
     discover_from_hems_schema,
+    global_fields_from_hems_schema,
     read_fields,
 )
 
@@ -183,6 +184,56 @@ def test_discover_from_hems_schema_classes_and_units():
     assert devices["heizluefter_1"].device_class == BINARY
     assert devices["wallbox_1"].device_class == CONTROLLABLE
     assert devices["wallbox_1"].output_unit == "ampere"
+
+
+def test_extended_contract_is_used_without_suffix_guessing():
+    schema = [
+        {
+            "name": "global",
+            "label": "Global",
+            "items": [
+                {
+                    "entity": "input_number.ems_globaler_puffer_w",
+                    "key": "globaler_puffer_w",
+                    "label": "Globaler Puffer",
+                    "kind": "number",
+                    "unit": "W",
+                    "role": "user_preference",
+                    "planning_relevant": True,
+                }
+            ],
+        },
+        {
+            "name": "heizstab",
+            "label": "Heizstab",
+            "class": "controllable",
+            "entity_prefix": "elwa",
+            "output_unit": "watt",
+            "control_policy": "pv_surplus_only",
+            "allowed_modes": ["manuell", "nur_heizen"],
+            "actual_power_entity": "sensor.elwa_istleistung",
+            "request_entity": "input_number.ems_elwa_anforderung_leistung_w",
+            "items": [
+                {
+                    "entity": "input_boolean.ems_elwa_freigabe",
+                    "key": "freigabe",
+                    "label": "Freigabe",
+                    "kind": "bool",
+                    "role": "user_control",
+                    "planning_relevant": True,
+                }
+            ],
+        },
+    ]
+    device = discover_from_hems_schema(schema)[0]
+    fields = _fields_by_key(device)
+    assert device.entity_prefix == "elwa"
+    assert device.control_policy == "pv_surplus_only"
+    assert fields["freigabe"].entity_id == "input_boolean.ems_elwa_freigabe"
+    assert fields["istleistung"].entity_id == "sensor.elwa_istleistung"
+    assert fields["hems_anforderung"].role == "hems_request"
+    global_fields = global_fields_from_hems_schema(schema)
+    assert global_fields[0].key == "globaler_puffer_w"
 
 
 def test_discover_from_hems_schema_identity_uses_name_not_label_or_prefix():

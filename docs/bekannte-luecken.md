@@ -6,18 +6,13 @@ vertraut — Spec und Code laufen an mehreren Stellen auseinander. Bei jeder gr�
 
 ## Spec-vs-Code-Lücken (Stand aktuelle Codebasis)
 
-### Kein automatischer Scheduler
+### Ereignisbasierte Nachplanung fehlt noch
 
-**Kein** Code-Pfad (`main.py`, `web/server.py`, `planner.py`) ruft `Planner.run()` je auf
-einem Timer auf. `planning_interval_min` wird zwar gelesen, aber **nur** als
-Plan-Gültigkeitsdauer (`valid_until = now + planning_interval_min`, `planner.py`) — nicht als
-Takt; `plan_update_interval_min` wird nirgends gelesen. Ein Plan entsteht ausschließlich über
-den manuellen Button/Endpunkt `POST /api/plan/run`. (Der frühere Querverweis auf einen Satz
-"EP plant alle 15–60 min" in `AGENTS.md` ist **tot** — dort steht nur noch der Horizont
-24–48 h.) Wer einen Scheduler baut, muss
-zusätzlich das Event-basierte Nachplanungs-Konzept (E-Auto Stecker, Abfahrtszeit-
-Änderung, SOC-Ziel-Änderung, PV-/Lastprognose-Abweichung, …) aus dem alten
-Decision-Log berücksichtigen ([design-entscheidungen.md](design-entscheidungen.md)).
+Seit D-067 plant der interne Scheduler nach erfolgreicher HEMS-Discovery und erstem Snapshot
+regelmäßig gemäß `planning_interval_min` (standardmäßig stündlich). Noch nicht umgesetzt ist
+zusätzliches ereignisbasiertes Nachplanen bei E-Auto-Stecker, Abfahrtszeit-/SOC-Ziel-Änderung
+oder starker PV-/Lastprognose-Abweichung. Bis dahin greift eine solche Änderung spätestens im
+nächsten regulären Lauf; der manuelle Endpunkt bleibt verfügbar.
 
 ### Validator-Stufe 5 (Delta-Limit) fehlt — bewusst
 

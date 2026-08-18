@@ -57,6 +57,8 @@ _FIELD_UNIT: dict[str, str] = {
     "geschutzte_mindestleistung_a_vorschlag": "A",
 }
 
+PLAN_COMMIT_ENTITY = "sensor.ep_plan_commit"
+
 
 @dataclass
 class SuggestionEntity:
@@ -128,6 +130,7 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
     """
     by_name = {device.name: device for device in devices}
     plan_id = plan.get("plan_id")
+    valid_from = plan.get("valid_from")
     valid_until = plan.get("valid_until")
 
     def _attrs(friendly: str, unit: str | None) -> dict:
@@ -139,6 +142,8 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
             attributes["unit_of_measurement"] = unit
         if plan_id:
             attributes["plan_id"] = plan_id
+        if valid_from:
+            attributes["valid_from"] = valid_from
         if valid_until:
             attributes["valid_until"] = valid_until
         return attributes
@@ -174,7 +179,7 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
 
         # Dynamische Zusatz-Vorschläge (D-047): Sensorname/Label/Einheit aus der Zusatz-Entität.
         for extra in getattr(device, "extras", ()):
-            if not extra.ai_suggestion:
+            if not extra.can_suggest:
                 continue
             value = entry.get(extra.plan_field)
             if value is None:
@@ -328,6 +333,29 @@ async def publish_suggestions(
 
     written: list[str] = []
     failed: list[dict] = []
+    # Alten Commit zuerst ungültig machen. Während der folgenden Einzelwrites kann HEMS so nie
+    # einen gemischten alten/neuen Satz akzeptieren.
+    try:
+        await ha_client.set_state(
+            PLAN_COMMIT_ENTITY,
+            "publishing",
+            {
+                "friendly_name": "Energy Pilot Plan-Commit",
+                "source": "Skytech Energy Pilot",
+                "valid_until": plan.get("valid_from") or "",
+            },
+        )
+    except Exception as exc:
+        failed.append(
+            {
+                "entity_id": PLAN_COMMIT_ENTITY,
+                "error": str(exc).strip() or exc.__class__.__name__,
+            }
+        )
+        result = PublishResult(ok=False, written=[], failed=failed, skipped=skipped)
+        _audit(db, plan_id, result)
+        return result
+
     for entity in entities:
         try:
             await ha_client.set_state(entity.entity_id, entity.state, entity.attributes)
@@ -335,6 +363,31 @@ async def publish_suggestions(
         except Exception as exc:  # kontrolliert: ein Fehler bricht den Lauf nie ab
             failed.append(
                 {"entity_id": entity.entity_id, "error": str(exc).strip() or exc.__class__.__name__}
+            )
+
+    # Commit ist der atomare Sichtbarkeitspunkt für HEMS und wird ausschließlich geschrieben,
+    # wenn jeder Vorschlags-Sensor des Plans erfolgreich veröffentlicht wurde.
+    if not failed and entities:
+        try:
+            await ha_client.set_state(
+                PLAN_COMMIT_ENTITY,
+                str(plan_id or ""),
+                {
+                    "friendly_name": "Energy Pilot Plan-Commit",
+                    "source": "Skytech Energy Pilot",
+                    "schema_version": plan.get("schema_version"),
+                    "plan_id": plan_id,
+                    "valid_from": plan.get("valid_from"),
+                    "valid_until": plan.get("valid_until"),
+                },
+            )
+            written.append(PLAN_COMMIT_ENTITY)
+        except Exception as exc:
+            failed.append(
+                {
+                    "entity_id": PLAN_COMMIT_ENTITY,
+                    "error": str(exc).strip() or exc.__class__.__name__,
+                }
             )
 
     for write in original_writes:

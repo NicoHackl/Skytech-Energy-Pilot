@@ -44,6 +44,7 @@ from energy_pilot.logging_setup import RingBufferHandler, log
 from energy_pilot.objectives import delete_ziel, load_ziele, upsert_ziel
 from energy_pilot.plan_context import DEFAULT_CLASSIFICATION_PROMPT, DEFAULT_PLANNING_PROMPT
 from energy_pilot.plan_schema import PLAN_JSON_SCHEMA, SCHEMA_VERSION, suggestion_keys
+from energy_pilot.planning_scheduler import PlanningScheduler
 from energy_pilot.roles import MEASUREMENT_ROLES
 from energy_pilot.settings import (
     CLASSIFICATION_PROMPT_KEY,
@@ -167,6 +168,21 @@ def create_app(
         app.on_startup.append(_discover_devices)
         app.on_cleanup.append(_close_hems_client)
         app.on_cleanup.append(_stop_discovery_retry)
+    if (
+        planner is not None
+        and collector is not None
+        and device_collector is not None
+        and enable_poller
+    ):
+        app["planning_scheduler"] = PlanningScheduler(
+            planner,
+            collector,
+            device_collector,
+            interval_min=float(config.planning_interval_min),
+            logger=logger,
+        )
+        app.on_startup.append(_start_planning_scheduler)
+        app.on_cleanup.append(_stop_planning_scheduler)
     if planner is not None:
         app.on_cleanup.append(_close_planner)
     if weather_collector is not None:
@@ -186,12 +202,12 @@ async def rediscover_devices(app: web.Application) -> tuple[list, str]:
     (Soft-Guard, D-038). Liefert (devices, source) mit source ∈ {"hems", "none"}.
     """
     from energy_pilot.allowlist import collect_entity_ids
-    from energy_pilot.devices import discover
+    from energy_pilot.devices import discover_contract
 
     device_collector = app["device_collector"]
     logger = app["logger"]
     db = app.get("db")
-    devices, source = await discover(app.get("hems_client"), logger)
+    devices, source, global_fields = await discover_contract(app.get("hems_client"), logger)
 
     # Zusatz-Entitäten (D-047) an die erkannten Geräte mergen: einmalig den Heizstab-Default
     # anlegen (ersetzt Hardcode D-035), dann die user-gepflegte Konfiguration aus der DB anhängen.
@@ -200,12 +216,24 @@ async def rediscover_devices(app: web.Application) -> tuple[list, str]:
         devices, load_extras(db), load_device_prompts(db), load_device_regeln(db)
     )
     device_collector.set_devices(devices, source)
+    device_collector.set_global_fields(global_fields)
 
     _refresh_history_sources(app, devices)
 
     allowlist = app.get("allowlist")
     if allowlist is not None:
-        allowlist.rebuild(collect_entity_ids(devices=devices))
+        entities = collect_entity_ids(
+                mapping=getattr(app.get("collector"), "mapping", {}) or {},
+                orientations=getattr(app.get("forecast_collector"), "orientations", ()) or (),
+                devices=devices,
+                global_fields=global_fields,
+        )
+        weather_config = getattr(app.get("weather_collector"), "config", None)
+        if getattr(weather_config, "enabled", False) and getattr(
+            weather_config, "zone_entity", ""
+        ):
+            entities[weather_config.zone_entity] = "weather"
+        allowlist.rebuild(entities)
         allowlist.persist(db)
 
     if logger is not None:
@@ -240,7 +268,18 @@ def reapply_device_extras(app: web.Application) -> None:
 
     allowlist = app.get("allowlist")
     if allowlist is not None:
-        allowlist.rebuild(collect_entity_ids(devices=devices))
+        entities = collect_entity_ids(
+                mapping=getattr(app.get("collector"), "mapping", {}) or {},
+                orientations=getattr(app.get("forecast_collector"), "orientations", ()) or (),
+                devices=devices,
+                global_fields=getattr(device_collector, "global_fields", ()),
+        )
+        weather_config = getattr(app.get("weather_collector"), "config", None)
+        if getattr(weather_config, "enabled", False) and getattr(
+            weather_config, "zone_entity", ""
+        ):
+            entities[weather_config.zone_entity] = "weather"
+        allowlist.rebuild(entities)
         allowlist.persist(db)
 
 
@@ -312,6 +351,24 @@ async def _close_planner(app: web.Application) -> None:
     planner = app.get("planner")
     if planner is not None and hasattr(planner, "aclose"):
         await planner.aclose()
+
+
+async def _start_planning_scheduler(app: web.Application) -> None:
+    scheduler = app.get("planning_scheduler")
+    if scheduler is not None:
+        app["_planning_task"] = asyncio.create_task(scheduler.serve())
+
+
+async def _stop_planning_scheduler(app: web.Application) -> None:
+    scheduler = app.get("planning_scheduler")
+    task = app.get("_planning_task")
+    if scheduler is not None:
+        scheduler.stop()
+    if task is not None:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 async def _close_weather_client(app: web.Application) -> None:
@@ -445,6 +502,8 @@ async def diagnostics(request: web.Request) -> web.Response:
     device_collector = app.get("device_collector")
     allowlist = app.get("allowlist")
     poll_task = app.get("_poll_task")
+    scheduler = app.get("planning_scheduler")
+    planning_task = app.get("_planning_task")
     payload: dict[str, Any] = {
         "ha_configured": app["ha_client"] is not None,
         "poller_active": bool(poll_task is not None and not poll_task.done()),
@@ -466,6 +525,14 @@ async def diagnostics(request: web.Request) -> web.Response:
         "hems_last_fetch_ts": getattr(app.get("hems_status_collector"), "last_fetch_ts", None),
         "hems_last_error": getattr(app.get("hems_status_collector"), "last_error", None),
         "allowlist_count": allowlist.snapshot()["count"] if allowlist is not None else 0,
+        "planning_scheduler_active": bool(
+            planning_task is not None and not planning_task.done()
+        ),
+        "planning_scheduler_ready": bool(getattr(scheduler, "ready", False)),
+        "planning_interval_s": getattr(scheduler, "interval_s", None),
+        "planning_last_attempt": getattr(scheduler, "last_attempt", None),
+        "planning_last_success": getattr(scheduler, "last_success", None),
+        "planning_last_error": getattr(scheduler, "last_error", None),
     }
     return web.json_response(payload)
 
@@ -517,7 +584,7 @@ def _extras_payload(device_collector: object, device_name: str) -> list[dict]:
                 "rolle": ex.rolle,
                 "rolle_bedeutung": ex.rolle_text,
                 "plan_field": ex.plan_field,
-                "suggestion_entity_id": ex.suggestion_entity_id if ex.ai_suggestion else None,
+                "suggestion_entity_id": ex.suggestion_entity_id if ex.can_suggest else None,
                 # D-052: rohes Flag + Helfer-Fähigkeit + effektiver Original-Schreibweg (fürs UI:
                 # Checkbox nur bei is_writable_helper anzeigbar, wirksam nur bei
                 # should_write_original).
@@ -585,6 +652,8 @@ async def device_extra_post(request: web.Request) -> web.Response:
     unit = str(body.get("unit") or "").strip()
     write_original = bool(body.get("write_original"))
     rolle = normalize_extra_role(body.get("rolle"))
+    effective_suggestion = ai_suggestion and rolle != "grenze"
+    effective_write_original = write_original and effective_suggestion
 
     known = {d.name for d in getattr(device_collector, "devices", [])}
     if device_name not in known:
@@ -596,12 +665,12 @@ async def device_extra_post(request: web.Request) -> web.Response:
             {"ok": False, "reason": "ungültige Entity-ID (Format: <domain>.<object_id>)"},
             status=400,
         )
-    if write_original and not ai_suggestion:
+    if write_original and not ai_suggestion and rolle != "grenze":
         return web.json_response(
             {"ok": False, "reason": "„In Original schreiben“ setzt einen KI-Vorschlag voraus"},
             status=400,
         )
-    if ai_suggestion:
+    if effective_suggestion:
         clash = suggestion_conflict(
             load_extras(db), device_name=device_name, read_entity_id=read_entity_id
         )
@@ -616,18 +685,18 @@ async def device_extra_post(request: web.Request) -> web.Response:
         db,
         device_name=device_name,
         read_entity_id=read_entity_id,
-        ai_suggestion=ai_suggestion,
+        ai_suggestion=effective_suggestion,
         ai_hint=ai_hint,
         label=label,
         unit=unit,
-        write_original=write_original,
+        write_original=effective_write_original,
         rolle=rolle,
     )
     reapply_device_extras(request.app)
     _audit_extra(db, "device_extra_upserted", device_name, read_entity_id)
     extra = DeviceExtra(
-        read_entity_id=read_entity_id, ai_suggestion=ai_suggestion,
-        write_original=write_original, rolle=rolle,
+        read_entity_id=read_entity_id, ai_suggestion=effective_suggestion,
+        write_original=effective_write_original, rolle=rolle,
     )
     return web.json_response(
         {
@@ -635,7 +704,7 @@ async def device_extra_post(request: web.Request) -> web.Response:
             "device_name": device_name,
             "read_entity_id": read_entity_id,
             "rolle": extra.rolle,
-            "suggestion_entity_id": extra.suggestion_entity_id if ai_suggestion else None,
+            "suggestion_entity_id": extra.suggestion_entity_id if extra.can_suggest else None,
             "should_write_original": extra.should_write_original,
         }
     )

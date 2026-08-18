@@ -66,7 +66,13 @@ class _FakeHA:
 
 
 def _plan(devices):
-    return {"plan_id": "abc123", "valid_until": "2026-06-19T13:00:00+00:00", "devices": devices}
+    return {
+        "schema_version": "1.0",
+        "plan_id": "abc123",
+        "valid_from": "2026-06-19T12:00:00+00:00",
+        "valid_until": "2026-06-19T13:00:00+00:00",
+        "devices": devices,
+    }
 
 
 # -- Entity-Erzeugung (rein) ------------------------------------------------
@@ -145,8 +151,14 @@ async def test_publish_all_ok_and_audits():
     assert set(result.written) == {
         "sensor.ep_heizstab_prio_vorschlag",
         "sensor.ep_heizstab_freigabe_vorschlag",
+        "sensor.ep_plan_commit",
     }
     assert result.failed == []
+    # Alter Commit wird zuerst ungültig, der echte Commit kommt nach allen Vorschlägen.
+    assert ha.calls[0][0:2] == ("sensor.ep_plan_commit", "publishing")
+    assert ha.calls[-1][0:2] == ("sensor.ep_plan_commit", "abc123")
+    assert ha.calls[-1][2]["valid_from"] == "2026-06-19T12:00:00+00:00"
+    assert ha.calls[-1][2]["valid_until"] == "2026-06-19T13:00:00+00:00"
     audits = conn.execute(
         "SELECT COUNT(*) AS n FROM audit WHERE action='suggestions_published'"
     ).fetchone()["n"]
@@ -164,6 +176,7 @@ async def test_publish_partial_failure_does_not_crash():
     assert result.written == ["sensor.ep_heizstab_prio_vorschlag"]
     assert result.failed[0]["entity_id"] == "sensor.ep_heizstab_freigabe_vorschlag"
     assert result.failed[0]["error"]
+    assert not any(call[1] == "abc123" for call in ha.calls)
 
 
 async def test_publish_without_ha_client_is_noop():

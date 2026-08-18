@@ -1,6 +1,6 @@
 """Tests für SQLite-Initialisierung und Migrationen."""
 
-from energy_pilot.database import current_version, init_db, migrate
+from energy_pilot.database import MIGRATIONS, connect, current_version, init_db, migrate
 
 
 def test_migrations_create_core_tables(tmp_path):
@@ -16,7 +16,7 @@ def test_migrations_create_core_tables(tmp_path):
         "ziele", "schema_migrations",
     }
     assert expected <= tables
-    assert current_version(conn) == 16
+    assert current_version(conn) == 17
     conn.close()
 
 
@@ -32,5 +32,29 @@ def test_migrations_are_idempotent(tmp_path):
 
 def test_in_memory_database_works():
     conn = init_db(":memory:")
-    assert current_version(conn) == 16
+    assert current_version(conn) == 17
     conn.close()
+
+
+def test_migration_17_disables_limit_suggestions_and_moves_heater_limit():
+    conn = connect(":memory:")
+    current_version(conn)
+    for version, sql in MIGRATIONS:
+        if version >= 17:
+            break
+        conn.executescript(sql)
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (?)", (version,))
+    conn.execute(
+        "INSERT INTO device_extras "
+        "(device_name, read_entity_id, ai_suggestion, write_original, rolle) "
+        "VALUES ('heizstab', 'input_number.ep_heizstab_max_temperatur', 1, 1, 'grenze')"
+    )
+    conn.commit()
+
+    assert migrate(conn) == [17]
+    row = conn.execute(
+        "SELECT * FROM device_extras WHERE device_name = 'heizstab'"
+    ).fetchone()
+    assert row["read_entity_id"] == "input_number.e3dc_heizstab_maxtemperatur"
+    assert row["ai_suggestion"] == 0
+    assert row["write_original"] == 0

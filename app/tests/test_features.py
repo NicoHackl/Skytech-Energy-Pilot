@@ -24,12 +24,14 @@ def _state(ist_c=65.0):
     }
 
 
-def _tag(tag, *, ww_delta, wolken=None, strom_kwh=None):
+def _tag(tag, *, ww_delta, wolken=None, strom_kwh=None, pv_kwh=None):
     groessen = {HOT_WATER_ROLE: {"delta": ww_delta, "min": 50.0, "max": 70.0, "mittel": 60.0}}
     if wolken is not None:
         groessen["wolken"] = {"mittel": wolken}
     if strom_kwh is not None:
         groessen["heizstab_energie"] = {"energie_kwh": strom_kwh}
+    if pv_kwh is not None:
+        groessen["pv_power"] = {"energie_kwh": pv_kwh}
     return {"tag": tag, "vollstaendig": True, "groessen": groessen}
 
 
@@ -123,13 +125,66 @@ def test_missing_electric_source_is_flagged():
         "heizstab", SPEICHER, _state(), [_tag("2026-08-13", ww_delta=5.0)]
     )
     assert any("keine elektrische Energiegröße" in h for h in merkmale.hinweise)
+    assert merkmale.fremdwaerme_tage == ()
+    assert merkmale.fremdwaerme_mittel_kwh is None
+    assert merkmale.deckung_tage is None
+    assert merkmale.solarthermie_proxy_datenqualitaet == "unbekannt"
+
+
+def test_solarthermal_proxy_combines_clean_history_pv_forecast_and_weather():
+    rueckblick = [
+        _tag(
+            f"2026-08-{day}", ww_delta=6.0, strom_kwh=0.0, pv_kwh=12.0,
+        )
+        for day in (12, 13, 14)
+    ]
+    merkmale = build_device_features(
+        "heizstab",
+        SPEICHER,
+        _state(),
+        rueckblick,
+        strom_quellen=("heizstab_energie",),
+        pv_prognose_kwh=10.0,
+        wetter_verfuegbar=True,
+    )
+    assert merkmale.solarthermie_proxy_kwh == 1.74
+    assert merkmale.solarthermie_proxy_datenqualitaet == "mittel"
+    assert merkmale.reserve_nach_horizont_kwh == 8.71
+
+
+def test_same_storage_level_yields_opposite_horizon_reserve_by_forecast():
+    """Replay: gleicher Istwert, aber Sonne hält die Reserve und Nullertrag lässt sie reißen."""
+    rueckblick = [
+        *[
+            _tag(f"2026-08-{day}", ww_delta=6.0, strom_kwh=0.0, pv_kwh=12.0)
+            for day in (10, 11, 12)
+        ],
+        _tag("2026-08-13", ww_delta=-4.0, strom_kwh=0.0, pv_kwh=1.0),
+        _tag("2026-08-14", ww_delta=-4.0, strom_kwh=0.0, pv_kwh=1.0),
+    ]
+    low_reserve_state = _state(46.0)
+    sunny = build_device_features(
+        "heizstab", SPEICHER, low_reserve_state, rueckblick,
+        strom_quellen=("heizstab_energie",), pv_prognose_kwh=10.0,
+        wetter_verfuegbar=True, prognose_horizont_h=24,
+    )
+    cloudy = build_device_features(
+        "heizstab", SPEICHER, low_reserve_state, rueckblick,
+        strom_quellen=("heizstab_energie",), pv_prognose_kwh=0.0,
+        wetter_verfuegbar=True, prognose_horizont_h=24,
+    )
+
+    assert sunny.waermeverlust_kwh_pro_tag == 1.39
+    assert sunny.reserve_nach_horizont_kwh > 0
+    assert cloudy.reserve_nach_horizont_kwh < 0
 
 
 def test_energy_without_volume_stays_none():
     """Ohne Volumen bleiben die Fremdwärme-Tage in °C, ohne erfundene kWh."""
     speicher = SpeicherDaten(komfort_min_c=45.0)
     merkmale = build_device_features(
-        "heizstab", speicher, _state(), [_tag("2026-08-13", ww_delta=-4.0)],
+        "heizstab", speicher, _state(),
+        [_tag("2026-08-13", ww_delta=-4.0, strom_kwh=0.0)],
         strom_quellen=("heizstab_energie",),
     )
     assert merkmale.fremdwaerme_tage[0].delta_c == -4.0

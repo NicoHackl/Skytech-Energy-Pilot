@@ -59,7 +59,12 @@ class DeviceFeatures:
     energiebedarf_kwh: float | None = None
     fremdwaerme_tage: tuple[FremdwaermeTag, ...] = ()
     fremdwaerme_mittel_kwh: float | None = None
+    waermeverlust_kwh_pro_tag: float | None = None
     deckung_tage: float | None = None
+    solarthermie_proxy_kwh: float | None = None
+    solarthermie_proxy_datenqualitaet: str = "unbekannt"
+    reserve_nach_horizont_kwh: float | None = None
+    prognose_horizont_h: int | None = None
     fehlt: tuple[str, ...] = ()
     hinweise: tuple[str, ...] = field(default_factory=tuple)
 
@@ -102,6 +107,10 @@ def build_device_features(
     *,
     strom_quellen: tuple[str, ...] = (),
     wolken_groesse: str = "wolken",
+    pv_groesse: str = "pv_power",
+    pv_prognose_kwh: float | None = None,
+    wetter_verfuegbar: bool = False,
+    prognose_horizont_h: int = 24,
 ) -> DeviceFeatures:
     """Bilanz-Merkmale eines Speichergeräts aus Kennwerten, Ist-Zustand und Rückblick.
 
@@ -123,36 +132,80 @@ def build_device_features(
     if volumen is not None and ist is not None and speicher.ziel_c is not None:
         bedarf = round(max(0.0, water_energy_kwh(volumen, speicher.ziel_c - ist)), 2)
 
-    # Fremdwärme: nur Tage ohne elektrischen Eintrag zählen als Messung.
+    # Nicht-elektrische Nettobilanz: nur Tage mit **belegter** elektrischer Energie zählen.
+    # Ohne Quelle oder ohne Tageswert kann der Heizstabeintrag nicht herausgerechnet werden.
     tage: list[FremdwaermeTag] = []
-    for eintrag in rueckblick:
-        delta = _day_value(eintrag, HOT_WATER_ROLE, "delta")
-        if delta is None:
-            continue
-        elektrisch = _electric_kwh(eintrag, strom_quellen)
-        if elektrisch is not None and elektrisch > ELEKTRISCH_SCHWELLE_KWH:
-            continue
-        tage.append(
-            FremdwaermeTag(
-                tag=str(eintrag.get("tag")),
-                delta_c=round(delta, 2),
-                energie_kwh=(
-                    round(water_energy_kwh(volumen, delta), 2) if volumen is not None else None
-                ),
-                wolken_mittel=_day_value(eintrag, wolken_groesse, "mittel"),
-                elektrisch_kwh=elektrisch,
+    if strom_quellen:
+        for eintrag in rueckblick:
+            delta = _day_value(eintrag, HOT_WATER_ROLE, "delta")
+            elektrisch = _electric_kwh(eintrag, strom_quellen)
+            if delta is None or elektrisch is None:
+                continue
+            if elektrisch > ELEKTRISCH_SCHWELLE_KWH:
+                continue
+            tage.append(
+                FremdwaermeTag(
+                    tag=str(eintrag.get("tag")),
+                    delta_c=round(delta, 2),
+                    energie_kwh=(
+                        round(water_energy_kwh(volumen, delta), 2)
+                        if volumen is not None
+                        else None
+                    ),
+                    wolken_mittel=_day_value(eintrag, wolken_groesse, "mittel"),
+                    elektrisch_kwh=elektrisch,
+                )
             )
-        )
     if not strom_quellen:
         hinweise.append(
             "Für dieses Gerät ist keine elektrische Energiegröße im Rückblick hinterlegt — die "
             "Fremdwärme-Tage konnten nicht gegen den Heizbetrieb geprüft werden."
+        )
+    elif rueckblick and not tage:
+        hinweise.append(
+            "Für keinen Rückblicktag waren Temperatur und elektrischer Eintrag gemeinsam "
+            "belastbar; die nicht-elektrische thermische Nettobilanz bleibt unbekannt."
         )
 
     mittel = None
     energien = [t.energie_kwh for t in tage if t.energie_kwh is not None]
     if energien:
         mittel = round(sum(energien) / len(energien), 2)
+    verluste = [abs(energie) for energie in energien if energie < 0]
+    waermeverlust = (
+        round(sum(verluste) / len(verluste), 2)
+        if verluste
+        else (0.0 if energien else None)
+    )
+
+    # Solarthermie-Proxy: Verhältnis aus bereinigter positiver Wärmebilanz und gemessenem
+    # PV-Tagesertrag auf die PV-Prognose übertragen. Wetter muss zusätzlich vorliegen; damit ist
+    # das Ergebnis ausdrücklich eine korrelierte Schätzung und kein gemessener Kollektorertrag.
+    verhaeltnisse: list[float] = []
+    tage_by_name = {str(tag.get("tag")): tag for tag in rueckblick}
+    for tag in tage:
+        pv_kwh = _day_value(tage_by_name.get(tag.tag, {}), pv_groesse, "energie_kwh")
+        if tag.energie_kwh is not None and tag.energie_kwh > 0 and pv_kwh and pv_kwh > 0:
+            verhaeltnisse.append(tag.energie_kwh / pv_kwh)
+    proxy = None
+    qualitaet = "unbekannt"
+    if verhaeltnisse and pv_prognose_kwh is not None and wetter_verfuegbar:
+        proxy = round(max(0.0, sum(verhaeltnisse) / len(verhaeltnisse) * pv_prognose_kwh), 2)
+        qualitaet = "mittel" if len(verhaeltnisse) >= 3 else "niedrig"
+    elif tage:
+        qualitaet = "niedrig"
+
+    # Erwartete Komfortreserve am Ende des Planungshorizonts. Der thermische Verlust stammt
+    # ausschließlich aus elektrisch bereinigten Tagen; der erwartete Gewinn aus dem explizit
+    # gekennzeichneten Proxy. Fehlt dessen Prognosebasis, bleibt auch die Zukunftsbilanz
+    # unbekannt, statt einen vermeintlichen Nullertrag zu erfinden.
+    reserve_nach_horizont = None
+    if reserve is not None and waermeverlust is not None and proxy is not None:
+        horizon_tage = max(0.0, float(prognose_horizont_h) / 24.0)
+        reserve_nach_horizont = round(
+            reserve - waermeverlust * horizon_tage + proxy,
+            2,
+        )
 
     # Deckung: nur sinnvoll, wenn der Speicher ohne Strom tatsächlich verliert.
     deckung = None
@@ -182,7 +235,12 @@ def build_device_features(
         energiebedarf_kwh=bedarf,
         fremdwaerme_tage=tuple(tage),
         fremdwaerme_mittel_kwh=mittel,
+        waermeverlust_kwh_pro_tag=waermeverlust,
         deckung_tage=deckung,
+        solarthermie_proxy_kwh=proxy,
+        solarthermie_proxy_datenqualitaet=qualitaet,
+        reserve_nach_horizont_kwh=reserve_nach_horizont,
+        prognose_horizont_h=prognose_horizont_h,
         fehlt=tuple(dict.fromkeys(fehlt)),
         hinweise=tuple(hinweise),
     )

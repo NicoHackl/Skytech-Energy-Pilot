@@ -23,6 +23,7 @@ KI-Ausgabe ist als Ansatz verworfen (D-060); Stabilität entsteht im Aufruf, nic
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -46,6 +47,13 @@ _PROTECTED_MIN_KEYS = (
 # (10 = höchste). Gilt für alle Prio-Geräte; die Batterie hat keine Priorität (D-037).
 _PRIO_KEY = "prio_vorschlag"
 _PRIO_STEP = 10
+
+_GRID_REASON_RE = re.compile(r"netzbezug|strombezug|bezug\s+aus\s+dem\s+netz", re.IGNORECASE)
+_REDUCTION_RE = re.compile(r"reduzier|vermeid|minimier|senk", re.IGNORECASE)
+_TOO_HOT_RE = re.compile(
+    r"zu\s+hei(?:ß|ss)|überhitz|temperatur(?:ober)?grenze\s+(?:ist\s+)?(?:erreicht|überschritten)",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -213,7 +221,7 @@ def _check_device(
     # werden auf den `min`/`max`-Bereich geklemmt (D-048); input_select-Zusätze müssen aus dem
     # Auswahlpool stammen – ein Wert außerhalb wird verworfen (D-049). Bool/Datum/Text laufen durch.
     for ce in constraint.extras:
-        if not ce.extra.ai_suggestion:
+        if not ce.extra.can_suggest:
             continue
         field = ce.extra.plan_field
         if ce.kind == "number":
@@ -222,6 +230,126 @@ def _check_device(
             if entry[field] not in ce.options:
                 clamped.append(f"{name}.{field}: {entry[field]!r} nicht im Wertepool -> entfernt")
                 del entry[field]
+
+
+def _state_number(context: dict | None, role: str) -> float | None:
+    """Numerischer Kontextwert einer Messrolle, ohne unbekannt als null umzudeuten."""
+    for item in (context or {}).get("state", []):
+        if not isinstance(item, dict) or item.get("role") != role or item.get("veraltet"):
+            continue
+        for key in ("latest", "value"):
+            value = item.get(key)
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                return float(value)
+    return None
+
+
+def _thermal_feature(context: dict | None, name: str) -> dict:
+    for item in (((context or {}).get("merkmale") or {}).get("geraete") or []):
+        if isinstance(item, dict) and item.get("name") == name:
+            return item
+    return {}
+
+
+def _limit_temperature(constraint: DeviceConstraint) -> float | None:
+    values = [
+        float(extra.value)
+        for extra in constraint.extras
+        if extra.extra.rolle == "grenze"
+        and isinstance(extra.value, int | float)
+        and not isinstance(extra.value, bool)
+        and "temperatur" in (
+            f"{extra.extra.read_entity_id} {extra.extra.display_label}"
+        ).lower()
+    ]
+    return min(values) if values else None
+
+
+def _temperature_claim_supported(
+    constraint: DeviceConstraint, context: dict | None
+) -> bool:
+    """Belegt „zu heiß" durch Istwert oder numerisch prognostizierten Wärmeeintrag."""
+    current = _state_number(context, "hot_water_temp")
+    if current is None:
+        return False
+    feature = _thermal_feature(context, constraint.name)
+    target = feature.get("ziel_c")
+    limit = _limit_temperature(constraint)
+    thresholds = [
+        float(value)
+        for value in (target, limit)
+        if isinstance(value, int | float) and not isinstance(value, bool)
+    ]
+    if not thresholds:
+        return False
+    threshold = min(thresholds)
+    if current >= threshold:
+        return True
+    proxy = feature.get("solarthermie_proxy_kwh")
+    volume = feature.get("volumen_liter")
+    if (
+        isinstance(proxy, int | float)
+        and not isinstance(proxy, bool)
+        and isinstance(volume, int | float)
+        and not isinstance(volume, bool)
+        and volume > 0
+    ):
+        predicted_delta = float(proxy) * 3600.0 / (float(volume) * 4.182)
+        return current + predicted_delta >= threshold
+    return False
+
+
+def _check_semantics(
+    entry: dict,
+    constraint: DeviceConstraint,
+    context: dict | None,
+    errors: list[str],
+) -> None:
+    """Blockiert lokal widersprüchliche Kausalität vor jeder Veröffentlichung."""
+    reason = str(entry.get("begruendung") or "")
+    factors = entry.get("entscheidungsfaktoren") or []
+    if (
+        constraint.control_policy == "pv_surplus_only"
+        and entry.get("freigabe_vorschlag") is False
+        and _GRID_REASON_RE.search(reason)
+        and _REDUCTION_RE.search(reason)
+    ):
+        errors.append(
+            f"{constraint.name}: Netzbezug ist kein zulässiger Abschaltgrund; "
+            "HEMS begrenzt bereits auf PV-Überschuss"
+        )
+    if _TOO_HOT_RE.search(reason) and not _temperature_claim_supported(constraint, context):
+        errors.append(
+            f"{constraint.name}: Temperaturbegründung 'zu heiß' ist numerisch nicht belegt"
+        )
+    if "solarthermie_proxy" in factors:
+        feature = _thermal_feature(context, constraint.name)
+        if (
+            feature.get("solarthermie_proxy_datenqualitaet") == "unbekannt"
+            or feature.get("solarthermie_proxy_kwh") is None
+        ):
+            errors.append(
+                f"{constraint.name}: Solarthermie-Begründung ohne belastbaren Proxy verworfen"
+            )
+    feature = _thermal_feature(context, constraint.name)
+    reserve_after = feature.get("reserve_nach_horizont_kwh")
+    quality = feature.get("solarthermie_proxy_datenqualitaet")
+    if (
+        quality in {"niedrig", "mittel"}
+        and isinstance(reserve_after, int | float)
+        and not isinstance(reserve_after, bool)
+    ):
+        enabled = entry.get("freigabe_vorschlag")
+        if float(reserve_after) >= 0 and enabled is True:
+            errors.append(
+                f"{constraint.name}: erwartete Komfortreserve bleibt über den Horizont "
+                "ausreichend; elektrische Freigabe ist widersprüchlich"
+            )
+        elif float(reserve_after) < 0 and enabled is False:
+            errors.append(
+                f"{constraint.name}: Komfortreserve fällt im Planungshorizont unter null; "
+                "für vorhandenen PV-Überschuss muss das Gerät freigegeben bleiben"
+            )
 
 
 def _normalize_priorities(
@@ -372,6 +500,7 @@ def validate(
             errors.append(f"{entry['name']}: unbekanntes Gerät (nicht in den erkannten Geräten)")
             continue
         _check_device(entry, constraint, errors, clamped)
+        _check_semantics(entry, constraint, context, errors)
 
     # Stufe 2b: Prioritäten geräteübergreifend auf die strikte 10er-Rangfolge bringen.
     _normalize_priorities(normalized["devices"], by_name, clamped)

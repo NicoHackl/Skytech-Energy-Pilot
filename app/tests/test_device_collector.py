@@ -4,7 +4,7 @@ import pytest
 
 from energy_pilot.control_mode import HA_GLOBAL_MODE
 from energy_pilot.device_collector import DeviceCollector, parse_bool, parse_by_kind, parse_text
-from energy_pilot.devices import CONTROLLABLE, Device, DeviceExtra
+from energy_pilot.devices import CONTROLLABLE, Device, DeviceExtra, HEMSField
 
 
 class _FakeHAClient:
@@ -74,6 +74,37 @@ async def test_collect_reads_device_values():
     read = collector.last_values["heizstab"]["extra_heizstab_max_temperatur"]
     assert read["value"] == 60.0 and read["source"] == "live"
     assert collector.discovery_source == "hems"
+
+
+@pytest.mark.asyncio
+async def test_collect_reads_global_hems_userinputs_once():
+    collector = DeviceCollector(
+        _FakeHAClient(
+            {
+                "input_number.ems_globaler_puffer_w": "250",
+                HA_GLOBAL_MODE: "manuell",
+                "input_select.ems_heizstab_modus": "manuell",
+            }
+        )
+    )
+    collector.set_devices([], source="hems")
+    collector.set_global_fields(
+        (
+            HEMSField(
+                "globaler_puffer_w",
+                "Globaler Puffer",
+                "number",
+                "input_number.ems_globaler_puffer_w",
+                "W",
+                "user_preference",
+                True,
+            ),
+        )
+    )
+
+    await collector.collect_once(now=1.0)
+
+    assert collector.global_values["globaler_puffer_w"]["value"] == 250.0
 
 
 @pytest.mark.asyncio

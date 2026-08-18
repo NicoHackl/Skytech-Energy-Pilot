@@ -116,9 +116,10 @@ def test_seed_defaults_seeds_heizstab_once():
     extras = load_extras(db)
     assert "heizstab" in extras
     seeded = extras["heizstab"][0]
-    assert seeded.read_entity_id == "input_number.ep_heizstab_max_temperatur"
-    assert seeded.ai_suggestion is True
-    assert seeded.suggestion_entity_id == "sensor.ep_heizstab_max_temperatur_vorschlag"
+    assert seeded.read_entity_id == "input_number.e3dc_heizstab_maxtemperatur"
+    assert seeded.ai_suggestion is False
+    assert seeded.can_suggest is False
+    assert seeded.suggestion_entity_id == "sensor.ep_e3dc_heizstab_maxtemperatur_vorschlag"
     # Zweiter Aufruf seedet nicht erneut (Marker gesetzt).
     assert seed_defaults(db, devices) is False
 
@@ -128,7 +129,7 @@ def test_seed_defaults_not_reseeded_after_user_deletes():
     devices = [_dev("heizstab")]
     seed_defaults(db, devices)
     delete_extra(
-        db, device_name="heizstab", read_entity_id="input_number.ep_heizstab_max_temperatur"
+        db, device_name="heizstab", read_entity_id="input_number.e3dc_heizstab_maxtemperatur"
     )
     assert seed_defaults(db, devices) is False  # Marker verhindert Wiederkehr
     assert load_extras(db) == {}

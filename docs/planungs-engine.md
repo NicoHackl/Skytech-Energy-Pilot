@@ -2,8 +2,8 @@
 
 ## Ablauf eines Planungslaufs (`planner.py: Planner.run()`)
 
-Ausgelöst **nur manuell** über `POST /api/plan/run` (siehe
-[bekannte-luecken.md](bekannte-luecken.md#kein-automatischer-scheduler)):
+Ausgelöst durch den internen Scheduler nach HEMS-Discovery/erstem Snapshot oder manuell über
+`POST /api/plan/run`. Beide Wege sind durch denselben Planner-Lock serialisiert:
 
 1. Snapshot aller Collector (Mess-Rollen, Geräte, Prognose, Wetter).
 2. `build_constraints()` — harte Grenzen je Gerät ([geraete.md](geraete.md)); `valid_from`/
@@ -30,14 +30,16 @@ Ausgelöst **nur manuell** über `POST /api/plan/run` (siehe
 8. `provider.generate(data_block, schema, system=instruction)` — KI-Aufruf, ratenlimitiert.
    Meldet der Provider `sampling_dropped`, wird das als WARNING geloggt und in `ai_calls`
    vermerkt (D-063).
-9. `CandidatePlan` zusammenbauen — **EP selbst** setzt `plan_id` (`uuid4().hex[:12]`), `valid_from`, `valid_until` (= Rasterzeit + `planning_interval_min`); das Modell liefert nur Geräte-Vorschläge samt `begruendung`/`angewandte_regeln`, die Konfidenz-**Teilnoten**, `unsicherheiten`, `reasoning`, `warnings`.
+9. `CandidatePlan` zusammenbauen — **EP selbst** setzt `plan_id` (`uuid4().hex[:12]`), `valid_from`, `valid_until` (= Rasterzeit + `planning_interval_min`); das Modell liefert nur Geräte-Vorschläge samt `begruendung`, `angewandte_regeln` und maschinenprüfbaren `entscheidungsfaktoren`, die Konfidenz-**Teilnoten**, `unsicherheiten`, `reasoning`, `warnings`.
 10. **Reparatur-Pass:** fehlen Pflichtfelder (`missing_suggestion_fields()`) und `ai_repair_missing` ist aktiv → ein gezielter Nachforder-Aufruf mit `build_repair_prompt()`; der reparierte Plan wird nur übernommen, wenn er die Lückenzahl **strikt** verringert.
 11. `validate(plan, constraints, now=…, context=…, min_confidence=…)` — siehe
     [sicherheit-datenschutz.md](sicherheit-datenschutz.md).
 12. Speichern in Tabelle `plans` (inkl. `prompt`, `context_json`, `response_json`,
     `context_hash`, `publish_blocked` — D-063) + Audit-Log (`plan_created`/`plan_rejected`).
 13. Bei gültigem Plan, **ohne** `publish_blocked` und mit `publish_suggestions: true` →
-    `suggestion_publisher.publish_suggestions()`. Ein am Konfidenz-Gate gescheiterter Plan
+    `suggestion_publisher.publish_suggestions()`: alten Commit ungültig machen, alle
+    Vorschlagssensoren schreiben, danach `sensor.ep_plan_commit` als atomaren Sichtbarkeitspunkt.
+    Ein am Konfidenz-Gate gescheiterter Plan
     liefert stattdessen ein `published`-Ergebnis mit Begründung (D-064).
 
 Token-Zähler (`ai_call.tokens_in/out`) summieren Klassifizierungs- **und** Plan-Aufruf
@@ -215,10 +217,11 @@ Zwei Fallen, die beide echte Rechenfehler waren und als Regressionstest festgeha
 Aufwandsgrenze: ein als `vollstaendig` markierter Tag wird **genau einmal** geholt. Allein ein
 Speicherfühler liefert rund 16.000 Zeilen die Woche.
 
-Quellen ohne neue Konfiguration (`sources_from`): Mess-Rollen aus dem Mapping plus die
-user-gepflegten **Zusatzwerte** je Gerät. Die `ems_*`-Standardfelder bleiben draußen —
-`min_technisch`/`max_technisch` tragen die Einheit W, sind aber Grenzwerte; als Leistung
-integriert ergäbe ein 3500-W-Limit 84 kWh am Tag und jeder Tag sähe wie „geheizt" aus.
+Quellen ohne neue Konfiguration (`sources_from`): Mess-Rollen aus dem Mapping plus
+`actual_power_entity` aus dem HEMS-Vertrag. Bei Binärlasten wird die Energie aus dem Verlauf von
+`switch_entity` × `ems_*_leistung_w` abgeleitet. User-Zusatzwerte können ergänzen. Technische
+Grenzen bleiben draußen — als Leistung integriert ergäbe ein 3500-W-Limit 84 kWh am Tag und
+jeder Tag sähe wie „geheizt" aus.
 
 ### `merkmale` — gerechnete Größen (D-066)
 
@@ -229,8 +232,10 @@ integriert ergäbe ein 3500-W-Limit 84 kWh am Tag und jeder Tag sähe wie „geh
 |---|---|
 | `reserve_kwh` | `m·c·ΔT` von Ist bis Komfortminimum |
 | `energiebedarf_kwh` | `m·c·ΔT` von Ist bis Zielwert (nie negativ) |
-| `fremdwaerme_tage` | je Tag die Speicheränderung **nur an Tagen mit ≈ 0 kWh elektrisch** — an einem Tag mit Heizbetrieb lässt sich nicht trennen, woher die Wärme kam |
-| `fremdwaerme_mittel_kwh` | Mittel daraus |
+| `bereinigte_nettobilanz_tage` | Speicheränderung nur an Tagen mit belegtem elektrischem Eintrag ≤ Rauschschwelle; fehlt die elektrische Quelle oder der Tageswert, bleibt der Tag unbekannt |
+| `nicht_elektrische_thermische_nettobilanz_kwh_pro_tag` | Mittel daraus; ausdrücklich kein gemessener Solarthermieertrag |
+| `solarthermie_proxy_kwh` / `solarthermie_proxy_datenqualitaet` | Prognose aus bereinigter Wärme-/PV-Historie, PV-Prognose und verfügbarem Wetter samt Qualitätsstufe |
+| `waermeverlust_kwh_pro_tag` / `reserve_nach_horizont_kwh` | Bereinigter beobachteter Verlust sowie verbleibende Komfortreserve nach Verlust und erwartetem Proxy-Eintrag im Planungshorizont |
 | `deckung_tage` | `reserve_kwh` geteilt durch den täglichen Verlust — nur wenn der Speicher ohne Strom tatsächlich verliert |
 
 Systemweit: `grundlast_w` als Mittel der Tagesminima des Hausverbrauchs und daraus der

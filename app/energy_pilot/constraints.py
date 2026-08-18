@@ -43,6 +43,17 @@ class ConstraintExtra:
 
 
 @dataclass(frozen=True)
+class PlanningValue:
+    """Ein vom HEMS freigegebener, planungsrelevanter Vertragswert samt Semantik."""
+
+    key: str
+    label: str
+    role: str
+    value: object | None
+    unit: str = ""
+
+
+@dataclass(frozen=True)
 class DeviceConstraint:
     """Die harten Grenzen eines Geräts aus EP-Sicht (read-only abgeleitet)."""
 
@@ -60,6 +71,9 @@ class DeviceConstraint:
     extras: tuple[ConstraintExtra, ...] = ()  # user-gepflegte Zusatz-Entitäten (D-047)
     ai_prompt: str = ""  # user-gepflegte KI-Beschreibung des Geräts (D-051), advisorisch
     ai_regeln: str = ""  # user-gepflegte Freitext-Betriebsregeln des Geräts (D-060)
+    control_policy: str = "unknown"
+    allowed_modes: tuple[str, ...] = ()
+    planning_values: tuple[PlanningValue, ...] = ()
 
 
 def _entry(readings: dict, name: str, key: str) -> object:
@@ -146,6 +160,17 @@ def build_constraints(devices: list[Device], readings: dict) -> list[DeviceConst
                 )
             )
         extras = tuple(extras_list)
+        planning_values = tuple(
+            PlanningValue(
+                key=field.key,
+                label=field.label,
+                role=field.role,
+                value=_entry(readings, device.name, field.key),
+                unit=field.unit,
+            )
+            for field in device.hems_fields
+            if field.planning_relevant
+        )
 
         result.append(
             DeviceConstraint(
@@ -163,6 +188,9 @@ def build_constraints(devices: list[Device], readings: dict) -> list[DeviceConst
                 extras=extras,
                 ai_prompt=device.ai_prompt,
                 ai_regeln=device.ai_regeln,
+                control_policy=device.control_policy,
+                allowed_modes=device.allowed_modes,
+                planning_values=planning_values,
             )
         )
     return result

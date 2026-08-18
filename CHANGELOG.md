@@ -8,6 +8,37 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Hinzugefügt
+- **HEMS-Vertrag, stündlicher Scheduler und atomare Planübergabe (D-067, 0.0.64 → 0.0.65).**
+  Energy Pilot übernimmt Geräteklasse, Modi, Regelprinzip, semantische `ems_*`-Felder,
+  Istleistung/Schaltzustand und HEMS-Anforderung direkt aus
+  `/api/device_controls_schema`. Globale und gerätespezifische Userinputs fließen automatisch
+  ein; Rampen-, Phasen- und Regeldetails bleiben Diagnosewerte. Ein interner Scheduler startet
+  nach HEMS-Discovery und erstem Haus-/Geräte-Snapshot, plant danach gemäß
+  `planning_interval_min` und verhindert parallele manuelle/automatische Läufe. Nach Neustart
+  oder erkannter HA-Wiederverbindung wird ein noch gültiger Plan erneut publiziert. Vorschläge
+  tragen `plan_id` und Gültigkeit;
+  `sensor.ep_plan_commit` wird erst nach allen Vorschlagswerten als atomarer Commit geschrieben.
+- **Maschinenprüfbare Entscheidungsfaktoren und semantischer Validator.** Je Gerät liefert die
+  KI `entscheidungsfaktoren`. Der lokale Validator blockiert insbesondere „Netzbezug
+  reduzieren" als Abschaltgrund für bereits überschussbegrenzte HEMS-Verbraucher, unbelegte
+  „zu heiß"-Aussagen sowie zur Wärmebilanz widersprüchliche Heizstabfreigaben.
+
+### Geändert
+- **Solarthermie bleibt ein gekennzeichneter Proxy.** Die fachliche Größe heißt jetzt
+  „nicht-elektrische thermische Nettobilanz". Sie wird nur berechnet, wenn der elektrische
+  Eintrag aus echter Istleistung oder bei Binärlasten aus Schaltzeit × Nennleistung sicher
+  herausgerechnet werden kann. PV-Rückblick, PV-Prognose und Wetter ergeben eine separate
+  Proxy-Schätzung samt Datenqualität; fehlen elektrische Quelle, Speichervolumen oder
+  Komfortminimum, bleiben abhängige Werte unbekannt und die Datenlage sinkt. Der Validator
+  entscheidet sonnig/trüb anhand der prognostizierten Komfortreserve nach Verlust und
+  Proxy-Eintrag im Planungshorizont, nicht anhand der bloßen Zieltemperatur-Lücke.
+- **Temperaturgrenzen sind strikt read-only.** Werte mit Rolle `grenze` erzeugen keine
+  KI-Vorschläge und werden nie ins Original geschrieben. Migration 17 deaktiviert alte
+  widersprüchliche Flags und übernimmt den Heizstab-Default auf
+  `input_number.e3dc_heizstab_maxtemperatur`; die strategische Zieltemperatur bleibt ein
+  interner Speicher-Kennwert.
+
 ### Entfernt
 - **Mess-Rolle „Netzleistung" (`entity_grid_power`) aus der Addon-Konfiguration entfernt
   (0.0.63 → 0.0.64).** `entity_grid_import` (Netzbezug) und `entity_grid_export` (Einspeisung)

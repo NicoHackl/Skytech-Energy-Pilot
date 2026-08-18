@@ -19,7 +19,7 @@ import sqlite3
 from collections.abc import Iterable
 
 from energy_pilot.control_mode import HA_GLOBAL_MODE, device_mode_entity
-from energy_pilot.devices import Device, read_fields
+from energy_pilot.devices import Device, HEMSField, read_fields
 from energy_pilot.entity_map import EntityMapping
 from energy_pilot.forecast import PVOrientation
 from energy_pilot.logging_setup import log
@@ -36,6 +36,7 @@ def collect_entity_ids(
     mapping: dict[str, EntityMapping] | None = None,
     orientations: Iterable[PVOrientation] | None = None,
     devices: Iterable[Device] | None = None,
+    global_fields: Iterable[HEMSField] | None = None,
 ) -> dict[str, str]:
     """Leitet die freigegebenen Entity-IDs aus den (teils gesetzten) Quellen ab.
 
@@ -57,6 +58,8 @@ def collect_entity_ids(
         # Der globale Modus wird nur zusammen mit Geräten gelesen (ohne Geräte entscheidet er
         # nichts) – deshalb steht er hier und nicht bedingungslos im Register.
         entities.setdefault(HA_GLOBAL_MODE, SOURCE_MODE)
+    for field in global_fields or ():
+        entities.setdefault(field.entity_id, SOURCE_DEVICE)
     for orientation in orientations or ():
         for entity_id in orientation.entities.values():
             if entity_id:

@@ -12,6 +12,7 @@ blockiert nie (eiserne Regel 13).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -180,6 +181,7 @@ class Planner:
         self.weather_collector = weather_collector
         self.history_collector = history_collector
         self.logger = logger
+        self._run_lock = asyncio.Lock()
 
     @property
     def model_name(self) -> str:
@@ -188,6 +190,24 @@ class Planner:
         return self.provider.model if self.provider is not None else ""
 
     async def run(self, *, now: datetime | None = None) -> PlanRunResult:
+        """Serialisiert manuelle und automatische Läufe über denselben lokalen Lock."""
+        if self._run_lock.locked():
+            return PlanRunResult(
+                ok=False,
+                plan=None,
+                validation={
+                    "ok": False,
+                    "errors": ["Planung läuft bereits"],
+                    "clamped": [],
+                },
+                ai_call={},
+                context=None,
+                error="planning_in_progress",
+            )
+        async with self._run_lock:
+            return await self._run_once(now=now)
+
+    async def _run_once(self, *, now: datetime | None = None) -> PlanRunResult:
         """Führt einen kompletten Planungslauf aus (siehe Modul-Docstring)."""
         now = now or datetime.now(UTC)
 
@@ -219,7 +239,9 @@ class Planner:
         global_regeln = get_global_regeln(self.db)
         # Rückblick + gerechnete Merkmale (D-065/D-066): die Grundlage, auf der „reicht es die
         # nächsten Tage?" eine Bilanz statt einer Vermutung ist.
-        rueckblick, merkmale, system_merkmale = self._bilanz(state, forecast, devices)
+        rueckblick, merkmale, system_merkmale = self._bilanz(
+            state, forecast, devices, weather=weather
+        )
         run_id = uuid4().hex[:12]
 
         if self.provider is None:
@@ -288,6 +310,7 @@ class Planner:
             rueckblick=rueckblick,
             features=merkmale,
             system_features=system_merkmale,
+            hems_global=self._hems_global_context(),
         )
 
         # Editierbare Instruktion aus der EP-Oberfläche (sonst Default). Sie geht als
@@ -488,6 +511,7 @@ class Planner:
             rueckblick=rueckblick,
             features=features,
             system_features=system_features,
+            hems_global=self._hems_global_context(),
         )
         classification_template = get_setting(self.db, CLASSIFICATION_PROMPT_KEY)
         classification_schema = build_classification_response_schema(ziele)
@@ -555,7 +579,9 @@ class Planner:
         weather_detail = weather_config_from_options(self.config.values).llm_detail
         run_id = uuid4().hex[:12]
 
-        rueckblick, merkmale, system_merkmale = self._bilanz(state, forecast, devices)
+        rueckblick, merkmale, system_merkmale = self._bilanz(
+            state, forecast, devices, weather=weather
+        )
         outcome = await self._run_classification_call(
             now=now, state=state, forecast=forecast, weather=weather, constraints=constraints,
             valid_from=valid_from, valid_until=valid_until, weather_detail=weather_detail,
@@ -610,7 +636,9 @@ class Planner:
             },
         }
 
-    def _bilanz(self, state: dict, forecast: dict, devices: list) -> tuple[list, list, dict]:
+    def _bilanz(
+        self, state: dict, forecast: dict, devices: list, *, weather: dict | None = None
+    ) -> tuple[list, list, dict]:
         """Rückblick und gerechnete Merkmale für den Kontext (D-065/D-066).
 
         Liefert `(rueckblick, geraete_merkmale, system_merkmale)`. Merkmale entstehen nur für
@@ -621,6 +649,15 @@ class Planner:
         rueckblick = hc.snapshot() if hc is not None else []
         quellen = tuple(getattr(hc, "sources", ())) if hc is not None else ()
         speicher = load_speicher(self.db)  # einmal lesen, nicht je Gerät
+        morgen = next(
+            (
+                value.get("total")
+                for value in forecast.get("values", [])
+                if value.get("key") == "tomorrow"
+                and isinstance(value.get("total"), int | float)
+            ),
+            None,
+        )
         merkmale = [
             build_device_features(
                 device.name,
@@ -628,12 +665,44 @@ class Planner:
                 state,
                 rueckblick,
                 strom_quellen=energy_sources_for(device.name, quellen),
+                pv_prognose_kwh=float(morgen) if morgen is not None else None,
+                wetter_verfuegbar=self._weather_available(weather),
+                prognose_horizont_h=int(self.config.forecast_horizon_h),
             )
             for device in devices
             if device.name in speicher
         ]
         system = build_system_features(forecast, rueckblick) if rueckblick else {}
         return rueckblick, merkmale, system
+
+    @staticmethod
+    def _weather_available(weather: dict | None) -> bool:
+        """True nur bei tatsächlich vorliegenden Prognosewerten, nicht bei leerer Hülle."""
+        if not isinstance(weather, dict):
+            return False
+        if ((weather.get("forecast") or {}).get("slots")):
+            return True
+        return any(
+            isinstance(timeline, dict) and bool(timeline.get("slots"))
+            for timeline in (weather.get("timelines") or {}).values()
+        )
+
+    def _hems_global_context(self) -> list[dict]:
+        """Verdichtet ausschließlich planungsrelevante globale HEMS-Userinputs."""
+        dc = self.device_collector
+        fields = getattr(dc, "global_fields", ()) if dc is not None else ()
+        values = getattr(dc, "global_values", {}) if dc is not None else {}
+        return [
+            {
+                "key": field.key,
+                "label": field.label,
+                "rolle": field.role,
+                "wert": (values.get(field.key) or {}).get("value"),
+                "einheit": field.unit or None,
+            }
+            for field in fields
+            if field.planning_relevant
+        ]
 
     def _min_confidence(self) -> int | None:
         """Schwelle des Konfidenz-Gates (D-064); 0 oder fehlend => kein Gate."""
@@ -711,7 +780,7 @@ class Planner:
             context_hash=ctx_hash,
         )
 
-    async def publish_latest(self) -> dict:
+    async def publish_latest(self, *, now: datetime | None = None) -> dict:
         """Schreibt den zuletzt **gültigen** Plan erneut als HA-Sensoren (manueller Button).
 
         Liefert das Schreibergebnis (`ok`/`written`/`failed`/`reason`); ohne gültigen Plan
@@ -722,6 +791,14 @@ class Planner:
             return {
                 "ok": False, "written": [], "failed": [],
                 "reason": "kein gültiger Plan vorhanden",
+            }
+        end = _parse_iso((latest.get("plan") or {}).get("valid_until"))
+        if end is None or end <= (now or datetime.now(UTC)):
+            return {
+                "ok": False,
+                "written": [],
+                "failed": [],
+                "reason": "letzter Plan ist abgelaufen",
             }
         dc = self.device_collector
         devices = getattr(dc, "devices", []) if dc is not None else []
@@ -778,12 +855,18 @@ class Planner:
                 if key != "name" and is_extra_field(key) and value is not None
             }
             regeln = entry.get("angewandte_regeln")
+            faktoren = entry.get("entscheidungsfaktoren")
             suggestions.append(
                 DeviceSuggestion(
                     name=name,
                     extras=extras,
                     begruendung=str(entry.get("begruendung") or ""),
                     angewandte_regeln=[str(r) for r in regeln] if isinstance(regeln, list) else [],
+                    entscheidungsfaktoren=(
+                        [str(f) for f in faktoren]
+                        if isinstance(faktoren, list) and faktoren
+                        else ["unzureichende_daten"]
+                    ),
                     **fields,
                 )
             )

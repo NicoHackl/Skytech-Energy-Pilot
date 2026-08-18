@@ -57,7 +57,7 @@ HA-Sensoren/Zonen ─┐
 HEMS /api/device_controls_schema ─┤
 PV-/Wetter-Sensoren ─┴─► Collector-Loop (alle collect_interval_s) ──► SQLite (Aggregation 1/15/60 min)
                                                                           │
-                                                     POST /api/plan/run (manuell ausgelöst!)
+                                  interner Scheduler / POST /api/plan/run (serialisiert)
                                                                           ▼
                                           Constraints + Objectives + Kontext bauen (Datenminimum)
                                                                           ▼
@@ -67,18 +67,17 @@ PV-/Wetter-Sensoren ─┴─► Collector-Loop (alle collect_interval_s) ──
                                                                           ▼
                                         gültiger/geklemmter Plan → SQLite + Audit-Log
                                                                           ▼
-                                     sensor.ep_*_vorschlag nach HA schreiben (publish_suggestions)
+                     sensor.ep_*_vorschlag, danach sensor.ep_plan_commit nach HA schreiben
                                                                           ▼
                      HEMSStatusCollector vergleicht Vorschlag mit HEMS-Ist (unabhängiger Poll-Takt)
                                                                           ▼
                                 sensor.ep_plan_status / sensor.ep_hems_verbindung
 ```
 
-**Wichtig:** Es gibt aktuell **keinen automatischen Planungs-Scheduler**. Ein Plan
-entsteht nur durch manuellen Aufruf von `POST /api/plan/run` (Button im Plan-Tab).
-`planning_interval_min` wird zwar gelesen, aber **nicht** als Takt: es bestimmt allein die
-Plan-Gültigkeitsdauer (`valid_until = now + planning_interval_min`, `planner.py`).
-`plan_update_interval_min` nutzt kein Code-Pfad. Details: [bekannte-luecken.md](bekannte-luecken.md#kein-automatischer-scheduler).
+Der interne Scheduler startet erst nach erfolgreicher HEMS-Discovery und erstem Haus-/Geräte-
+Snapshot. `planning_interval_min` bestimmt Takt und Gültigkeitsdauer. Manuelle und automatische
+Läufe teilen denselben Lock. Ereignisbasierte Zwischenläufe bleiben offen; Details:
+[bekannte-luecken.md](bekannte-luecken.md#ereignisbasierte-nachplanung-fehlt-noch).
 
 ## Externer Zugriff im Hinterkopf behalten (D-013/D-023)
 

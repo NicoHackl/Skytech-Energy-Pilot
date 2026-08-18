@@ -121,7 +121,12 @@ def _condense_state(state: dict) -> list[dict]:
     return out
 
 
-def _data_quality(state_entries: list[dict], devices: list[dict]) -> dict:
+def _data_quality(
+    state_entries: list[dict],
+    devices: list[dict],
+    features: list | None = None,
+    hems_global: list[dict] | None = None,
+) -> dict:
     """Zählt, wie viel des Kontexts tatsächlich mit frischen Werten belegt ist (D-064).
 
     Grundlage der EP-eigenen `datenlage`-Note: Anteil der erwarteten Werte, die frisch und nicht
@@ -139,10 +144,29 @@ def _data_quality(state_entries: list[dict], devices: list[dict]) -> dict:
         else:
             fresh += 1
     for device in devices:
+        for value in device.get("hems_vertrag") or []:
+            total += 1
+            if value.get("wert") is None:
+                missing.append(f"{device.get('name')}.{value.get('key')}")
+            else:
+                fresh += 1
         for extra in device.get("zusatzwerte") or []:
             total += 1
             if extra.get("wert") is None:
                 missing.append(f"{device.get('name')}.{extra.get('entity')}")
+            else:
+                fresh += 1
+    for value in hems_global or []:
+        total += 1
+        if value.get("wert") is None:
+            missing.append(f"global.{value.get('key')}")
+        else:
+            fresh += 1
+    for feature in features or []:
+        for key in ("volumen_liter", "komfort_min_c"):
+            total += 1
+            if getattr(feature, key, None) is None:
+                missing.append(f"{feature.name}.{key}")
             else:
                 fresh += 1
     prozent = 100 if total == 0 else round(fresh * 100 / total)
@@ -565,8 +589,8 @@ def _condense_extra(ce) -> dict:
         "wert": _q_unit(ce.value, ex.unit) if ce.kind == "number" else ce.value,
         "einheit": ex.unit or None,
         "hinweis": ex.ai_hint or None,
-        "suggest": ex.ai_suggestion,
-        "vorschlagsfeld": ex.plan_field if ex.ai_suggestion else None,
+        "suggest": ex.can_suggest,
+        "vorschlagsfeld": ex.plan_field if ex.can_suggest else None,
     }
     if ce.value is None:
         item["veraltet"] = True  # D-064: nicht gelesen -> für Entscheidungen unbrauchbar
@@ -592,6 +616,8 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
         "output_unit": constraint.output_unit,
         "technische_freigabe": constraint.freigabe,
         "allowed_fields": suggestion_keys(constraint),
+        "regelprinzip": constraint.control_policy,
+        "erlaubte_modi": list(constraint.allowed_modes),
     }
     # User-gepflegte Freitext-Beschreibung dieses Geräts (D-051): erklärt der KI dessen
     # Funktion/Besonderheiten. Nur wenn gesetzt, um den Kontext schlank zu halten
@@ -611,6 +637,20 @@ def _condense_constraint(constraint: DeviceConstraint) -> dict:
     else:
         entry["min_leistung"] = constraint.min_power
         entry["max_leistung"] = constraint.max_power
+
+    if constraint.planning_values:
+        entry["hems_vertrag"] = [
+            {
+                "key": value.key,
+                "label": value.label,
+                "rolle": value.role,
+                "wert": value.value,
+                "einheit": value.unit or None,
+            }
+            for value in constraint.planning_values
+        ]
+    if constraint.control_policy == "pv_surplus_only":
+        entry["hems_begrenzt_bereits_auf_pv_ueberschuss"] = True
 
     # User-gepflegte Zusatz-Entitäten (D-047/D-048): Wert + Typ + Grenzen/Format + Freitext.
     # `suggest`/`vorschlagsfeld` sagen der KI, ob/unter welchem Feld sie einen Wert liefert.
@@ -658,13 +698,15 @@ def _condense_features(features: list | None, system: dict | None) -> dict:
         eintrag: dict[str, object] = {"name": merkmal.name}
         for key in (
             "ist_c", "komfort_min_c", "ziel_c", "volumen_liter",
-            "reserve_kwh", "energiebedarf_kwh", "fremdwaerme_mittel_kwh", "deckung_tage",
+            "reserve_kwh", "energiebedarf_kwh", "waermeverlust_kwh_pro_tag",
+            "deckung_tage", "solarthermie_proxy_kwh", "reserve_nach_horizont_kwh",
+            "prognose_horizont_h",
         ):
             wert = getattr(merkmal, key)
             if wert is not None:
                 eintrag[key] = wert
         if merkmal.fremdwaerme_tage:
-            eintrag["fremdwaerme_tage"] = [
+            eintrag["bereinigte_nettobilanz_tage"] = [
                 {
                     "tag": tag.tag,
                     "delta_c": tag.delta_c,
@@ -674,6 +716,13 @@ def _condense_features(features: list | None, system: dict | None) -> dict:
                 }
                 for tag in merkmal.fremdwaerme_tage
             ]
+        if merkmal.fremdwaerme_mittel_kwh is not None:
+            eintrag["nicht_elektrische_thermische_nettobilanz_kwh_pro_tag"] = (
+                merkmal.fremdwaerme_mittel_kwh
+            )
+        eintrag["solarthermie_proxy_datenqualitaet"] = (
+            merkmal.solarthermie_proxy_datenqualitaet
+        )
         if merkmal.fehlt:
             eintrag["fehlt"] = list(merkmal.fehlt)
         if merkmal.hinweise:
@@ -686,8 +735,12 @@ def _condense_features(features: list | None, system: dict | None) -> dict:
     if out:
         out["hinweis"] = (
             "Gerechnete Größen, keine Empfehlung. `reserve_kwh` ist die Energie über dem "
-            "Komfortminimum, `energiebedarf_kwh` die Lücke bis zum Zielwert, `deckung_tage` die "
-            "Zeit, die die Reserve beim beobachteten Verlust ohne Strom trägt. Fehlt ein Wert, "
+            "Komfortminimum, `energiebedarf_kwh` die Lücke bis zum Zielwert und die "
+            "`nicht_elektrische_thermische_nettobilanz_kwh_pro_tag` eine bereinigte "
+            "Proxy-Schätzung, kein gemessener Solarthermieertrag. `deckung_tage` ist die Zeit, "
+            "die die Reserve beim beobachteten Verlust ohne Strom trägt. "
+            "`reserve_nach_horizont_kwh` ist die erwartete Komfortreserve nach Verlusten und "
+            "nicht-elektrischem Proxy-Eintrag im genannten Horizont. Fehlt ein Wert, "
             "steht der Grund in `fehlt` — behandle ihn dann als unbekannt, nicht als 0."
         )
     return out
@@ -734,6 +787,7 @@ def build_context(
     rueckblick: list[dict] | None = None,
     features: list | None = None,
     system_features: dict | None = None,
+    hems_global: list[dict] | None = None,
 ) -> dict:
     """Stellt den verdichteten KI-Kontext zusammen (Datenminimum, eiserne Regel 12).
 
@@ -761,8 +815,10 @@ def build_context(
         "objectives": [
             {"key": o.key, "label": o.label, "weight": o.weight} for o in objectives
         ],
-        "datenlage": _data_quality(state_entries, device_entries),
+        "datenlage": _data_quality(state_entries, device_entries, features, hems_global),
     }
+    if hems_global:
+        context["hems_global"] = hems_global
     if global_regeln.strip():
         context["globale_regeln"] = global_regeln.strip()
     # Rückblick und Merkmale (D-065/D-066): erst damit ist „reicht es die nächsten Tage?" eine
@@ -829,6 +885,7 @@ def build_classification_context(
     rueckblick: list[dict] | None = None,
     features: list | None = None,
     system_features: dict | None = None,
+    hems_global: list[dict] | None = None,
 ) -> dict:
     """Kontext für den vorgelagerten Klassifizierungs-Aufruf (D-055).
 
@@ -844,6 +901,7 @@ def build_classification_context(
         weather=weather, horizon_h=horizon_h, weather_detail=weather_detail,
         now=now, previous_plan=previous_plan, global_regeln=global_regeln,
         rueckblick=rueckblick, features=features, system_features=system_features,
+        hems_global=hems_global,
     )
     del context["objectives"]
     context["ziele"] = [
@@ -874,6 +932,10 @@ DEFAULT_PLANNING_PROMPT = (
     "bekommt KEINE Priorität – schlage für sie nur die geschützte "
     "Mindest-Ladeleistung vor.\n"
     "- Erfinde keine Geräte; verwende exakt die `name`-Werte aus `devices`.\n"
+    "- Bei Geräten mit `regelprinzip=pv_surplus_only` begrenzt HEMS die tatsächliche Leistung "
+    "bereits auf verfügbaren PV-Überschuss. Netzbezug zu reduzieren oder zu vermeiden ist für "
+    "deren Abschaltung deshalb KEIN zulässiger Grund; Netzdaten sind nur Diagnose- und "
+    "Batterieinformation.\n"
     "- Gewichte die weichen Ziele gemäß `objectives` (0–100 %).\n"
     "- Beziehe die Wetterprognose (`weather`) in die Planung ein: bei One Call enthält "
     "`weather.models` je aktiviertem Vorhersagemodell eine Reihe (stündlich/15-Minuten für heute "
@@ -897,6 +959,9 @@ DEFAULT_PLANNING_PROMPT = (
     "- Nenne je Gerät in `angewandte_regeln`, auf welche dieser Regeln du dich stützt, und "
     "begründe deinen Vorschlag in `begruendung` mit der maßgeblichen Messgröße samt Wert. "
     "Greift keine Regel, gib eine leere Liste zurück und sage das in der Begründung.\n"
+    "- Nenne je Gerät in `entscheidungsfaktoren` ausschließlich die maschinenlesbaren Faktoren "
+    "aus dem Antwortschema. Bei fehlender Grundlage muss `unzureichende_daten` enthalten sein; "
+    "behaupte dann keine Solarthermie-Wirkung.\n"
     "- Unterscheide `funktion` (was das Gerät ist) von `regeln` (was der User will).\n\n"
     "Werte richtig lesen:\n"
     "- `now` ist der aktuelle Zeitpunkt. Datumsangaben in deinen Texten als TT.MM.JJJJ, "
@@ -918,17 +983,20 @@ DEFAULT_PLANNING_PROMPT = (
     "Über mehrere Tage bilanzieren, nicht auf Schwellen schauen:\n"
     "- **Ein Messwert allein entscheidet nichts.** Ein Wärmespeicher mit 65 °C braucht keinen "
     "Strom, wenn die nächsten Tage sonnig sind und die Solarthermie liefert — und er braucht "
-    "welchen, wenn die nächsten Tage trüb sind und heute der letzte Überschuss ist. Dieselbe "
-    "Temperatur, zwei entgegengesetzte richtige Antworten. Entscheide deshalb nie an einer "
-    "Schwelle, sondern an der Bilanz.\n"
+    "eine Heizstab-Freigabe, wenn die nächsten Tage trüb sind und heute der letzte "
+    "PV-Überschuss ist. HEMS entscheidet anschließend weiterhin über die reale Leistung und "
+    "bezieht dafür keinen erzwungenen Netzstrom. Dieselbe Temperatur, zwei entgegengesetzte "
+    "richtige Antworten. Entscheide deshalb nie an einer Schwelle, sondern an der Bilanz.\n"
     "- `rueckblick` liefert die gemessenen Tageswerte. Vergleiche dort die Änderung einer "
     "Speichertemperatur (`delta`) mit der elektrischen Tagesenergie desselben Geräts: war die "
     "Energie ~0 und die Temperatur ist gestiegen, hat eine andere Quelle geheizt. Halte das gegen "
     "die Bewölkung des Tages, um die Folgetage abzuschätzen.\n"
     "- `merkmale.geraete` rechnet das für dich: `reserve_kwh` (Energie über dem Komfortminimum), "
-    "`energiebedarf_kwh` (Lücke bis zum Zielwert), `fremdwaerme_mittel_kwh` (beobachteter Gewinn "
-    "ohne Strom) und `deckung_tage`. Fehlt ein Wert, steht der Grund in `fehlt` — dann ist er "
-    "unbekannt, nicht 0.\n"
+    "`energiebedarf_kwh` (Lücke bis zum Zielwert) und die ausdrücklich als Proxy markierte "
+    "`nicht_elektrische_thermische_nettobilanz`. `reserve_nach_horizont_kwh` bilanziert den "
+    "beobachteten Verlust und den erwarteten Proxy-Eintrag bis zum Planungshorizont. Das ist "
+    "kein gemessener Solarthermieertrag. Fehlt ein Wert, steht der Grund in `fehlt` — dann ist "
+    "er unbekannt, nicht 0.\n"
     "- Reicht die Reserve über die Tage, bis wieder Fremdwärme kommt, gib keine elektrische Last "
     "frei. Reicht sie nicht, wähle das Fenster mit dem größten Überschuss "
     "(`merkmale.system.ueberschuss`) — und wenn der morgen wegfällt, ist das heute.\n"
@@ -1082,7 +1150,7 @@ def _device_response_schema(constraint: DeviceConstraint) -> dict:
     """
     keys = suggestion_keys(constraint)
     extra_by_field = {
-        ce.extra.plan_field: ce for ce in constraint.extras if ce.extra.ai_suggestion
+        ce.extra.plan_field: ce for ce in constraint.extras if ce.extra.can_suggest
     }
     properties: dict[str, object] = {"name": {"type": "STRING"}}
     for key in keys:
@@ -1109,6 +1177,22 @@ def _device_response_schema(constraint: DeviceConstraint) -> dict:
             "stützt — jeweils sinngemäß in einem Halbsatz. Greift keine Regel, gib eine leere "
             "Liste zurück und sage das in der Begründung."
         ),
+    }
+    properties["entscheidungsfaktoren"] = {
+        "type": "ARRAY",
+        "items": {
+            "type": "STRING",
+            "enum": [
+                "komfortreserve",
+                "solarthermie_proxy",
+                "pv_uberschussfenster",
+                "priorisierung",
+                "technische_sperre",
+                "nutzerregel",
+                "unzureichende_daten",
+            ],
+        },
+        "description": "Maschinenprüfbare Faktoren, die diese Geräteentscheidung tragen.",
     }
     order = ["name", *keys, *EXPLANATION_FIELDS]
     return {

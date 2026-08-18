@@ -450,7 +450,7 @@ async def test_publish_latest_rewrites_last_valid_plan(tmp_path):
     await planner.run(now=NOW)
     ha.calls.clear()
 
-    result = await planner.publish_latest()
+    result = await planner.publish_latest(now=NOW)
 
     assert result["ok"]
     assert any(call[0].startswith("sensor.ep_") for call in ha.calls)
@@ -459,7 +459,7 @@ async def test_publish_latest_rewrites_last_valid_plan(tmp_path):
 async def test_publish_latest_without_valid_plan_reports_reason(tmp_path):
     planner, _ = _planner(tmp_path, None, ha_client=_FakeHA())
 
-    result = await planner.publish_latest()
+    result = await planner.publish_latest(now=NOW)
 
     assert not result["ok"]
     assert "kein gültiger Plan" in result["reason"]
@@ -486,7 +486,7 @@ async def test_publish_latest_respects_manual_mode(tmp_path):
     await planner.run(now=NOW)
     ha.service_calls.clear()
 
-    result = await planner.publish_latest()
+    result = await planner.publish_latest(now=NOW)
 
     assert result["ok"]
     assert ha.service_calls == []  # Nutzerwert bleibt stehen
@@ -724,7 +724,7 @@ async def test_context_carries_the_balance_for_the_heater(tmp_path):
     heizstab = next(g for g in merkmale["geraete"] if g["name"] == "heizstab")
     assert heizstab["reserve_kwh"] == 6.97  # 300 l von 45 auf 65 °C
     assert heizstab["energiebedarf_kwh"] == 0.0
-    assert heizstab["fremdwaerme_mittel_kwh"] > 0
+    assert heizstab["nicht_elektrische_thermische_nettobilanz_kwh_pro_tag"] > 0
     assert "deckung_tage" not in heizstab  # kein Verlust ⇒ keine Deckungsdauer
     # Systemmerkmale: Grundlast aus dem Rückblick, Überschuss netto.
     assert merkmale["system"]["grundlast_w"] == 380.0
@@ -742,7 +742,7 @@ async def test_context_reports_coverage_in_days_when_the_tank_loses(tmp_path):
     heizstab = next(
         g for g in result.context["merkmale"]["geraete"] if g["name"] == "heizstab"
     )
-    assert heizstab["fremdwaerme_mittel_kwh"] == -1.39
+    assert heizstab["nicht_elektrische_thermische_nettobilanz_kwh_pro_tag"] == -1.39
     assert heizstab["deckung_tage"] == 5.0
 
 

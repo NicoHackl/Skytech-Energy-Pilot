@@ -18,7 +18,7 @@ import time
 
 from energy_pilot.control_mode import SOURCE_OFF, device_mode_entity, read_modes
 from energy_pilot.conversion import INVALID_STATES, safe_float
-from energy_pilot.devices import Device, ReadField, read_fields
+from energy_pilot.devices import Device, HEMSField, ReadField, read_fields
 from energy_pilot.ha_client import HAClient
 from energy_pilot.logging_setup import log
 
@@ -69,6 +69,8 @@ class DeviceCollector:
         self.logger = logger
         self.devices: list[Device] = []
         self.discovery_source: str = "none"
+        self.global_fields: tuple[HEMSField, ...] = ()
+        self.global_values: dict[str, dict] = {}
         # device.name -> field.key -> {"value": ..., "source": "live|none"}
         self.last_values: dict[str, dict[str, dict]] = {}
         # device.name -> {"global_mode", "mode", "source"} (D-057, nur Anzeige – nie das Gate)
@@ -80,9 +82,26 @@ class DeviceCollector:
         self.devices = devices
         self.discovery_source = source
 
+    def set_global_fields(self, fields: tuple[HEMSField, ...]) -> None:
+        self.global_fields = fields
+
     async def collect_once(self, now: float | None = None) -> None:
         """Liest für jedes Gerät alle Lese-Entitäten einmal ein (inkl. Modus für die Anzeige)."""
         now = time.time() if now is None else now
+        global_values: dict[str, dict] = {}
+        for field in self.global_fields:
+            read_field = ReadField(
+                field.key,
+                field.label,
+                field.kind,
+                field.entity_id,
+                field.unit,
+                role=field.role,
+                planning_relevant=field.planning_relevant,
+            )
+            value, source, attrs = await self._read_field(read_field)
+            global_values[field.key] = {"value": value, "source": source, "attrs": attrs}
+        self.global_values = global_values
         for device in self.devices:
             field_values: dict[str, dict] = {}
             for field in read_fields(device):

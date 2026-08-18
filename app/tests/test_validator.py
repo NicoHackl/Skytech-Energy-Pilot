@@ -55,6 +55,121 @@ def _plan(devices, **overrides):
     return base
 
 
+def _surplus_heater_constraints():
+    hard_limit = DeviceExtra(
+        read_entity_id="input_number.e3dc_heizstab_maxtemperatur",
+        rolle="grenze",
+        label="Maximaltemperatur",
+        unit="°C",
+    )
+    device = Device(
+        "heizstab",
+        "Heizstab",
+        "heizstab",
+        CONTROLLABLE,
+        "watt",
+        control_policy="pv_surplus_only",
+        extras=(hard_limit,),
+    )
+    readings = {
+        "heizstab": {
+            "technische_freigabe": {"value": True},
+            "min_technisch": {"value": 500.0},
+            "max_technisch": {"value": 3000.0},
+            hard_limit.read_key: {"value": 85.0},
+        }
+    }
+    return build_constraints([device], readings)
+
+
+def _heater_plan(enabled: bool, reason: str, factors=None):
+    return _plan(
+        [
+            {
+                "name": "heizstab",
+                "prio_vorschlag": 10,
+                "freigabe_vorschlag": enabled,
+                "geschutzte_mindestleistung_w_vorschlag": 500.0,
+                "begruendung": reason,
+                "angewandte_regeln": [],
+                "entscheidungsfaktoren": factors or ["komfortreserve"],
+            }
+        ]
+    )
+
+
+def _thermal_context(
+    *, current=65.0, target=75.0, need=3.0, proxy=None, quality="unbekannt",
+    reserve_after=None,
+):
+    return {
+        "state": [{"role": "hot_water_temp", "latest": current}],
+        "merkmale": {
+            "geraete": [
+                {
+                    "name": "heizstab",
+                    "ziel_c": target,
+                    "volumen_liter": 300.0,
+                    "energiebedarf_kwh": need,
+                    "solarthermie_proxy_kwh": proxy,
+                    "solarthermie_proxy_datenqualitaet": quality,
+                    "reserve_nach_horizont_kwh": reserve_after,
+                }
+            ]
+        },
+    }
+
+
+def test_grid_import_is_not_a_valid_shutdown_reason_for_surplus_device():
+    result = validate(
+        _heater_plan(False, "Ausschalten, um den Netzbezug zu reduzieren."),
+        _surplus_heater_constraints(),
+        now=NOW,
+        context=_thermal_context(),
+    )
+    assert not result.ok
+    assert any("Netzbezug" in error for error in result.errors)
+
+
+def test_too_hot_reason_is_rejected_below_target_and_hard_limit():
+    result = validate(
+        _heater_plan(False, "Der Speicher ist mit 65 °C zu heiß."),
+        _surplus_heater_constraints(),
+        now=NOW,
+        context=_thermal_context(current=65.0, target=75.0),
+    )
+    assert not result.ok
+    assert any("numerisch nicht belegt" in error for error in result.errors)
+
+
+def test_sunny_replay_blocks_electric_release_when_proxy_covers_demand():
+    context = _thermal_context(need=2.0, proxy=3.0, quality="mittel", reserve_after=1.0)
+    result = validate(
+        _heater_plan(
+            True,
+            "Erwartete Nettowärme 3 kWh deckt 2 kWh Bedarf.",
+            ["solarthermie_proxy"],
+        ),
+        _surplus_heater_constraints(),
+        now=NOW,
+        context=context,
+    )
+    assert not result.ok
+    assert any("elektrische Freigabe" in error for error in result.errors)
+
+
+def test_cloudy_replay_requires_release_for_safe_pv_surplus_buffering():
+    context = _thermal_context(need=2.0, proxy=0.0, quality="mittel", reserve_after=-1.0)
+    result = validate(
+        _heater_plan(False, "Es fehlt 3 kWh Wärme, kein Proxy-Ertrag erwartet."),
+        _surplus_heater_constraints(),
+        now=NOW,
+        context=context,
+    )
+    assert not result.ok
+    assert any("freigegeben bleiben" in error for error in result.errors)
+
+
 def test_happy_path_ok_without_clamps():
     # Vollständiger Plan für ALLE erkannten Geräte (D-050): fehlt keines und keins ein
     # Pflichtfeld, füllt/klemmt der Validator nichts.

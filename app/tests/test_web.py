@@ -182,10 +182,10 @@ async def test_devices_endpoint_reflects_hems_discovery(aiohttp_client, tmp_path
     assert not any(k.startswith("extra_") for k in keys)
     # Der Heizstab-Default (ersetzt Hardcode D-035) wird beim ersten HEMS-Sync geseedet.
     extras = {e["read_entity_id"]: e for e in heizstab["extras"]}
-    assert "input_number.ep_heizstab_max_temperatur" in extras
-    seeded = extras["input_number.ep_heizstab_max_temperatur"]
-    assert seeded["ai_suggestion"] is True
-    assert seeded["suggestion_entity_id"] == "sensor.ep_heizstab_max_temperatur_vorschlag"
+    assert "input_number.e3dc_heizstab_maxtemperatur" in extras
+    seeded = extras["input_number.e3dc_heizstab_maxtemperatur"]
+    assert seeded["ai_suggestion"] is False
+    assert seeded["suggestion_entity_id"] is None
 
 
 async def _discovered_client(aiohttp_client, tmp_path):
@@ -220,7 +220,7 @@ async def test_device_extra_post_creates_and_lists(aiohttp_client, tmp_path):
     data = await (await client.get("/api/devices")).json()
     extras = {e["read_entity_id"]: e for e in data["devices"][0]["extras"]}
     assert "input_number.min_soc_auto" in extras  # neu
-    assert "input_number.ep_heizstab_max_temperatur" in extras  # Seed bleibt
+    assert "input_number.e3dc_heizstab_maxtemperatur" in extras  # harte Nutzergrenze bleibt
     # Typinfo (D-048) steht je Eintrag zur Verfügung.
     assert extras["input_number.min_soc_auto"]["kind"] == "number"
 
@@ -229,7 +229,7 @@ async def test_device_extra_delete_removes(aiohttp_client, tmp_path):
     client, _ = await _discovered_client(aiohttp_client, tmp_path)
     res = await client.request("DELETE", "/api/devices/extras", json={
         "device_name": "heizstab",
-        "read_entity_id": "input_number.ep_heizstab_max_temperatur",
+        "read_entity_id": "input_number.e3dc_heizstab_maxtemperatur",
     })
     assert (await res.json())["ok"] is True
     data = await (await client.get("/api/devices")).json()
@@ -254,10 +254,16 @@ async def test_device_extra_post_rejects_invalid_entity(aiohttp_client, tmp_path
 
 async def test_device_extra_post_rejects_suggestion_conflict(aiohttp_client, tmp_path):
     client, _ = await _discovered_client(aiohttp_client, tmp_path)
-    # Gleiche object_id wie der Seed -> gleicher Vorschlags-Sensor -> Kollision (409).
+    first = await client.post("/api/devices/extras", json={
+        "device_name": "heizstab",
+        "read_entity_id": "input_number.flex_ziel",
+        "ai_suggestion": True,
+    })
+    assert first.status == 200
+    # Gleiche object_id einer anderen Quelle -> gleicher Vorschlags-Sensor -> Kollision (409).
     res = await client.post("/api/devices/extras", json={
         "device_name": "heizstab",
-        "read_entity_id": "sensor.heizstab_max_temperatur",
+        "read_entity_id": "sensor.flex_ziel",
         "ai_suggestion": True,
     })
     assert res.status == 409
@@ -686,6 +692,7 @@ async def test_device_extra_carries_role_and_defaults_to_ist(aiohttp_client, tmp
         "ai_suggestion": True, "unit": "°C", "rolle": "grenze",
     })).json()
     assert grenze["rolle"] == "grenze"
+    assert grenze["suggestion_entity_id"] is None
 
     ist = await (await client.post("/api/devices/extras", json={
         "device_name": "heizstab",
@@ -698,12 +705,13 @@ async def test_device_extra_carries_role_and_defaults_to_ist(aiohttp_client, tmp
     assert data["extra_roles"] == ["ist", "grenze", "sollwert"]
     extras = {e["read_entity_id"]: e for e in data["devices"][0]["extras"]}
     assert extras["input_number.e3dc_heizstab_maxtemperatur"]["rolle"] == "grenze"
+    assert extras["input_number.e3dc_heizstab_maxtemperatur"]["ai_suggestion"] is False
     assert "kein Messwert" in (
         extras["input_number.e3dc_heizstab_maxtemperatur"]["rolle_bedeutung"]
     )
     assert extras["sensor.elwa_modbus_isttemperatur"]["rolle"] == "ist"
     # Der geseedete Grenzwert ist als Grenze markiert, nicht als Messwert.
-    assert extras["input_number.ep_heizstab_max_temperatur"]["rolle"] == "grenze"
+    assert extras["input_number.e3dc_heizstab_maxtemperatur"]["rolle"] == "grenze"
 
 
 async def test_device_extra_rejects_unknown_role_by_falling_back(aiohttp_client, tmp_path):

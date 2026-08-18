@@ -63,30 +63,25 @@ Reihenfolge ist bedeutungstragend, die Asymmetrie beabsichtigt:
 4. Gerät `auto` → `ep` (bei global `manuell`/`nur_*` entscheidet das Gerät)
 5. sonst → `user`
 
-**Wirkung in EP:** ausschließlich das Gate für den Original-Schreibweg (D-052). Nur bei Quelle
-`ep` schreibt EP einen KI-Vorschlag per HA-Service in die Original-Entität; bei `user`/`aus`
-bleibt der Nutzerwert stehen und der Vorgang erscheint als `skipped` in Ergebnis/Audit/UI. Die
-`sensor.ep_*_vorschlag`-Spiegelsensoren sind davon **nicht** betroffen — sie werden immer
-geschrieben, der Vorschlag bleibt also auch im manuellen Modus sichtbar.
+**Wirkung:** EP veröffentlicht seine Vorschlagssensoren unabhängig vom Modus. HEMS liest sie bei
+Quelle `ep`, aber nur mit passendem, gültigem `sensor.ep_plan_commit`; sonst greift feldweise der
+Nutzerwert. Der optionale EP-Schreibweg in zusätzliche Original-Helfer bleibt bei `user`/`aus`
+gesperrt und erscheint als `skipped` in Ergebnis/Audit/UI.
 
-Bewusst **nicht** nachgebaut: `ems_pv_regelung_aktiv`, `hard_lockout` und das
-`allowed_modes`-Typ-Gate des HEMS. Zusatz-Entitäten sind advisorisch und nicht HEMS-relevant
-(D-047), `hard_lockout` ist ein PV-Notabwurf statt einer Nutzeraussage über die KI-Übernahme,
-und `allowed_modes` steht in der HEMS-Addon-Config, die EP nicht kennt.
+Bewusst **nicht** nachgebaut: `ems_pv_regelung_aktiv` und `hard_lockout`. HEMS bleibt die
+autoritative Laufzeit-Sicherheit. `allowed_modes` kennt EP seit D-067 aus dem Vertrag als
+Planungsinformation, die tatsächliche Durchsetzung bleibt aber im HEMS.
 
 ## Aktueller Implementierungsstand
 
-**Die drei EP-Steuermodi (Manuell/Hybrid/Automatisch, D-009/D-020) sind weiterhin nicht
-verdrahtet**; verdrahtet ist nur die HEMS-Modus-Achse oben. Der Ist-Zustand entspricht
-ansonsten weiter **Beobachten**: EP schreibt `sensor.ep_*_vorschlag`-Werte, die der User selbst
-per HA-Automation auswerten müsste (D-032/D-033). Es existiert:
+Verdrahtet ist die HEMS-Modus-Achse oben. Im manuellen HEMS-Modus bleibt EP im Shadow-Betrieb;
+eine HA-Automation zur Übertragung ist seit Commit-Vertrag D-067 nicht mehr nötig. Es existiert:
 
 - **Kein** Code, der User-Fixierungen als harte Nebenbedingung in den Validator einspeist
   (Hybrid ist der Kernfall und fehlt vollständig).
 - **Kein** eigener EP-Steuermodus-Helfer — die Modus-Achse kommt komplett aus dem HEMS.
-- **Kein** automatischer Übergabeweg an HEMS jenseits der `sensor.ep_*_vorschlag`-Werte
-  (die "Beobachtete Konformität" in `plan_feedback.py` vergleicht nur, ob HEMS zufällig
-  mit dem Vorschlag übereinstimmt — sie bestätigt nichts und lenkt nichts).
+- **Kein** automatisches Umschalten der HEMS-Modi. Die Übernahme eines Geräts in `auto` bleibt
+  eine bewusste Entscheidung nach dem Shadow-Betrieb.
 
 Das ist laut [roadmap.md](roadmap.md) Teil von Meilenstein **M3** und größtenteils
 offen. Vor jeder Implementierung hier: prüfen, ob die alten Entscheidungen D-009/D-020

@@ -35,7 +35,7 @@ Update nicht verloren; nach dem Update sollte er ins Gemini-Untermenü eingetrag
 | `ai_thinking_budget` | 0 | 0–32768 | **Nur Gemini-2.5-Reihe** (D-063): `thinkingConfig.thinkingBudget`. 0 = Thinking aus (reproduzierbar), >0 begrenzt es, Wert entfernt ⇒ Anbieter-Default |
 | `ai_thinking_level` | "" | `minimal`/`low`/`medium`/`high` | **Nur Gemini-3.x-Reihe** (D-063): `thinkingConfig.thinkingLevel`. Hat Vorrang vor dem Budget, weil 3.x das Budget nicht auswertet. Welche Stufen ein Modell annimmt, ist modellabhängig — leer lassen ⇒ Anbieter-Default |
 | `ai_repair_missing` | true | bool | Nachforder-Aufruf bei fehlenden Pflichtfeldern |
-| `planning_interval_min` | 60 | 15–60 | Gültigkeitsdauer eines Plans (`valid_until = now + Wert`). **Kein** Planungstakt — es gibt keinen Scheduler |
+| `planning_interval_min` | 60 | 15–60 | Takt des internen Schedulers und Gültigkeitsdauer eines Plans (`valid_until = Rasterzeit + Wert`) |
 | `plan_update_interval_min` | 15 | 5–60 | **Config existiert, wird nicht ausgewertet** |
 | `forecast_horizon_h` | 24 | 12–48 | Planungshorizont |
 | `min_confidence_percent` | 70 | 0–100 | Konfidenz-Gate (D-064): ein gültiger Plan unter der Schwelle wird gespeichert und angezeigt, aber **nicht** nach HA geschrieben. Grundlage sind die vier Konfidenz-Teilnoten, aggregiert als schwächstes Glied. 0 ⇒ kein Gate |

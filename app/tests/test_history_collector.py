@@ -5,8 +5,14 @@ from datetime import UTC, date, datetime
 import pytest
 
 from energy_pilot.database import init_db
+from energy_pilot.devices import BINARY, CONTROLLABLE, Device, HEMSField
 from energy_pilot.history import LOCAL_TZ
-from energy_pilot.history_collector import HistoryCollector, HistorySource
+from energy_pilot.history_collector import (
+    HistoryCollector,
+    HistorySource,
+    energy_sources_for,
+    sources_from,
+)
 
 # 15.08.2026, 12:00 Ortszeit — mitten im laufenden Tag, damit „heute" unvollständig bleibt.
 NOW = datetime(2026, 8, 15, 10, 0, tzinfo=UTC)
@@ -16,13 +22,17 @@ NOW_TS = NOW.timestamp()
 class _FakeHA:
     """HA-Doppel: liefert je Entität einen festen Verlauf und zählt die Abfragen."""
 
-    def __init__(self, verlauf=None):
+    def __init__(self, verlauf=None, states=None):
         self._verlauf = verlauf or {}
+        self._states = states or {}
         self.calls: list[tuple[str, str, str]] = []
 
     async def get_history(self, entity_id, start, end=None, *, minimal=True):
         self.calls.append((entity_id, start.isoformat(), end.isoformat() if end else ""))
         return list(self._verlauf.get(entity_id, []))
+
+    async def get_state(self, entity_id):
+        return {"state": str(self._states[entity_id])}
 
 
 def _rows(tag: date, *pairs):
@@ -178,6 +188,74 @@ async def test_energy_source_reports_kwh():
     assert tage["2026-08-14"]["groessen"]["heizstab_leistung"]["energie_kwh"] == 1.0
 
 
+def test_sources_use_actual_power_and_never_technical_limits():
+    device = Device(
+        "heizstab",
+        "Heizstab",
+        "heizstab",
+        CONTROLLABLE,
+        actual_power_entity="sensor.elwa_istleistung",
+        hems_fields=(
+            HEMSField(
+                "max_technisch", "Maximum", "number",
+                "input_number.ems_heizstab_max_technisch_w", "W",
+                "technical_constraint", True,
+            ),
+        ),
+    )
+    sources = sources_from({}, [device])
+    assert [(source.groesse, source.entity_id) for source in sources] == [
+        ("heizstab.istleistung", "sensor.elwa_istleistung")
+    ]
+
+
+async def test_binary_energy_comes_from_switch_duration_times_nominal_power():
+    tag = date(2026, 8, 14)
+    device = Device(
+        "heizlufter",
+        "Heizlüfter",
+        "heizlufter",
+        BINARY,
+        switch_entity="switch.heizlufter",
+        hems_fields=(
+            HEMSField(
+                "leistung_w", "Nennleistung", "number",
+                "input_number.ems_heizlufter_leistung_w", "W",
+                "technical_constraint", True,
+            ),
+        ),
+    )
+    ha = _FakeHA(
+        {
+            "switch.heizlufter": [
+                {
+                    "state": "on",
+                    "last_changed": datetime(
+                        2026, 8, 14, 10, tzinfo=LOCAL_TZ
+                    ).isoformat(),
+                },
+                {
+                    "state": "off",
+                    "last_changed": datetime(
+                        2026, 8, 14, 12, tzinfo=LOCAL_TZ
+                    ).isoformat(),
+                },
+            ]
+        },
+        {"input_number.ems_heizlufter_leistung_w": 1500},
+    )
+    db = init_db(":memory:")
+    collector = HistoryCollector(ha, db, days=2)
+    sources = sources_from({}, [device])
+    collector.set_sources(sources)
+
+    await collector.collect_once(now=NOW_TS)
+
+    tage = {row["tag"]: row for row in collector.snapshot(now=NOW)}
+    assert tage[tag.isoformat()]["groessen"]["heizlufter.istzustand"]["energie_kwh"] == 3.0
+    assert energy_sources_for("heizlufter", tuple(sources)) == ("heizlufter.istzustand",)
+
+
 # --- Quellenableitung ------------------------------------------------------------------------
 
 
@@ -314,7 +392,7 @@ def test_migration_16_removes_orphan_rows_of_the_dropped_role():
     _insert_orphan(db, "2026-08-14", groesse="warmwasser")
     db.commit()
 
-    assert migrate(db) == [16]
+    assert migrate(db) == [16, 17]
 
     assert db.execute(
         "SELECT COUNT(*) AS n FROM daily_history WHERE groesse = 'grid_power'"

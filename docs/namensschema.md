@@ -8,22 +8,18 @@ Zentrale, nicht verhandelbare Regel (Decision D-029, siehe [design-entscheidunge
 | `ems_*` | HEMS-Domäne | User bzw. HEMS-Discovery (dynamisch generiert) | EP **liest nur** |
 | `ep_*` | EP-Domäne | EP | EP **schreibt** |
 
-Ausnahme (D-035): ein `ep_*`-Wert kann auch ein user-/extern-gepflegter **Grenzwert**
-sein, den EP nur liest — z. B. `input_number.ep_heizstab_max_temperatur`. Der Präfix
-sagt also "wessen Namensraum", nicht zwingend "wer schreibt".
+User-/extern-gepflegte Werte ohne HEMS-Bedeutung behalten ihren vorhandenen Namensraum. Die harte
+Heizstabgrenze `input_number.e3dc_heizstab_maxtemperatur` liest EP nur; Werte mit Rolle `grenze`
+erzeugen grundsätzlich keinen Vorschlag und werden nie zurückgeschrieben (D-067).
 
 ## Lese-Seite: `ems_*` (implementiert in `devices.py: read_fields()`)
 
-`ems_*`-Entitäten werden **nicht** von EP als Template vorgegeben, sondern
-**dynamisch von HEMS pro Gerät erzeugt** aus `entity_prefix` + `class`
-(`controllable`/`binary`) + `output_unit` (`watt`→`_w`/`ampere`→`_a`). EP entdeckt die
-tatsächlichen Entity-IDs zur Laufzeit über `GET /api/device_controls_schema`
-(D-036) statt sie zu raten.
-
-| Geräteklasse | Gelesene Felder |
-|---|---|
-| binär (z. B. Heizlüfter) | `ems_<prefix>_technische_freigabe`, `ems_<prefix>_leistung_w` |
-| regelbar (z. B. Heizstab) | `ems_<prefix>_technische_freigabe`, `ems_<prefix>_min_technisch_<w\|a>`, `ems_<prefix>_max_technisch_<w\|a>` |
+EP übernimmt die tatsächlichen Entity-IDs und ihre stabilen Schlüssel/Rollen zur Laufzeit aus
+`GET /api/device_controls_schema` (D-036/D-067), ohne Suffixe zu raten. Gelesen wird der
+vollständige Vertrag einschließlich Freigaben, Modi, Priorität, Reserven, Zeitregeln,
+HEMS-Anforderung und tatsächlicher Leistung beziehungsweise Schaltzustand. In den KI-Kontext
+gelangen nur die vom HEMS als `planning_relevant` markierten Werte; Rampen-/Phasendetails bleiben
+Diagnose.
 
 Reale Beispiele: `ems_heizstab_technische_freigabe`, `ems_heizlüfter_1_leistung_w`,
 `ems_heizstab_max_technisch_w`.
@@ -42,6 +38,9 @@ falls eine ältere HEMS-Version dieses Feld noch nicht über `/api/status` liefe
 | `ep_<name>_prio_vorschlag` | binär + regelbar | nein |
 | `ep_<name>_freigabe_vorschlag` | binär + regelbar | ja (binär) |
 | `ep_<name>_geschutzte_mindestleistung_w_vorschlag` bzw. `_a_vorschlag` | regelbar + Batterie | ja |
+
+Jeder Vorschlag trägt `plan_id`, `valid_from` und `valid_until`. EP schreibt zuletzt
+`sensor.ep_plan_commit`; erst dieser Commit macht den gesamten Satz für HEMS sichtbar.
 
 **Batterie-Sonderfall (D-037):** immer Prio 1, immer freigegeben — EP schreibt nur
 `ep_batterie_geschutzte_mindestleistung_w_vorschlag`, kein `prio_vorschlag`/`freigabe_vorschlag`.

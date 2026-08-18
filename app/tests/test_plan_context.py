@@ -94,7 +94,7 @@ def test_build_response_schema_forces_all_fields_per_device():
     assert set(heizstab["required"]) == {
         "name", "prio_vorschlag", "freigabe_vorschlag",
         "geschutzte_mindestleistung_w_vorschlag",
-        "begruendung", "angewandte_regeln",
+        "begruendung", "angewandte_regeln", "entscheidungsfaktoren",
     }
     # Harte Grenzen wirken als Schema-Keyword, nicht nur als Prosa (D-062).
     assert heizstab["properties"]["prio_vorschlag"]["minimum"] == 10
@@ -102,7 +102,7 @@ def test_build_response_schema_forces_all_fields_per_device():
     # Batterie: nur geschützte Mindestleistung Pflicht, keine Prio (D-037).
     assert set(devices["properties"]["batterie"]["required"]) == {
         "name", "geschutzte_mindestleistung_w_vorschlag",
-        "begruendung", "angewandte_regeln",
+        "begruendung", "angewandte_regeln", "entscheidungsfaktoren",
     }
 
 

@@ -26,6 +26,7 @@ LOCAL_TZ = ZoneInfo("Europe/Berlin")
 KIND_LEVEL = "level"
 KIND_POWER = "power"
 KIND_COUNTER = "counter"
+KIND_BINARY = "binary"
 
 _UNIT_KIND: dict[str, str] = {
     "W": KIND_POWER,
@@ -145,6 +146,31 @@ def parse_samples(rows: list[dict]) -> list[tuple[datetime, float]]:
             samples.append((moment, value))
     samples.sort(key=lambda item: item[0])
     return samples
+
+
+def parse_binary_samples(rows: list[dict]) -> list[tuple[datetime, float]]:
+    """Schaltverlauf als 0/1-Proben; unbekannte Zustände bleiben unbekannt."""
+    samples: list[tuple[datetime, float]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        moment = _row_time(row)
+        state = str(row.get("state") or "").strip().lower()
+        value = 1.0 if state in {"on", "true", "1"} else 0.0 if state in {
+            "off", "false", "0",
+        } else None
+        if moment is not None and value is not None:
+            samples.append((moment, value))
+    samples.sort(key=lambda item: item[0])
+    return samples
+
+
+def aggregate_binary_day(
+    samples: list[tuple[datetime, float]], tag: date, nominal_power_w: float
+) -> DayAggregate:
+    """Leitet Energie einer Binärlast aus Schaltdauer × belastbarer Nennleistung ab."""
+    powered = [(moment, state * nominal_power_w) for moment, state in samples]
+    return aggregate_day(powered, tag, KIND_POWER)
 
 
 def aggregate_day(

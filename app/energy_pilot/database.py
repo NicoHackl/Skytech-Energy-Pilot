@@ -247,6 +247,28 @@ MIGRATIONS: list[tuple[int, str]] = [
         DELETE FROM entity_map WHERE role = 'grid_power';
         """,
     ),
+    (
+        17,
+        # Werte mit der semantischen Rolle `grenze` gehören ausschließlich dem User. Frühere
+        # Versionen konnten dafür widersprüchlich KI- und Original-Schreibflags speichern.
+        """
+        UPDATE device_extras
+        SET ai_suggestion = 0, write_original = 0, updated_at = datetime('now')
+        WHERE rolle = 'grenze';
+        INSERT OR IGNORE INTO device_extras (
+            device_name, read_entity_id, ai_suggestion, ai_hint, label, unit,
+            sort_order, updated_at, write_original, rolle
+        )
+        SELECT device_name, 'input_number.e3dc_heizstab_maxtemperatur', 0, ai_hint, label, unit,
+               sort_order, datetime('now'), 0, 'grenze'
+        FROM device_extras
+        WHERE device_name = 'heizstab'
+          AND read_entity_id = 'input_number.ep_heizstab_max_temperatur';
+        DELETE FROM device_extras
+        WHERE device_name = 'heizstab'
+          AND read_entity_id = 'input_number.ep_heizstab_max_temperatur';
+        """,
+    ),
 ]
 
 

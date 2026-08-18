@@ -43,7 +43,22 @@ EXTRA_FIELD_RE = re.compile(r"^extra_[a-z0-9_]+_vorschlag$")
 # Begründungsfelder je Gerät (D-060): **keine** Vorschlagswerte, sondern die erzwungene
 # Selbsterklärung der KI gegen die Freitext-Regeln des Users. Sie unterliegen keinem
 # Schreibvertrag und werden nie nach HA geschrieben — sie machen eine Entscheidung nachvollziehbar.
-EXPLANATION_FIELDS: tuple[str, ...] = ("begruendung", "angewandte_regeln")
+EXPLANATION_FIELDS: tuple[str, ...] = (
+    "begruendung",
+    "angewandte_regeln",
+    "entscheidungsfaktoren",
+)
+
+# Maschinenprüfbare Faktoren statt frei erfundener Kausalität im Begründungstext.
+DECISION_FACTORS: tuple[str, ...] = (
+    "komfortreserve",
+    "solarthermie_proxy",
+    "pv_uberschussfenster",
+    "priorisierung",
+    "technische_sperre",
+    "nutzerregel",
+    "unzureichende_daten",
+)
 
 # Teilnoten der Konfidenz (D-064) samt Rubrik. Eine einzelne, frei erfundene Gesamtnote taugt
 # nicht als Gate — deshalb liefert das Modell definierte Teilnoten und EP aggregiert sie in Code.
@@ -107,6 +122,7 @@ class DeviceSuggestion:
     # Erzwungene Selbsterklärung (D-060), kein Vorschlagswert.
     begruendung: str = ""
     angewandte_regeln: list[str] = field(default_factory=list)
+    entscheidungsfaktoren: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -130,7 +146,7 @@ class CandidatePlan:
 
 def extra_suggestion_keys(constraint: DeviceConstraint) -> list[str]:
     """Dynamische Zusatz-Vorschlagsfelder eines Geräts (D-047): nur aktivierte Zusatz-Entitäten."""
-    return [ce.extra.plan_field for ce in constraint.extras if ce.extra.ai_suggestion]
+    return [ce.extra.plan_field for ce in constraint.extras if ce.extra.can_suggest]
 
 
 def suggestion_keys(constraint: DeviceConstraint) -> list[str]:
@@ -171,6 +187,8 @@ def plan_to_dict(plan: CandidatePlan) -> dict:
             entry["begruendung"] = suggestion.begruendung
         if suggestion.angewandte_regeln:
             entry["angewandte_regeln"] = list(suggestion.angewandte_regeln)
+        if suggestion.entscheidungsfaktoren:
+            entry["entscheidungsfaktoren"] = list(suggestion.entscheidungsfaktoren)
         devices.append(entry)
     return {
         "schema_version": plan.schema_version,
@@ -235,6 +253,11 @@ PLAN_JSON_SCHEMA: dict = {
                     # Selbsterklärung (D-060): Diagnose, kein Vorschlagswert.
                     "begruendung": {"type": "string"},
                     "angewandte_regeln": {"type": "array", "items": {"type": "string"}},
+                    "entscheidungsfaktoren": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": list(DECISION_FACTORS)},
+                        "uniqueItems": True,
+                    },
                 },
             },
         },

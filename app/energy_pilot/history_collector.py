@@ -25,14 +25,17 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 from energy_pilot.history import (
+    KIND_BINARY,
     KIND_COUNTER,
     KIND_POWER,
     DayAggregate,
+    aggregate_binary_day,
     aggregate_day,
     day_bounds,
     days_in_window,
     kind_for_unit,
     local_date,
+    parse_binary_samples,
     parse_samples,
 )
 from energy_pilot.logging_setup import log
@@ -53,11 +56,13 @@ class HistorySource:
     entity_id: str
     unit: str = ""
     label: str = ""
+    kind_hint: str = ""
+    nominal_power_entity: str = ""
 
     @property
     def kind(self) -> str:
         """Verdichtungsart (`level`/`power`/`counter`) aus der Einheit."""
-        return kind_for_unit(self.unit)
+        return self.kind_hint or kind_for_unit(self.unit)
 
 
 def sources_from(mapping: dict, devices: list) -> list[HistorySource]:
@@ -92,6 +97,34 @@ def sources_from(mapping: dict, devices: list) -> list[HistorySource]:
                 )
             )
     for device in devices or []:
+        if getattr(device, "actual_power_entity", ""):
+            out.append(
+                HistorySource(
+                    groesse=f"{device.name}.istleistung",
+                    entity_id=device.actual_power_entity,
+                    unit="W",
+                    label=f"{device.label} – tatsächliche Leistung",
+                )
+            )
+        elif getattr(device, "switch_entity", ""):
+            nominal = next(
+                (
+                    field.entity_id
+                    for field in getattr(device, "hems_fields", ())
+                    if field.key == "leistung_w"
+                ),
+                "",
+            )
+            out.append(
+                HistorySource(
+                    groesse=f"{device.name}.istzustand",
+                    entity_id=device.switch_entity,
+                    unit="W",
+                    label=f"{device.label} – Schaltzustand",
+                    kind_hint=KIND_BINARY,
+                    nominal_power_entity=nominal,
+                )
+            )
         for extra in getattr(device, "extras", ()):
             if not extra.read_entity_id:
                 continue
@@ -124,7 +157,8 @@ def energy_sources_for(device_name: str, sources: tuple[HistorySource, ...]) -> 
     return tuple(
         source.groesse
         for source in sources
-        if source.groesse.startswith(prefix) and source.kind in (KIND_POWER, KIND_COUNTER)
+        if source.groesse.startswith(prefix)
+        and source.kind in (KIND_POWER, KIND_COUNTER, KIND_BINARY)
     )
 
 
@@ -238,9 +272,29 @@ class HistoryCollector:
                              "error": str(exc)},
                 )
             return False
-        aggregat = aggregate_day(parse_samples(rows), tag, source.kind)
+        if source.kind == KIND_BINARY:
+            nominal = await self._nominal_power(source)
+            aggregat = (
+                aggregate_binary_day(parse_binary_samples(rows), tag, nominal)
+                if nominal is not None
+                else DayAggregate(tag=tag)
+            )
+        else:
+            aggregat = aggregate_day(parse_samples(rows), tag, source.kind)
         self._store(source, aggregat, vollstaendig=not laufend)
         return True
+
+    async def _nominal_power(self, source: HistorySource) -> float | None:
+        """Liest die Nennleistung der Binärlast; Grenzwerte werden nie integriert."""
+        if not source.nominal_power_entity:
+            return None
+        try:
+            state = await self.ha_client.get_state(source.nominal_power_entity)  # type: ignore[union-attr]
+            value = float(state.get("state"))
+            return value if value > 0 else None
+        except Exception as exc:  # noqa: BLE001 - fehlender Helfer deaktiviert nur diese Bilanz
+            self.last_error = f"{source.nominal_power_entity}: {exc}"
+            return None
 
     def _store(
         self, source: HistorySource, aggregat: DayAggregate, *, vollstaendig: bool
