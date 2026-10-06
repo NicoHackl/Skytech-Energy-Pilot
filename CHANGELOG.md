@@ -8,6 +8,12 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Dokumentation — 06.10.2026
+
+- Gemeinsame Contract-Ablage mit einem Ordner je Projektpaar und aktualisierten Verweisen.
+- Aktueller Austausch mit HEMS einschließlich bestehender Kompatibilitäts- und Betriebsgrenzen dokumentiert.
+
+
 ### Hinzugefügt
 - **HEMS-Vertrag, stündlicher Scheduler und atomare Planübergabe (D-067, 0.0.64 → 0.0.65).**
   Energy Pilot übernimmt Geräteklasse, Modi, Regelprinzip, semantische `ems_*`-Felder,

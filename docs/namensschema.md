@@ -1,5 +1,7 @@
 # Namensschema `ems_*` / `ep_*`
 
+Gemeinsamer Schnittstellenstand: [HEMS-Vertrag](../contract/contract_hems_energy_pilot/contract_hems_energy_pilot.md).
+
 Zentrale, nicht verhandelbare Regel (Decision D-029, siehe [design-entscheidungen.md](design-entscheidungen.md)):
 **Namens-Domäne folgt der Datenrichtung.**
 

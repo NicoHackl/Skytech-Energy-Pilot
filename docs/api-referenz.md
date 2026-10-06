@@ -1,5 +1,7 @@
 # API-Referenz
 
+Gemeinsamer Schnittstellenstand: [HEMS-Vertrag](../contract/contract_hems_energy_pilot/contract_hems_energy_pilot.md).
+
 ## EP-HTTP-Endpunkte (`web/server.py`)
 
 Alle State liegt auf `app[...]`-Keys (Config/DB/Ring-Puffer/Clients/Collector/Planner).

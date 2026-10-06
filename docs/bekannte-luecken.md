@@ -1,5 +1,10 @@
 # Bekannte Lücken & Stolpersteine
 
+## Gemeinsamer Contract-Stand — 06.10.2026
+
+Die HEMS-Geräteklasse `battery`, der Ampere-Schutzvorschlag und die HEMS-internen Ersatzwerte sind zwischen beiden Implementierungen noch nicht durchgängig abgestimmt.
+Details und geprüfte Codebasis: [gemeinsamer Vertrag](../contract/contract_hems_energy_pilot/contract_hems_energy_pilot.md).
+
 Diese Datei ist der wichtigste Startpunkt, bevor man einer alten Spec-Aussage
 vertraut — Spec und Code laufen an mehreren Stellen auseinander. Bei jeder größeren
 Änderung hier ergänzen/aktualisieren.
