@@ -8,6 +8,11 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Dokumentation — 12.10.2026 (dynamischer Strompreis)
+
+- Roadmap: Dynamischer Strompreis und Netzladen entstehen im HEMS (SkytechHEMS D-065), nicht im
+  Energy Pilot. Kein Code geändert.
+
 ### Dokumentation — 12.10.2026
 
 - Anlagenstand nachgetragen: Der E3DC ist inzwischen HEMS-Speicher `e3dc_speicher` der Klasse

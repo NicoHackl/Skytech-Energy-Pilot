@@ -69,6 +69,11 @@ Eigenverbrauch, rollierende Planung), KI ruft die Engine auf und orchestriert/
 erklärt die Ergebnisse, Geräte-Erweiterung (Wallbox/E-Auto, Wärmepumpe, dynamische
 Tarife/Netzladen, mehrere Speicher).
 
+> **Stand 12.10.2026:** Dynamischer Strompreis und Netzladen werden im HEMS gebaut, nicht im EP
+> (SkytechHEMS D-065, Meilenstein M6 dort): eigenes deterministisches Modul, das ohne EP
+> funktioniert. Mehrere Speicher regelt das HEMS bereits (`acspeicher1`, `e3dc_speicher`). Ob EP
+> die dort erhobenen Preis- und Prognosedaten später mitnutzt, ist offen.
+
 ## Querschnitt (durchgehend seit M0)
 
 Tests/CI (jedes Feature getestet, CI grün auf `claude/stage`, HEMS↔EP-Zusammenspiel
@@ -80,4 +85,5 @@ Validierung/Fallback in jeder Stufe aktiv).
 ## Später/Zukunft (explizit außerhalb Phase 1)
 
 Wallbox + E-Auto-Laden, Wärmepumpe, weitere flexible Verbraucher, dynamische
-Stromtarife + Netzladen, mehrere Speichereinheiten, weitere Erzeugungsanlagen.
+Stromtarife + Netzladen (im HEMS geplant, SkytechHEMS D-065), mehrere Speichereinheiten, weitere
+Erzeugungsanlagen.
