@@ -8,6 +8,13 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Dokumentation — 12.10.2026
+
+- Anlagenstand nachgetragen: Der E3DC ist inzwischen HEMS-Speicher `e3dc_speicher` der Klasse
+  `battery` (SkytechHEMS D-063). Die EP-Sonderregel für das Gerät `batterie` (D-016/D-037) greift
+  dadurch nicht mehr. Als bekannte Lücke vermerkt, bei D-016 und in `geraete.md` gekennzeichnet.
+  Kein Code geändert.
+
 ### Dokumentation — 06.10.2026
 
 - Gemeinsame Contract-Ablage mit einem Ordner je Projektpaar und aktualisierten Verweisen.

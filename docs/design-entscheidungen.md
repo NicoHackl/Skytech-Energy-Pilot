@@ -25,7 +25,7 @@ Wo eine spätere Entscheidung eine frühere überholt hat, ist das vermerkt.
 | D-013 | EP↔HEMS-Auth über Supervisor-Proxy/Token; externer Zugriff (iOS/Java-Backend) muss architektonisch sauber möglich bleiben |
 | D-014 | Auto-Export eines KI-lesbaren Log-Bundles bei ERROR/CRITICAL |
 | D-015 | CI muss mindestens HEMS↔EP-Zusammenspiel testen |
-| D-016 | Batterie (E3DC): immer Prio 1, immer freigegeben, kein SOC-Limit, keine Entladung, nur max. Ladeleistung relevant |
+| D-016 | Batterie (E3DC): immer Prio 1, immer freigegeben, kein SOC-Limit, keine Entladung, nur max. Ladeleistung relevant. *Anlagenstand 12.10.2026: Der E3DC ist HEMS-Speicher `e3dc_speicher` (Klasse `battery`, SkytechHEMS D-063); die Regel greift über das Präfix `batterie` nicht mehr, siehe bekannte-luecken.md* |
 | D-017 | Heizlüfter 1&2: feste 1500 W, kein Leistungs-Helfer, nur Freigabe-Schalter |
 | D-018 | Strompreis für V1 raus; PV-Prognose: mehrere Sensoren je Ausrichtung, EP summiert, 4 Werte je Sensor |
 | D-019 | Gemini-Modell in Addon-Config wählbar (konkreter Default noch offen, siehe D-025) |

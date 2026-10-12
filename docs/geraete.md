@@ -35,7 +35,7 @@ entfernter Geräte automatisch.
 
 | Gerät | Besonderheit |
 |---|---|
-| **Batterie (E3DC)** | immer Prio 1, immer freigegeben, **kein** SOC-Limit, **keine** Entladung (nur PV-Überschuss); nur max. Ladeleistung relevant. Einziger Schreibwert: `ep_batterie_geschutzte_mindestleistung_w_vorschlag` (D-037). `constraints.py: BATTERY_PREFIX = "batterie"` erzwingt `forced_prio=1`/`forced_freigabe=True`. |
+| **Batterie (E3DC)** — *Stand Phase 1, siehe [bekannte-luecken.md](bekannte-luecken.md): der E3DC ist inzwischen HEMS-Speicher `e3dc_speicher` der Klasse `battery`* | immer Prio 1, immer freigegeben, **kein** SOC-Limit, **keine** Entladung (nur PV-Überschuss); nur max. Ladeleistung relevant. Einziger Schreibwert: `ep_batterie_geschutzte_mindestleistung_w_vorschlag` (D-037). `constraints.py: BATTERY_PREFIX = "batterie"` erzwingt `forced_prio=1`/`forced_freigabe=True`. |
 | **Heizstab** | regelbar; max./min. Leistung + Freigabe als `ems_*` (EP liest). Max. Wassertemperatur ist **nicht** HEMS-relevant — läuft als generische Zusatz-Entität (D-047) mit Rolle `grenze` (D-061), beim ersten HEMS-Sync einmalig geseedet (`input_number.ep_heizstab_max_temperatur` → `sensor.ep_heizstab_max_temperatur_vorschlag`), danach im Geräte-Tab frei editier-/löschbar. Die **gemessene** Speichertemperatur ist keine Zusatz-Entität, sondern die Mess-Rolle `hot_water_temp`. |
 | **Heizlüfter 1 & 2** | feste 1500 W (binär). Ist-Leistung als `ems_<name>_leistung_w` — falls das Feld fehlt, nimmt `constraints.py` `DEFAULT_BINARY_POWER_W = 1500.0` als Fallback an. Freigabe als `ems_<name>_technische_freigabe`. |
 

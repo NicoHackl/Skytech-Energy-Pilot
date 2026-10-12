@@ -11,6 +11,17 @@ vertraut — Spec und Code laufen an mehreren Stellen auseinander. Bei jeder gr�
 
 ## Spec-vs-Code-Lücken (Stand aktuelle Codebasis)
 
+### E3DC ist inzwischen HEMS-Speicher — Sonderfall `batterie` greift nicht mehr (12.10.2026)
+
+Die Sonderregel D-016/D-037 (Batterie immer Prio 1, immer freigegeben, nur
+`geschutzte_mindestleistung_w`) hängt in `constraints.py` am Präfix `BATTERY_PREFIX = "batterie"`.
+In der Referenzanlage gibt es dieses HEMS-Gerät nicht mehr: Der E3DC ist seit Ende September 2026
+HEMS-Speicher `e3dc_speicher` der Klasse `battery` (SkytechHEMS D-063, angebunden über den
+Battery-Provider), daneben `acspeicher1` (Marstek). Für beide gilt die Lücke aus dem gemeinsamen
+Vertrag: EP hat keinen ausdrücklich implementierten Pfad für die HEMS-Klasse `battery`. Die
+Beschreibung „Batterie (E3DC)“ in [geraete.md](geraete.md) zeigt deshalb den Stand von Phase 1,
+nicht die heutige Anlage.
+
 ### Ereignisbasierte Nachplanung fehlt noch
 
 Seit D-067 plant der interne Scheduler nach erfolgreicher HEMS-Discovery und erstem Snapshot
