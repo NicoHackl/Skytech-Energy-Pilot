@@ -11,7 +11,7 @@ Alle State liegt auf `app[...]`-Keys (Config/DB/Ring-Puffer/Clients/Collector/Pl
 | GET | `/` | Oberfläche (`frontend/dist/index.html`) |
 | GET | `/assets/*` | Gebautes React-Bündel (JS/CSS) |
 | GET | `/api/health` | Status/Version/Provider/Modell/`ha_configured` |
-| GET | `/api/addon` | Name und HA-Konfigurationsseite des Add-ons für den Sidebar-Fuß (D-068): `{"name": "Skytech Energy Pilot (Dev)", "config_path": "/hassio/addon/03f1563e_skytech_energy_pilot_dev/config"}`. Aus `/addons/self/info` des Supervisors, Erfolg bis zum Neustart gemerkt; ohne Supervisor `name` = „Skytech Energy Pilot“, `config_path` = `null`. Immer 200 |
+| GET | `/api/addon` | Name und HA-Konfigurationsseite des Add-ons für den Sidebar-Fuß (D-068): `{"name": "Skytech Energy Pilot (Dev)", "config_path": "/config/app/03f1563e_skytech_energy_pilot_dev/config"}`. Aus `/addons/self/info` des Supervisors, Erfolg bis zum Neustart gemerkt; ohne Supervisor `name` = „Skytech Energy Pilot“, `config_path` = `null`. Immer 200 |
 | GET | `/api/logs` | Ringpuffer, filterbar nach `level`/`limit` |
 | GET | `/api/logs/export` | JSONL-Export (maschinenlesbar, Download) |
 | GET | `/api/ha/test` | HA-Verbindungstest |

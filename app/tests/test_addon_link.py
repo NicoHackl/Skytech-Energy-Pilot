@@ -17,7 +17,7 @@ INFO = {"slug": "03f1563e_skytech_energy_pilot_dev", "name": "Skytech Energy Pil
 def test_link_nutzt_slug_mit_repository_praefix_und_namen():
     assert addon_link.link_from_info(INFO) == {
         "name": "Skytech Energy Pilot (Dev)",
-        "config_path": "/hassio/addon/03f1563e_skytech_energy_pilot_dev/config",
+        "config_path": "/config/app/03f1563e_skytech_energy_pilot_dev/config",
     }
 
 
@@ -44,7 +44,7 @@ async def test_fetch_liest_den_supervisor_mit_token(aiohttp_server):
     url, seen = await _fake_supervisor(aiohttp_server)
     link = await addon_link.fetch("geheim", url=url)
     assert link is not None
-    assert link["config_path"] == "/hassio/addon/03f1563e_skytech_energy_pilot_dev/config"
+    assert link["config_path"] == "/config/app/03f1563e_skytech_energy_pilot_dev/config"
     assert seen["auth"] == "Bearer geheim"
 
 

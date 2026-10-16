@@ -39,7 +39,7 @@ def link_from_info(info: dict[str, Any]) -> dict[str, Any] | None:
         return None
     return {
         "name": str(info.get("name") or FALLBACK_NAME),
-        "config_path": f"/hassio/addon/{slug}/config",
+        "config_path": f"/config/app/{slug}/config",
     }
 
 

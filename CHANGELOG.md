@@ -8,6 +8,11 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Behoben — 16.10.2026 (Link im Sidebar-Fuß, Version 0.0.68)
+
+- Der Klick auf „Addon-Config“ öffnet jetzt die richtige Seite in Home Assistant
+  (`/config/app/<slug>/config` statt `/hassio/addon/<slug>/config`).
+
 ### Geändert — 16.10.2026 (Sidebar-Fuß führt zur Add-on-Konfiguration, Version 0.0.67)
 
 - Links unten in der Sidebar stehen jetzt ein Kompass-Icon, der Name des Add-ons („Skytech Energy
