@@ -8,6 +8,19 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Geändert — 16.10.2026 (Sidebar-Fuß führt zur Add-on-Konfiguration, Version 0.0.67)
+
+- Links unten in der Sidebar stehen jetzt ein Kompass-Icon, der Name des Add-ons („Skytech Energy
+  Pilot“, im Dev-Kanal „Skytech Energy Pilot (Dev)“) und darunter „Addon-Config“. Ein Klick öffnet
+  die Konfigurationsseite genau dieses Add-ons in Home Assistant (D-068). Version und
+  HA-Verbindungsstatus im Fuß entfallen; beides zeigt weiterhin die Status-Seite. Der Fuß ist in
+  allen Skytech-Add-ons gleich aufgebaut.
+- Neuer Endpunkt `GET /api/addon` liefert Name und Pfad der Konfigurationsseite vom Supervisor.
+- Das Add-on fordert dafür `hassio_api: true` an (Rolle default, nur lesend für
+  `/addons/self/info`). Home Assistant zeigt die geänderte Berechtigung beim Update an.
+- `app/energy_pilot/__init__.py` und `config.yaml` tragen wieder dieselbe Version (vorher 0.0.65
+  gegen 0.0.66).
+
 ### Dokumentation — 12.10.2026 (dynamischer Strompreis)
 
 - Roadmap: Dynamischer Strompreis und Netzladen entstehen im HEMS (SkytechHEMS D-065), nicht im

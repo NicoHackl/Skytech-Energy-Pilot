@@ -26,6 +26,8 @@ austauschbar; getrennte Repos/Logs/Versionierung.
   `data-design="ha"`, sichtbarer Hell/Dunkel-Schalter. Details: [frontend.md](frontend.md).
 - HA-Zugriff über den Supervisor-Core-API-Proxy (`http://supervisor/core/api`),
   Token via `SUPERVISOR_TOKEN`/`HASSIO_TOKEN`/`HA_TOKEN` (erster Treffer gewinnt).
+- Supervisor-API (`hassio_api: true`, Rolle default) nur lesend für `GET /addons/self/info`:
+  Name und voller Slug für den Link im Sidebar-Fuß (D-068).
 - Docker-Basis-Image bewusst `python:3.11-slim` **statt** offizielles
   HA-Base-Image — siehe [bekannte-luecken.md](bekannte-luecken.md#s6-overlay-token-bug).
 

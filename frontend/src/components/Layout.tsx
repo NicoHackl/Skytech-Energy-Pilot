@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { api } from '../api'
+import { AddonFoot } from './AddonFoot'
 import { Icon } from './Icon'
 import { ThemeSwitch } from './Theme'
 
@@ -8,54 +8,6 @@ import { ThemeSwitch } from './Theme'
    damit Navigation und Kopfzeile beim Seitenwechsel nicht neu montiert werden. */
 
 const navClass = ({ isActive }: { isActive: boolean }) => `nav-item${isActive ? ' active' : ''}`
-
-/** Verbindungszustand im Sidebar-Fuß. Scheitert der Abruf, verschwindet nur die
-    Anzeige — nie die Navigation. */
-function ConnectionState() {
-  const [health, setHealth] = useState<{ version: string; ha_configured: boolean } | null>(null)
-
-  useEffect(() => {
-    let active = true
-    api
-      .health()
-      .then((data) => {
-        if (active) setHealth({ version: data.version, ha_configured: data.ha_configured })
-      })
-      .catch(() => {
-        if (active) setHealth(null)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
-
-  if (!health) {
-    return (
-      <div className="sidebar-foot">
-        <span className="avatar">EP</span>
-        <div className="who">
-          <b>Energy Pilot</b>
-          <span>Verbindung unbekannt</span>
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className="sidebar-foot">
-      <span className="avatar">EP</span>
-      <div className="who">
-        <b>Version {health.version}</b>
-        <span>{health.ha_configured ? 'mit Home Assistant verbunden' : 'ohne HA-Verbindung'}</span>
-      </div>
-      <span
-        className={`pill ${health.ha_configured ? 'ok' : 'warn'}`}
-        title={health.ha_configured ? 'HA-Verbindung steht' : 'Kein SUPERVISOR_TOKEN'}
-      >
-        {health.ha_configured ? 'HA' : 'HA?'}
-      </span>
-    </div>
-  )
-}
 
 export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -121,7 +73,7 @@ export function Layout() {
           </NavLink>
         </nav>
 
-        <ConnectionState />
+        <AddonFoot />
       </aside>
 
       <main className="main">

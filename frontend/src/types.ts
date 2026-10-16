@@ -393,3 +393,10 @@ export interface TestResult {
   reason?: string
   result?: Record<string, unknown>
 }
+
+/** Antwort von `GET /api/addon` (D-068): Name und HA-Konfigurationsseite des
+    Add-ons. `config_path` fehlt ohne Supervisor — dann gibt es keinen Link. */
+export interface AddonInfo {
+  name: string
+  config_path: string | null
+}

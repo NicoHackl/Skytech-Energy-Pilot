@@ -28,6 +28,14 @@
    OneCall-Budget-Erschöpfung überspringt weitere Calls statt zu crashen,
    Reparatur-Pass-Fehler fällt auf die deterministische Validator-Auffüllung zurück.
 
+## Add-on-Berechtigungen
+
+- `homeassistant_api: true` — Zugriff auf die HA-Core-API über den Supervisor-Proxy.
+- `hassio_api: true` mit Rolle **default** (seit D-068) — genutzt ausschließlich lesend für
+  `GET /addons/self/info` (Name und voller Slug des eigenen Add-ons für den Link im Sidebar-Fuß).
+  Keine Manager-Rolle, kein Schreibzugriff auf Optionen oder andere Add-ons. Fehlt der Zugriff,
+  zeigt der Fuß nur den Namen.
+
 ## Validierungs-Pipeline (`validator.py`)
 
 | Stufe | Prüfung | Status |

@@ -94,7 +94,7 @@ Verzweigung gehört in `styles.css`.
 
 `components/Layout.tsx` liefert:
 
-1. `Layout` — Sidebar (Marke, Navigationsgruppen, Fußbereich mit Verbindungszustand) plus `<main>`
+1. `Layout` — Sidebar (Marke, Navigationsgruppen, Fuß `AddonFoot` mit Link zur Add-on-Konfiguration in HA, D-068) plus `<main>`
    mit `<Outlet />`. Unter 820px als Off-Canvas-Panel mit Backdrop.
 2. `PageHeader` — die klebrige Kopfzeile jeder Seite: `title`, optional `subtitle`, der
    `ThemeSwitch` und optional `actions`.

@@ -17,6 +17,7 @@ from typing import Any
 
 from aiohttp import web
 
+from energy_pilot import addon_link
 from energy_pilot.collector import StateCollector, run_poller
 from energy_pilot.config import AddonConfig, resolve_active_provider
 from energy_pilot.constraints import build_constraints
@@ -117,6 +118,8 @@ def create_app(
     app["version"] = version
     app["logger"] = logger
     app["poll_interval_s"] = poll_interval_s
+    # Veränderlicher Behälter: die App selbst ist nach dem Start eingefroren.
+    app["addon_link"] = {}
     app.add_routes(
         [
             web.get("/", index),
@@ -124,6 +127,7 @@ def create_app(
             # damit sie unter dem dynamischen Ingress-Präfix auflösen (docs/frontend.md).
             web.static("/assets", ASSETS),
             web.get("/api/health", health),
+            web.get("/api/addon", addon),
             web.get("/api/logs", logs),
             web.get("/api/logs/export", logs_export),
             web.get("/api/ha/test", ha_test),
@@ -434,6 +438,21 @@ async def index(request: web.Request) -> web.Response:
             status=503,
         )
     return web.Response(text=index_file.read_text(encoding="utf-8"), content_type="text/html")
+
+
+async def addon(request: web.Request) -> web.Response:
+    """Name und HA-Konfigurationsseite für den Sidebar-Fuß (D-068).
+
+    Antwortet immer mit 200: ohne Supervisor fehlt nur der Link. Gemerkt wird nur ein
+    Erfolg; ein Ausfall wird beim nächsten Aufruf erneut versucht.
+    """
+    cache: dict[str, Any] = request.app["addon_link"]
+    if not cache:
+        config: AddonConfig = request.app["config"]
+        link = await addon_link.fetch(config.supervisor_token, request.app["logger"])
+        if link is not None:
+            cache.update(link)
+    return web.json_response(dict(cache) or addon_link.fallback())
 
 
 async def health(request: web.Request) -> web.Response:

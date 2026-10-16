@@ -1,4 +1,5 @@
 import type {
+  AddonInfo,
   Allowlist,
   ClassificationResponse,
   Constraint,
@@ -83,6 +84,8 @@ const del = (data: unknown): RequestInit => ({ method: 'DELETE', body: JSON.stri
 /** Jeder Endpunkt ist ein benannter Eintrag — kein roher Pfad in einer Seite. */
 export const api = {
   health: () => request<Health>('api/health'),
+  /* Name und HA-Konfigurationsseite des Add-ons für den Sidebar-Fuß (D-068). */
+  addon: () => request<AddonInfo>('api/addon'),
   diagnostics: () => request<Diagnostics>('api/diagnostics'),
   allowlist: () => request<Allowlist>('api/allowlist'),
   haTest: () => request<TestResult>('api/ha/test'),
