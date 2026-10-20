@@ -32,8 +32,8 @@ const CONFIDENCE_LABEL: Record<string, string> = {
 
 /* Der einzige Weg, auf dem ein Plan entsteht: der Knopf hier (es gibt keinen
    Scheduler, siehe docs/bekannte-luecken.md). Der Plan ist ein Vorschlag — validiert
-   gegen die harten Grenzen und als sensor.ep_*_vorschlag nach HA geschrieben, aber
-   nicht an das HEMS übergeben. */
+   gegen die harten Grenzen und in sensor.energy_pilot_schnittstelle nach HA geschrieben
+   (D-069). Ob ein Vorschlag wirkt, entscheidet das HEMS. */
 
 const CLASSIFICATION_ERRORS: Record<string, string> = {
   keine_ziele_konfiguriert: 'Noch keine Ziele definiert — anzulegen unter „Grenzen & Ziele“.',
@@ -141,8 +141,8 @@ export function Plan() {
           <Icon name="info" size={16} />
           <span>
             Die KI erzeugt einen <b>Vorschlagsplan</b>. Er wird lokal gegen die harten Grenzen validiert
-            und bei Gültigkeit als <code className="mono">sensor.ep_*_vorschlag</code> nach Home Assistant
-            geschrieben — <b>nicht</b> an das HEMS übergeben.
+            und bei Gültigkeit in <code className="mono">sensor.energy_pilot_schnittstelle</code> nach Home
+            Assistant geschrieben — ob ein Vorschlag wirkt, entscheidet das HEMS.
           </span>
         </div>
 

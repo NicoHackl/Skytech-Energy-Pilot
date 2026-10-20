@@ -37,8 +37,9 @@ Ausgelöst durch den internen Scheduler nach HEMS-Discovery/erstem Snapshot oder
 12. Speichern in Tabelle `plans` (inkl. `prompt`, `context_json`, `response_json`,
     `context_hash`, `publish_blocked` — D-063) + Audit-Log (`plan_created`/`plan_rejected`).
 13. Bei gültigem Plan, **ohne** `publish_blocked` und mit `publish_suggestions: true` →
-    `suggestion_publisher.publish_suggestions()`: alten Commit ungültig machen, alle
-    Vorschlagssensoren schreiben, danach `sensor.ep_plan_commit` als atomaren Sichtbarkeitspunkt.
+    `suggestion_publisher.publish_suggestions()`: alle festen Vorschläge in einem Schreibvorgang
+    nach `sensor.energy_pilot_schnittstelle` (atomarer Sichtbarkeitspunkt, D-069), danach die
+    Zusatz-Vorschläge als eigene Sensoren.
     Ein am Konfidenz-Gate gescheiterter Plan
     liefert stattdessen ein `published`-Ergebnis mit Begründung (D-064).
 

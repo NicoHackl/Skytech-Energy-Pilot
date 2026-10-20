@@ -63,9 +63,9 @@ Reihenfolge ist bedeutungstragend, die Asymmetrie beabsichtigt:
 4. Gerät `auto` → `ep` (bei global `manuell`/`nur_*` entscheidet das Gerät)
 5. sonst → `user`
 
-**Wirkung:** EP veröffentlicht seine Vorschlagssensoren unabhängig vom Modus. HEMS liest sie bei
-Quelle `ep`, aber nur mit passendem, gültigem `sensor.ep_plan_commit`; sonst greift feldweise der
-Nutzerwert. Der optionale EP-Schreibweg in zusätzliche Original-Helfer bleibt bei `user`/`aus`
+**Wirkung:** EP veröffentlicht seine Vorschläge unabhängig vom Modus in
+`sensor.energy_pilot_schnittstelle`. HEMS liest sie bei Quelle `ep`, aber nur innerhalb des
+Gültigkeitsfensters; sonst greift feldweise der Nutzerwert. Der optionale EP-Schreibweg in zusätzliche Original-Helfer bleibt bei `user`/`aus`
 gesperrt und erscheint als `skipped` in Ergebnis/Audit/UI.
 
 Bewusst **nicht** nachgebaut: `ems_pv_regelung_aktiv` und `hard_lockout`. HEMS bleibt die

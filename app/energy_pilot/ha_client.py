@@ -148,6 +148,21 @@ class HAClient:
             await raise_for_status(resp, service="Home Assistant")
             return await resp.json()
 
+    async def remove_state(self, entity_id: str) -> bool:
+        """Entfernt einen per REST angelegten Zustand (DELETE /api/states/<entity_id>).
+
+        Nur für EP-eigene Ausgaben, die entfallen sind (Vertrag HEMS ↔ Energy-Pilot 2.0). Liefert
+        `False`, wenn die Entität nicht existiert (HTTP 404) — kein Fehler.
+        """
+        session = await self._ensure_session()
+        async with session.delete(
+            f"{self.base_url}/states/{entity_id}", headers=self.headers
+        ) as resp:
+            if resp.status == 404:
+                return False
+            await raise_for_status(resp, service="Home Assistant")
+            return True
+
     async def call_service(
         self, domain: str, service: str, entity_id: str, data: dict[str, Any] | None = None
     ) -> Any:

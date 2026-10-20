@@ -8,6 +8,15 @@ designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
 ## [Unreleased]
 
+### Geändert — 20.10.2026 (Vorschläge über eine Schnittstelle, Version 0.0.69)
+
+- Der Energy Pilot schreibt seine Vorschläge für das HEMS jetzt in einen einzigen Sensor
+  „Energy-Pilot-Schnittstelle“ (`sensor.energy_pilot_schnittstelle`) statt in einen Sensor je Gerät
+  und Feld. Die alten Sensoren `sensor.ep_<gerät>_…_vorschlag` und `sensor.ep_plan_commit` entfallen
+  und werden beim ersten Veröffentlichen entfernt (D-069). **SkytechHEMS ab 4.0.0 und der Energy
+  Pilot müssen zusammen aktualisiert werden.**
+- Zusatz-Vorschläge für eigene Entitäten und die Status-Sensoren bleiben unverändert.
+
 ### Behoben — 16.10.2026 (Link im Sidebar-Fuß, Version 0.0.68)
 
 - Der Klick auf „Addon-Config“ öffnet jetzt die richtige Seite in Home Assistant

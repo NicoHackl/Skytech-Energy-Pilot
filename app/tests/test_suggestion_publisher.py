@@ -1,10 +1,12 @@
 """Tests für den Vorschlags-Publisher (Entity-Erzeugung + fehlertolerantes Schreiben)."""
 
+from energy_pilot import suggestion_publisher
 from energy_pilot.control_mode import HA_GLOBAL_MODE, device_mode_entity
 from energy_pilot.database import init_db
 from energy_pilot.devices import BINARY, CONTROLLABLE, Device, DeviceExtra
 from energy_pilot.http_errors import HTTPStatusError
 from energy_pilot.suggestion_publisher import (
+    INTERFACE_ENTITY,
     build_original_writes,
     build_suggestion_entities,
     publish_suggestions,
@@ -38,6 +40,7 @@ class _FakeHA:
     def __init__(self, fail_for=None, global_mode="auto", device_modes=None):
         self.calls = []
         self.service_calls = []
+        self.removed = []
         self._fail_for = set(fail_for or ())
         self._states = {}
         if global_mode is not None:
@@ -57,6 +60,10 @@ class _FakeHA:
         if entity_id in self._fail_for:
             raise RuntimeError("HTTP 500")
         return {"entity_id": entity_id, "state": state}
+
+    async def remove_state(self, entity_id):
+        self.removed.append(entity_id)
+        return True
 
     async def call_service(self, domain, service, entity_id, data=None):
         self.service_calls.append((domain, service, entity_id, data))
@@ -78,7 +85,12 @@ def _plan(devices):
 # -- Entity-Erzeugung (rein) ------------------------------------------------
 
 
+def _iface(entities):
+    return next(e for e in entities if e.entity_id == INTERFACE_ENTITY)
+
+
 def test_build_entities_controllable_all_fields():
+    """D-069: feste Felder in der einen Schnittstelle, Zusatz-Vorschlag als eigener Sensor."""
     plan = _plan(
         [
             {
@@ -90,57 +102,76 @@ def test_build_entities_controllable_all_fields():
             }
         ]
     )
-    by_id = {e.entity_id: e for e in build_suggestion_entities(plan, DEVICES)}
+    entities = build_suggestion_entities(plan, DEVICES)
+    by_id = {e.entity_id: e for e in entities}
 
     assert set(by_id) == {
-        "sensor.ep_heizstab_prio_vorschlag",
-        "sensor.ep_heizstab_freigabe_vorschlag",
-        "sensor.ep_heizstab_geschutzte_mindestleistung_w_vorschlag",
+        INTERFACE_ENTITY,
         "sensor.ep_heizstab_max_temperatur_vorschlag",  # aus der Zusatz-Entität (D-047)
     }
-    assert by_id["sensor.ep_heizstab_prio_vorschlag"].state == "10"
-    assert by_id["sensor.ep_heizstab_freigabe_vorschlag"].state == "on"
-    leistung = by_id["sensor.ep_heizstab_geschutzte_mindestleistung_w_vorschlag"]
-    assert leistung.state == "800"  # 800.0 -> "800"
-    assert leistung.attributes["unit_of_measurement"] == "W"
-    assert leistung.attributes["plan_id"] == "abc123"
+    iface = by_id[INTERFACE_ENTITY]
+    assert iface.state == "heizstab"
+    attrs = iface.attributes
+    assert attrs["heizstab_prio"] == 10
+    assert attrs["heizstab_freigabe"] is True
+    assert attrs["heizstab_geschutzte_mindestleistung_w"] == 800.0
+    assert attrs["heizstab_label"] == "Heizstab"
+    assert attrs["plan_id"] == "abc123"
+    assert attrs["valid_from"] == "2026-06-19T12:00:00+00:00"
+    assert attrs["valid_until"] == "2026-06-19T13:00:00+00:00"
+    assert attrs["schnittstelle_version"] == 1
+    assert not any(key.endswith("_vorschlag") for key in attrs)
     # Der Zusatz-Vorschlag trägt Einheit + Label der Zusatz-Entität.
     temp = by_id["sensor.ep_heizstab_max_temperatur_vorschlag"]
     assert temp.state == "55"
     assert temp.attributes["unit_of_measurement"] == "°C"
-    temperatur = by_id["sensor.ep_heizstab_max_temperatur_vorschlag"]
-    assert temperatur.attributes["unit_of_measurement"] == "°C"
 
 
-def test_freigabe_false_is_off():
+def test_freigabe_false_bleibt_bool():
     plan = _plan([{"name": "heizlufter_1", "prio_vorschlag": 20, "freigabe_vorschlag": False}])
-    by_id = {e.entity_id: e for e in build_suggestion_entities(plan, DEVICES)}
-    assert by_id["sensor.ep_heizlufter_1_freigabe_vorschlag"].state == "off"
+    assert _iface(build_suggestion_entities(plan, DEVICES)).attributes[
+        "heizlufter_1_freigabe"] is False
 
 
-def test_battery_writes_only_present_field():
-    plan = _plan([{"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0}])
-    ids = [e.entity_id for e in build_suggestion_entities(plan, DEVICES)]
-    assert ids == ["sensor.ep_batterie_geschutzte_mindestleistung_w_vorschlag"]
+def test_mehrere_geraete_in_einer_entitaet():
+    plan = _plan([
+        {"name": "heizstab", "prio_vorschlag": 10},
+        {"name": "batterie", "geschutzte_mindestleistung_w_vorschlag": 3000.0},
+    ])
+    entities = build_suggestion_entities(plan, DEVICES)
+    assert [e.entity_id for e in entities] == [INTERFACE_ENTITY]
+    iface = entities[0]
+    assert iface.state == "heizstab,batterie"
+    assert iface.attributes["batterie_geschutzte_mindestleistung_w"] == 3000.0
+    assert "batterie_prio" not in iface.attributes
 
 
 def test_unknown_device_falls_back_to_name_as_prefix():
     plan = _plan([{"name": "fremd", "prio_vorschlag": 30}])
-    entity = build_suggestion_entities(plan, DEVICES)[0]
-    assert entity.entity_id == "sensor.ep_fremd_prio_vorschlag"
-    assert "fremd" in entity.attributes["friendly_name"]
+    iface = _iface(build_suggestion_entities(plan, DEVICES))
+    assert iface.state == "fremd"
+    assert iface.attributes["fremd_prio"] == 30
+    assert iface.attributes["fremd_label"] == "fremd"
 
 
 def test_none_fields_are_skipped():
     plan = _plan([{"name": "heizstab", "prio_vorschlag": 10, "max_temperatur_vorschlag": None}])
+    attrs = _iface(build_suggestion_entities(plan, DEVICES)).attributes
+    assert attrs["heizstab_prio"] == 10
+    assert "heizstab_freigabe" not in attrs
+
+
+def test_ohne_feste_felder_keine_schnittstelle():
+    plan = _plan([{"name": "heizstab", "extra_heizstab_max_temperatur_vorschlag": 55.0}])
     ids = [e.entity_id for e in build_suggestion_entities(plan, DEVICES)]
-    assert ids == ["sensor.ep_heizstab_prio_vorschlag"]
+    assert ids == ["sensor.ep_heizstab_max_temperatur_vorschlag"]
 
 
 # -- Schreiben (async, fehlertolerant) --------------------------------------
 
 
-async def test_publish_all_ok_and_audits():
+async def test_publish_all_ok_and_audits(monkeypatch):
+    monkeypatch.setattr(suggestion_publisher, "_legacy_removed", False)
     conn = init_db(":memory:")
     ha = _FakeHA()
     plan = _plan([{"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": True}])
@@ -148,35 +179,34 @@ async def test_publish_all_ok_and_audits():
     result = await publish_suggestions(ha, plan, DEVICES, db=conn)
 
     assert result.ok
-    assert set(result.written) == {
-        "sensor.ep_heizstab_prio_vorschlag",
-        "sensor.ep_heizstab_freigabe_vorschlag",
-        "sensor.ep_plan_commit",
-    }
+    assert result.written == [INTERFACE_ENTITY]
     assert result.failed == []
-    # Alter Commit wird zuerst ungültig, der echte Commit kommt nach allen Vorschlägen.
-    assert ha.calls[0][0:2] == ("sensor.ep_plan_commit", "publishing")
-    assert ha.calls[-1][0:2] == ("sensor.ep_plan_commit", "abc123")
-    assert ha.calls[-1][2]["valid_from"] == "2026-06-19T12:00:00+00:00"
-    assert ha.calls[-1][2]["valid_until"] == "2026-06-19T13:00:00+00:00"
+    # Genau ein Schreibvorgang, kein Commit-Marker mehr (Vertrag 2.0).
+    assert [call[0] for call in ha.calls] == [INTERFACE_ENTITY]
+    # Alte Entitäten aus Vertrag 1.0 werden einmal je Prozess entfernt.
+    assert "sensor.ep_plan_commit" in ha.removed
+    assert "sensor.ep_heizstab_prio_vorschlag" in ha.removed
     audits = conn.execute(
         "SELECT COUNT(*) AS n FROM audit WHERE action='suggestions_published'"
     ).fetchone()["n"]
     assert audits == 1
     conn.close()
 
+    ha2 = _FakeHA()
+    await publish_suggestions(ha2, plan, DEVICES)
+    assert ha2.removed == []  # nur einmal je Prozess
 
-async def test_publish_partial_failure_does_not_crash():
-    ha = _FakeHA(fail_for={"sensor.ep_heizstab_freigabe_vorschlag"})
+
+async def test_publish_failure_does_not_crash():
+    ha = _FakeHA(fail_for={INTERFACE_ENTITY})
     plan = _plan([{"name": "heizstab", "prio_vorschlag": 10, "freigabe_vorschlag": True}])
 
     result = await publish_suggestions(ha, plan, DEVICES)
 
     assert not result.ok
-    assert result.written == ["sensor.ep_heizstab_prio_vorschlag"]
-    assert result.failed[0]["entity_id"] == "sensor.ep_heizstab_freigabe_vorschlag"
+    assert result.written == []
+    assert result.failed[0]["entity_id"] == INTERFACE_ENTITY
     assert result.failed[0]["error"]
-    assert not any(call[1] == "abc123" for call in ha.calls)
 
 
 async def test_publish_without_ha_client_is_noop():

@@ -31,23 +31,32 @@ Reale Beispiele: `ems_heizstab_technische_freigabe`, `ems_heizlüfter_1_leistung
 falls eine ältere HEMS-Version dieses Feld noch nicht über `/api/status` liefert
 (HEMS-Wert hat immer Vorrang, sobald verfügbar).
 
-## Schreib-Seite: `ep_*` (implementiert in `suggestion_publisher.py`)
+## Schreib-Seite (implementiert in `suggestion_publisher.py`)
 
-**Phase-1-Schreibvertrag** (D-030/D-034), als `sensor.*` bereitgestellt:
+**Schnittstelle zum HEMS (D-069, Vertrag 2.0):** alle festen Vorschläge eines Plans stehen in
+**einer** Entität `sensor.energy_pilot_schnittstelle`. State: Präfixe der Geräte mit Vorschlägen,
+durch Komma getrennt. Attribute: `plan_id`, `valid_from`, `valid_until`, `schema_version`,
+`schnittstelle_version` und je Gerät:
 
-| Feld | Geräteklasse | Regelbar? |
+| Attribut | Geräteklasse | Typ |
 |---|---|---|
-| `ep_<name>_prio_vorschlag` | binär + regelbar | nein |
-| `ep_<name>_freigabe_vorschlag` | binär + regelbar | ja (binär) |
-| `ep_<name>_geschutzte_mindestleistung_w_vorschlag` bzw. `_a_vorschlag` | regelbar + Batterie | ja |
+| `<prefix>_prio` | binär + regelbar | Zahl |
+| `<prefix>_freigabe` | binär + regelbar | Bool |
+| `<prefix>_geschutzte_mindestleistung_w` bzw. `_a` | regelbar + Batterie | Zahl |
+| `<prefix>_label` | alle | Text, nur Anzeige |
 
-Jeder Vorschlag trägt `plan_id`, `valid_from` und `valid_until`. EP schreibt zuletzt
-`sensor.ep_plan_commit`; erst dieser Commit macht den gesamten Satz für HEMS sichtbar.
+Der ganze Plan landet in einem Schreibvorgang und ist damit für das HEMS atomar sichtbar; der frühere
+Commit-Marker `sensor.ep_plan_commit` und die Einzelsensoren `sensor.ep_<gerät>_<feld>_vorschlag`
+entfallen. EP entfernt sie beim ersten Veröffentlichen nach dem Start.
 
-**Batterie-Sonderfall (D-037):** immer Prio 1, immer freigegeben — EP schreibt nur
-`ep_batterie_geschutzte_mindestleistung_w_vorschlag`, kein `prio_vorschlag`/`freigabe_vorschlag`.
+Intern heißen die Planfelder weiter `prio_vorschlag` usw.; nur die Veröffentlichung lässt das
+`_vorschlag` weg.
 
-Reale Beispiele: `sensor.ep_heizstab_prio_vorschlag`, `sensor.ep_heizlüfter_1_freigabe_vorschlag`.
+**Batterie-Sonderfall (D-037):** immer Prio 1, immer freigegeben — EP liefert nur
+`batterie_geschutzte_mindestleistung_w`, kein `prio`/`freigabe`.
+
+Beispiel: `sensor.energy_pilot_schnittstelle` mit State `heizstab,heizlufter_1` und Attributen
+`heizstab_prio: 10`, `heizstab_freigabe: true`, `heizlufter_1_prio: 20`.
 
 Der exakte Schreibvertrag je Gerät wird zur Laufzeit von `plan_schema.py:
 suggestion_keys()` aus der Geräteklasse berechnet — dort nachschlagen, wenn sich

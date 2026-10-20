@@ -69,7 +69,7 @@ PV-/Wetter-Sensoren ─┴─► Collector-Loop (alle collect_interval_s) ──
                                                                           ▼
                                         gültiger/geklemmter Plan → SQLite + Audit-Log
                                                                           ▼
-                     sensor.ep_*_vorschlag, danach sensor.ep_plan_commit nach HA schreiben
+                     sensor.energy_pilot_schnittstelle (ein Schreibvorgang) nach HA schreiben
                                                                           ▼
                      HEMSStatusCollector vergleicht Vorschlag mit HEMS-Ist (unabhängiger Poll-Takt)
                                                                           ▼

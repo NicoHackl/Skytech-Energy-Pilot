@@ -9,6 +9,13 @@ Diese Datei ist der wichtigste Startpunkt, bevor man einer alten Spec-Aussage
 vertraut — Spec und Code laufen an mehreren Stellen auseinander. Bei jeder größeren
 Änderung hier ergänzen/aktualisieren.
 
+## Schnittstellen-Entität — 20.10.2026 (D-069)
+
+- EP und HEMS (ab 4.0.0) müssen zusammen aktualisiert werden. Liest das HEMS noch die alten
+  Einzelsensoren, wirkt kein Vorschlag mehr; das HEMS fällt dann auf die Nutzerwerte zurück.
+- Die alten Entitäten entfernt EP einmal je Prozess. Liegen sie unter einem anderen Präfix (z. B.
+  nach Umbenennung eines Geräts), bleiben sie bis zum nächsten HA-Neustart stehen; sie wirken nicht.
+
 ## Spec-vs-Code-Lücken (Stand aktuelle Codebasis)
 
 ### E3DC ist inzwischen HEMS-Speicher — Sonderfall `batterie` greift nicht mehr (12.10.2026)

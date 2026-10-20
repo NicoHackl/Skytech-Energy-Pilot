@@ -71,6 +71,15 @@ Wetter-Kontext).
 Kurzer Default-Timeout (`DEFAULT_TIMEOUT_S = 10.0`), damit EP nie an einem
 langsamen/nicht erreichbaren HEMS hängen bleibt.
 
+## Von EP genutzte Home-Assistant-Endpunkte (`ha_client.py`)
+
+| Methode | Pfad | Zweck |
+|---|---|---|
+| POST | `/api/states/sensor.energy_pilot_schnittstelle` | Vorschläge für das HEMS, ein Schreibvorgang je Plan (D-069, [Vertrag](../contract/contract_hems_energy_pilot/contract_hems_energy_pilot.md)) |
+| POST | `/api/states/sensor.ep_*` | Anzeige-Entitäten (`ep_plan_status`, `ep_hems_verbindung`) und Zusatz-Vorschläge `sensor.ep_<obj>_vorschlag` |
+| DELETE | `/api/states/<entity_id>` | Einmal je Prozess: entfallene Entitäten aus Vertrag 1.0 entfernen (`sensor.ep_plan_commit`, feste `sensor.ep_<gerät>_<feld>_vorschlag`) |
+| POST | `/api/services/<domain>/<service>` | „In Original schreiben“ für Zusatz-Entitäten (D-052) |
+
 ## Nicht (mehr) existierende / nie gebaute API-Ebene
 
 Die ursprüngliche Spec sah eine **versionierte interne REST-API**

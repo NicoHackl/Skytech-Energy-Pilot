@@ -404,10 +404,13 @@ async def test_run_publishes_valid_plan_to_ha(tmp_path):
     assert result.ok
     assert result.published is not None and result.published["ok"]
     written = set(result.published["written"])
-    assert "sensor.ep_heizstab_prio_vorschlag" in written
-    assert "sensor.ep_batterie_geschutzte_mindestleistung_w_vorschlag" in written
+    # D-069: alle festen Vorschläge in einer Schnittstellen-Entität.
+    assert "sensor.energy_pilot_schnittstelle" in written
     # Es wurde tatsächlich nach HA geschrieben (nicht nur im Ergebnis gemeldet).
-    assert any(call[0] == "sensor.ep_heizstab_freigabe_vorschlag" for call in ha.calls)
+    iface = next(call for call in ha.calls if call[0] == "sensor.energy_pilot_schnittstelle")
+    assert "heizstab_prio" in iface[2]
+    assert "batterie_geschutzte_mindestleistung_w" in iface[2]
+    assert "heizstab_freigabe" in iface[2]
 
 
 async def test_run_does_not_publish_rejected_plan(tmp_path):
@@ -453,7 +456,7 @@ async def test_publish_latest_rewrites_last_valid_plan(tmp_path):
     result = await planner.publish_latest(now=NOW)
 
     assert result["ok"]
-    assert any(call[0].startswith("sensor.ep_") for call in ha.calls)
+    assert any(call[0] == "sensor.energy_pilot_schnittstelle" for call in ha.calls)
 
 
 async def test_publish_latest_without_valid_plan_reports_reason(tmp_path):

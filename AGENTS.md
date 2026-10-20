@@ -51,10 +51,13 @@ gebracht.
 8. **Nicht raten:** Ist eine Anforderung unklar, wird gefragt statt geraten. Getroffene Annahmen
    werden explizit genannt. Offene Punkte gehören nach `claude-fragen/`, nicht in eine Vermutung
    im Code.
-9. **Namens-Domäne nach Datenrichtung (D-029):** vom User oder HEMS gepflegte technische
-   Gerätewerte sind `ems_*` (HEMS-Domäne, EP **liest** nur); EP-Vorschlagswerte sind `ep_*`
-   (EP **schreibt**), bereitgestellt als `sensor.ep_<gerät>_<feld>_vorschlag`. Nicht verhandelbar.
-   Schreibvertrag und Ausnahmen: [docs/namensschema.md](docs/namensschema.md).
+9. **Namens-Domäne nach Datenrichtung (D-029, seit D-069):** vom User oder HEMS gepflegte technische
+   Gerätewerte sind `ems_*` (HEMS-Domäne, EP **liest** nur). Vorschläge für das HEMS schreibt EP
+   ausschließlich in **eine** Entität `sensor.energy_pilot_schnittstelle` (Attribute
+   `<gerät>_<feld>`) — Grundsatz aller Skytech-Projekte: eine `sensor.<einheit>_schnittstelle` je
+   Einheit. `ep_*` bleibt die Namensdomäne für EP-eigene Anzeige- und Zusatz-Entitäten
+   (`sensor.ep_plan_status`, `sensor.ep_<obj>_vorschlag`). Nicht verhandelbar. Schreibvertrag und
+   Ausnahmen: [docs/namensschema.md](docs/namensschema.md).
 10. **KI ist Orchestrator, nie Regler.** Freitext ist niemals ein Steuerbefehl — ausschließlich
     strukturiertes Tool-/Function-Calling mit erzwungenem Antwortschema. Kein von der KI erzeugter
     Code wird ausgeführt.

@@ -1,11 +1,17 @@
-"""Veröffentlichung der KI-Vorschlagswerte als HA-`sensor.ep_*`-Entitäten (M2-Schreibweg).
+"""Veröffentlichung der KI-Vorschlagswerte in Home Assistant.
 
-V1-Schreibweg (user-beispiele/variablen-zugriff.md §„Schreibweg — gestaffelt"): die
-validierten Vorschlagswerte eines Plans werden **ausschließlich** als HA-Entitäten
-geschrieben — reine Anzeige/Vorschläge, **keine** Steuerung und (noch) **keine** Übergabe
-an HEMS (das ist M3). Der Schreibvertrag je Gerät stammt aus
-`plan_schema.suggestion_keys` (D-030/D-034/D-037/D-035); hier werden nur die im Plan
-tatsächlich gesetzten Felder geschrieben.
+**Schnittstelle zum HEMS (D-069, Vertrag HEMS ↔ Energy-Pilot 2.0):** Die festen
+Vorschlagsfelder aller Geräte landen in **einer** Entität `sensor.energy_pilot_schnittstelle`
+— Grundsatz der Skytech-Projekte: jede Einheit veröffentlicht genau eine
+`sensor.<einheit>_schnittstelle` mit allen Informationen für die anderen. State sind die
+Präfixe der Geräte mit Vorschlägen, Attribute `plan_id`, `valid_from`, `valid_until` und je
+Gerät `<prefix>_<feld>` (Feldname ohne `_vorschlag`) mit echten Typen. Weil der ganze Plan in
+**einem** Schreibvorgang landet, braucht es keinen Commit-Marker mehr; `sensor.ep_plan_commit`
+und die Einzelsensoren `sensor.ep_<gerät>_<feld>_vorschlag` entfallen. Hier werden nur die im
+Plan tatsächlich gesetzten Felder geschrieben (Schreibvertrag `plan_schema.suggestion_keys`).
+
+Zusatz-Vorschläge (D-047) sind kein Austausch mit dem HEMS und bleiben eigene Sensoren
+`sensor.ep_<obj>_vorschlag`.
 
 **Ausnahme Original-Schreibweg (D-052):** ist bei einer Zusatz-Entität (D-047) „In Original
 schreiben" aktiv (`DeviceExtra.should_write_original`), schreibt EP den Vorschlag zusätzlich
@@ -57,7 +63,13 @@ _FIELD_UNIT: dict[str, str] = {
     "geschutzte_mindestleistung_a_vorschlag": "A",
 }
 
-PLAN_COMMIT_ENTITY = "sensor.ep_plan_commit"
+INTERFACE_ENTITY = "sensor.energy_pilot_schnittstelle"
+# Version der Attributstruktur (Vertrag HEMS ↔ Energy-Pilot 2.0).
+INTERFACE_VERSION = 1
+# Entfallene Entität aus Vertrag 1.0; wird einmal je Prozess entfernt (siehe `_remove_legacy`).
+LEGACY_COMMIT_ENTITY = "sensor.ep_plan_commit"
+# Einmal je Prozess: alte Einzelsensoren und den Commit-Marker aus HA entfernen.
+_legacy_removed = False
 
 
 @dataclass
@@ -119,14 +131,20 @@ def _format_state(value: object) -> str:
     return str(value)
 
 
+def _interface_field(field_name: str) -> str:
+    """Planfeld → Attributendung in der Schnittstelle: `prio_vorschlag` → `prio`."""
+    return field_name.removesuffix("_vorschlag")
+
+
 def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[SuggestionEntity]:
     """Leitet aus einem validierten Plan die zu schreibenden HA-Entitäten ab.
 
-    Feste Felder: `sensor.ep_<entity_prefix>_<feld>` (das Feld endet auf `_vorschlag`).
-    Zusatz-Vorschläge (D-047): `sensor.ep_<obj>_vorschlag` gemäß dem Namensschema der
-    Zusatz-Entität (`DeviceExtra.suggestion_entity_id`), mit deren Label/Einheit. Diese
-    Werte sind advisorisch (nur HA-Sensor, nie an das HEMS übergeben). `entity_prefix`/`label`
-    stammen aus dem `Device`; fehlt das Gerät, dient der Name als Fallback-Prefix.
+    Feste Felder aller Geräte: **eine** Entität `sensor.energy_pilot_schnittstelle` (siehe
+    Moduldoc), nur wenn mindestens ein Feld gesetzt ist. Zusatz-Vorschläge (D-047):
+    `sensor.ep_<obj>_vorschlag` gemäß dem Namensschema der Zusatz-Entität
+    (`DeviceExtra.suggestion_entity_id`), mit deren Label/Einheit; advisorisch, nie an das
+    HEMS übergeben. `entity_prefix`/`label` stammen aus dem `Device`; fehlt das Gerät, dient
+    der Name als Fallback-Prefix.
     """
     by_name = {device.name: device for device in devices}
     plan_id = plan.get("plan_id")
@@ -148,7 +166,18 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
             attributes["valid_until"] = valid_until
         return attributes
 
-    entities: list[SuggestionEntity] = []
+    interface_attrs: dict = {
+        "friendly_name": "Energy-Pilot-Schnittstelle",
+        "icon": "mdi:robot-outline",
+        "source": "Skytech Energy Pilot",
+        "schnittstelle_version": INTERFACE_VERSION,
+        "schema_version": plan.get("schema_version"),
+        "plan_id": plan_id,
+        "valid_from": valid_from,
+        "valid_until": valid_until,
+    }
+    prefixes: list[str] = []
+    extras: list[SuggestionEntity] = []
     for entry in plan.get("devices", []):
         if not isinstance(entry, dict):
             continue
@@ -159,23 +188,16 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
         prefix = device.entity_prefix if device is not None else name
         label = device.label if device is not None else name
 
-        # Feste Vorschlagsfelder (Prio/Freigabe/Mindestleistung).
-        for field_name in SUGGESTION_FIELDS:
-            value = entry.get(field_name)
-            if value is None:
-                continue
-            field_label = _FIELD_LABEL.get(field_name, field_name)
-            entities.append(
-                SuggestionEntity(
-                    entity_id=f"sensor.ep_{prefix}_{field_name}",
-                    state=_format_state(value),
-                    attributes=_attrs(
-                        f"{label} – {field_label} (Vorschlag)", _FIELD_UNIT.get(field_name)
-                    ),
-                    device=name,
-                    field_name=field_name,
-                )
-            )
+        # Feste Vorschlagsfelder (Prio/Freigabe/Mindestleistung) in die Schnittstelle.
+        fields = {
+            f"{prefix}_{_interface_field(field_name)}": entry[field_name]
+            for field_name in SUGGESTION_FIELDS
+            if entry.get(field_name) is not None
+        }
+        if fields:
+            prefixes.append(prefix)
+            interface_attrs[f"{prefix}_label"] = label
+            interface_attrs.update(fields)
 
         # Dynamische Zusatz-Vorschläge (D-047): Sensorname/Label/Einheit aus der Zusatz-Entität.
         for extra in getattr(device, "extras", ()):
@@ -184,7 +206,7 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
             value = entry.get(extra.plan_field)
             if value is None:
                 continue
-            entities.append(
+            extras.append(
                 SuggestionEntity(
                     entity_id=extra.suggestion_entity_id,
                     state=_format_state(value),
@@ -195,7 +217,27 @@ def build_suggestion_entities(plan: dict, devices: list[Device]) -> list[Suggest
                     field_name=extra.plan_field,
                 )
             )
-    return entities
+
+    entities: list[SuggestionEntity] = []
+    if prefixes:
+        entities.append(
+            SuggestionEntity(
+                entity_id=INTERFACE_ENTITY,
+                state=",".join(prefixes),
+                attributes=interface_attrs,
+                device="*",
+                field_name="*",
+            )
+        )
+    return entities + extras
+
+
+def legacy_entity_ids(devices: list[Device]) -> list[str]:
+    """Entfallene Entitäten aus Vertrag 1.0: Commit-Marker und feste Einzelsensoren."""
+    ids = [LEGACY_COMMIT_ENTITY]
+    for device in devices:
+        ids.extend(f"sensor.ep_{device.entity_prefix}_{field}" for field in SUGGESTION_FIELDS)
+    return ids
 
 
 def _service_payload(extra: DeviceExtra, value: object) -> tuple[str, str, dict] | None:
@@ -333,29 +375,8 @@ async def publish_suggestions(
 
     written: list[str] = []
     failed: list[dict] = []
-    # Alten Commit zuerst ungültig machen. Während der folgenden Einzelwrites kann HEMS so nie
-    # einen gemischten alten/neuen Satz akzeptieren.
-    try:
-        await ha_client.set_state(
-            PLAN_COMMIT_ENTITY,
-            "publishing",
-            {
-                "friendly_name": "Energy Pilot Plan-Commit",
-                "source": "Skytech Energy Pilot",
-                "valid_until": plan.get("valid_from") or "",
-            },
-        )
-    except Exception as exc:
-        failed.append(
-            {
-                "entity_id": PLAN_COMMIT_ENTITY,
-                "error": str(exc).strip() or exc.__class__.__name__,
-            }
-        )
-        result = PublishResult(ok=False, written=[], failed=failed, skipped=skipped)
-        _audit(db, plan_id, result)
-        return result
-
+    # Die Schnittstelle ist ein einziger Schreibvorgang und damit für das HEMS atomar sichtbar;
+    # Zusatz-Vorschläge folgen als eigene Sensoren.
     for entity in entities:
         try:
             await ha_client.set_state(entity.entity_id, entity.state, entity.attributes)
@@ -365,30 +386,8 @@ async def publish_suggestions(
                 {"entity_id": entity.entity_id, "error": str(exc).strip() or exc.__class__.__name__}
             )
 
-    # Commit ist der atomare Sichtbarkeitspunkt für HEMS und wird ausschließlich geschrieben,
-    # wenn jeder Vorschlags-Sensor des Plans erfolgreich veröffentlicht wurde.
-    if not failed and entities:
-        try:
-            await ha_client.set_state(
-                PLAN_COMMIT_ENTITY,
-                str(plan_id or ""),
-                {
-                    "friendly_name": "Energy Pilot Plan-Commit",
-                    "source": "Skytech Energy Pilot",
-                    "schema_version": plan.get("schema_version"),
-                    "plan_id": plan_id,
-                    "valid_from": plan.get("valid_from"),
-                    "valid_until": plan.get("valid_until"),
-                },
-            )
-            written.append(PLAN_COMMIT_ENTITY)
-        except Exception as exc:
-            failed.append(
-                {
-                    "entity_id": PLAN_COMMIT_ENTITY,
-                    "error": str(exc).strip() or exc.__class__.__name__,
-                }
-            )
+    if INTERFACE_ENTITY in written:
+        await _remove_legacy(ha_client, devices, logger)
 
     for write in original_writes:
         try:
@@ -410,6 +409,28 @@ async def publish_suggestions(
             plan_id=plan_id,
         )
     return result
+
+
+async def _remove_legacy(
+    ha_client: HAClient, devices: list[Device], logger: logging.Logger | None
+) -> None:
+    """Einmal je Prozess die Entitäten aus Vertrag 1.0 aus HA entfernen.
+
+    Sonst stünden `sensor.ep_plan_commit` und die alten Einzelsensoren bis zum nächsten
+    HA-Neustart mit eingefrorenem Wert herum. Fehler (auch „nicht vorhanden") werden nur
+    protokolliert — das Aufräumen darf das Veröffentlichen nie stören.
+    """
+    global _legacy_removed
+    if _legacy_removed or not hasattr(ha_client, "remove_state"):
+        return
+    _legacy_removed = True
+    for entity_id in legacy_entity_ids(devices):
+        try:
+            await ha_client.remove_state(entity_id)
+        except Exception as exc:  # kontrolliert, siehe Docstring
+            if logger is not None:
+                log(logger, "debug", "Alte Vorschlagsentität nicht entfernt",
+                    context={"entity_id": entity_id, "error": str(exc)})
 
 
 def _audit(db: sqlite3.Connection | None, plan_id: object, result: PublishResult) -> None:
