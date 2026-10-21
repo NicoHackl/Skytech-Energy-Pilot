@@ -87,3 +87,10 @@ Validierung/Fallback in jeder Stufe aktiv).
 Wallbox + E-Auto-Laden, Wärmepumpe, weitere flexible Verbraucher, dynamische
 Stromtarife + Netzladen (im HEMS geplant, SkytechHEMS D-065), mehrere Speichereinheiten, weitere
 Erzeugungsanlagen.
+
+## EVMS und Watt-Ladeziele — Vorbereitung
+
+HEMS stellt neue Wallbox-Anbindungen weiterhin als `controllable` in Watt bereit;
+[Vertrag](../contract/contract_hems_energy_pilot/contract_hems_energy_pilot.md#additive-watt-ladeziele--21102026).
+EP bleibt Planer über HEMS. Keine direkte Geräteansteuerung, keine neue EVMS-Verbindung.
+Abfahrtszeit-/Ladezielplanung und automatische Fahrzeug-Discovery sind noch offen.

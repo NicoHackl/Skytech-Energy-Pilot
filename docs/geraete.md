@@ -115,3 +115,10 @@ Ohne Rollenangabe liest ein Modell sie als aktuelle Speichertemperatur — und s
 während der Speicher schon bei 76,1 °C stand. Die gemessene Speichertemperatur gehört seit
 D-061 als Mess-Rolle in den `state`-Block ([konfiguration.md](konfiguration.md#sensor-zuordnung-sensoren)),
 nicht als Zusatzwert.
+
+## EVMS und Watt-Ladeziele — Vorbereitung
+
+HEMS stellt neue Wallbox-Anbindungen weiterhin als `controllable` in Watt bereit;
+[Vertrag](../contract/contract_hems_energy_pilot/contract_hems_energy_pilot.md#additive-watt-ladeziele--21102026).
+EP bleibt Planer über HEMS. Keine direkte Geräteansteuerung, keine neue EVMS-Verbindung.
+Abfahrtszeit-/Ladezielplanung und automatische Fahrzeug-Discovery sind noch offen.

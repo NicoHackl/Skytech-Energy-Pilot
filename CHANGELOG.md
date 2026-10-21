@@ -6,6 +6,11 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 Die Add-on-Version in `config.yaml` wird bei jeder funktionalen oder
 designtechnischen Code-Änderung um eine Patch-Stelle erhöht (Projektregel 2).
 
+## EVMS-Vorbereitung — 21.10.2026
+
+- Dokumentation und HEMS-Vertragskopie für additive Watt-Ladeziele abgeglichen.
+  Laufzeit unverändert; gemeinsames Arbeitspaket EVMS-P0/P1.
+
 ## [Unreleased]
 
 ### Geändert — 20.10.2026 (Vorschläge über eine Schnittstelle, Version 0.0.69)

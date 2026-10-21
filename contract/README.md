@@ -51,3 +51,10 @@ Dokumentierte Ausnahmen:
 | Gegenstelle | Vertrag | Stand / Hinweise |
 |---|---|---|
 | HEMS | [contract_hems_energy_pilot.md](contract_hems_energy_pilot/contract_hems_energy_pilot.md) | Version 2.0: Vorschläge über `sensor.energy_pilot_schnittstelle`; dokumentierte Kompatibilitätsgrenzen. |
+
+## EVMS-Vorbereitung — 21.10.2026
+
+Die HEMS-Erweiterung für Watt-Ladeziele ist im bestehenden Paarvertrag dokumentiert.
+EVMS bleibt eine gesonderte geplante Einheit; keine zusätzliche direkte Schnittstelle
+in diesem Repository. HEMS behält den Speicher-State seiner Schnittstelle und ergänzt
+Ladeziel-Bestätigungen additiv; Bestandsverträge bleiben kompatibel.

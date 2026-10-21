@@ -136,3 +136,10 @@ ist er es nicht.
 | `conversion.py` | `safe_float()` — robuste HA-State-Konvertierung |
 | `web/server.py` | aiohttp-App-Factory, alle HTTP-Endpunkte (siehe [api-referenz.md](api-referenz.md)) |
 | `frontend/src/` | React-Oberfläche (9 Seiten), gebaut nach `frontend/dist` |
+
+## EVMS und Watt-Ladeziele — Vorbereitung
+
+HEMS stellt neue Wallbox-Anbindungen weiterhin als `controllable` in Watt bereit;
+[Vertrag](../contract/contract_hems_energy_pilot/contract_hems_energy_pilot.md#additive-watt-ladeziele--21102026).
+EP bleibt Planer über HEMS. Keine direkte Geräteansteuerung, keine neue EVMS-Verbindung.
+Abfahrtszeit-/Ladezielplanung und automatische Fahrzeug-Discovery sind noch offen.
